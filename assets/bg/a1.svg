@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1824" height="1024" viewBox="0 0 1824 1024"><desc>纯背景壁纸，Frutiger Aero 风格，16:9 横向，用作软件窗口底图：清澈青蓝色水下世界，水面透下的柔和阳光、稀疏透明气泡与流动水波，边缘点缀少量海草，中央保留大面积安静的蓝绿色渐变，柔和低对比。仅绘制自然背景，绝对不要界面、窗口、面板、矩形框、按钮、图表、图标、文字、水印或标志。整合细碎的细节为更干净的面。</desc>
+  <title>Frutiger Aero underwater background</title>
+  <desc>Clean turquoise underwater wallpaper with soft sun rays, gentle caustics, sparse bubbles and subtle sea grass. Entirely editable vector artwork.</desc>
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0.18" y2="1">
+      <stop offset="0" stop-color="#b8f5ee"/>
+      <stop offset="0.25" stop-color="#72d9d4"/>
+      <stop offset="0.62" stop-color="#38b9bd"/>
+      <stop offset="1" stop-color="#168c9e"/>
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="51%" cy="48%" r="66%">
+      <stop offset="0" stop-color="#c8fff1" stop-opacity=".56"/>
+      <stop offset=".48" stop-color="#8be9df" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#168ba1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="surface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#effff9" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#b6f8ec" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5fff2" stop-opacity=".48"/>
+      <stop offset="1" stop-color="#e4fff7" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#126d75" stop-opacity=".8"/>
+      <stop offset=".55" stop-color="#32a99b" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#a5efcf" stop-opacity=".52"/>
+    </linearGradient>
+    <radialGradient id="bubble" cx="32%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".75"/>
+      <stop offset=".24" stop-color="#dffffb" stop-opacity=".2"/>
+      <stop offset=".72" stop-color="#b9fff4" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".34"/>
+    </radialGradient>
+    <linearGradient id="caustic" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".36"/>
+      <stop offset="1" stop-color="#e0fff4" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="1824" height="1024" fill="url(#water)"/>
+  <rect width="1824" height="1024" fill="url(#centerGlow)"/>
+  <path d="M0 0H1824V150C1540 126 1370 174 1110 146C820 115 540 166 280 145C165 136 75 145 0 160Z" fill="url(#surface)" opacity=".8"/>
+
+  <g opacity=".68">
+    <path d="M310 0L510 0L820 720L680 760Z" fill="url(#ray)"/>
+    <path d="M560 0L690 0L1000 690L910 720Z" fill="url(#ray)" opacity=".65"/>
+    <path d="M1010 0L1145 0L1320 670L1220 690Z" fill="url(#ray)" opacity=".55"/>
+    <path d="M1320 0L1450 0L1580 620L1500 650Z" fill="url(#ray)" opacity=".48"/>
+    <path d="M1600 0L1680 0L1780 510L1715 540Z" fill="url(#ray)" opacity=".32"/>
+  </g>
+  <ellipse cx="885" cy="170" rx="650" ry="110" fill="#edfff8" opacity=".18" filter="url(#soft)"/>
+
+  <g fill="none" stroke="#f2fff8" stroke-linecap="round">
+    <path d="M0 112C180 88 290 124 445 108S735 91 900 110S1210 132 1380 106S1660 89 1824 108" stroke-width="3" opacity=".28"/>
+    <path d="M120 148C270 132 360 151 490 139M1080 145C1225 128 1350 153 1480 137M1570 132C1660 121 1740 133 1810 126" stroke-width="2" opacity=".22"/>
+    <path d="M360 188C510 169 610 187 730 174M1210 188C1325 173 1410 187 1510 175" stroke-width="1.5" opacity=".14"/>
+  </g>
+
+  <g fill="none" stroke="url(#caustic)" stroke-width="15" stroke-linecap="round" opacity=".48">
+    <path d="M-70 365C140 295 255 315 430 366S710 425 875 360"/>
+    <path d="M1030 330C1190 280 1320 300 1470 350S1710 390 1900 315"/>
+    <path d="M-40 710C150 650 300 675 455 722S700 760 850 700" opacity=".45"/>
+    <path d="M1120 730C1300 665 1450 680 1600 730S1780 755 1900 705" opacity=".38"/>
+  </g>
+  <g fill="none" stroke="#e6fff5" stroke-width="3" stroke-linecap="round" opacity=".16">
+    <path d="M80 398C220 350 310 368 430 403"/>
+    <path d="M1390 405C1510 365 1640 385 1740 420"/>
+    <path d="M180 770C310 725 415 740 520 776"/>
+    <path d="M1280 790C1400 742 1510 752 1620 790"/>
+  </g>
+
+  <g stroke="#eaffff" stroke-width="2.4" fill="url(#bubble)">
+    <circle cx="245" cy="280" r="17" opacity=".55"/>
+    <circle cx="286" cy="232" r="8" opacity=".48"/>
+    <circle cx="1540" cy="250" r="13" opacity=".52"/>
+    <circle cx="1582" cy="211" r="6" opacity=".42"/>
+    <circle cx="1430" cy="555" r="10" opacity=".34"/>
+    <circle cx="390" cy="610" r="7" opacity=".32"/>
+    <circle cx="1680" cy="670" r="18" opacity=".36"/>
+    <circle cx="1722" cy="624" r="8" opacity=".3"/>
+  </g>
+  <g fill="#ffffff" opacity=".6">
+    <ellipse cx="239" cy="273" rx="4" ry="6"/>
+    <ellipse cx="1536" cy="245" rx="3" ry="4"/>
+    <ellipse cx="1674" cy="663" rx="4" ry="6"/>
+    <circle cx="284" cy="229" r="2.2"/>
+    <circle cx="1579" cy="209" r="1.8"/>
+  </g>
+
+  <ellipse cx="910" cy="880" rx="920" ry="210" fill="#9be9d9" opacity=".1" filter="url(#soft)"/>
+
+  <g fill="none" stroke="url(#grass)" stroke-linecap="round">
+    <path d="M18 1028C45 916 30 840 78 758C104 714 128 682 132 622" stroke-width="15" opacity=".72"/>
+    <path d="M56 1028C72 920 112 866 112 786C112 735 94 700 105 650" stroke-width="10" opacity=".62"/>
+    <path d="M86 1028C135 942 158 881 151 814C146 766 164 730 190 690" stroke-width="8" opacity=".55"/>
+    <path d="M0 1028C15 958 8 915 34 868" stroke-width="8" opacity=".48"/>
+    <path d="M1806 1028C1778 925 1794 845 1750 760C1728 715 1704 680 1708 620" stroke-width="15" opacity=".7"/>
+    <path d="M1760 1028C1740 925 1700 868 1704 790C1707 740 1728 700 1718 650" stroke-width="10" opacity=".6"/>
+    <path d="M1730 1028C1684 940 1660 884 1670 820C1678 770 1658 728 1634 692" stroke-width="8" opacity=".52"/>
+    <path d="M1824 1028C1808 962 1815 916 1792 872" stroke-width="8" opacity=".45"/>
+  </g>
+  <g fill="none" stroke="#a9f0d5" stroke-linecap="round" opacity=".36">
+    <path d="M78 1008C95 916 70 850 98 778" stroke-width="2.5"/>
+    <path d="M1750 1008C1725 916 1750 850 1720 778" stroke-width="2.5"/>
+  </g>
+
+  <rect width="1824" height="1024" fill="none" stroke="#0e8795" stroke-opacity=".12" stroke-width="90"/>
+</svg>

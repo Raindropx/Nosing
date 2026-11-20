@@ -1,0 +1,28 @@
+# 本地 Windows EXE 打包
+/desktop/
+/dist/
+/NSGDAT/
+
+# 依赖与缓存
+node_modules/
+__pycache__/
+*.pyc
+*.log
+
+# 本地工具、凭据与验证产物
+/.claude/
+/.workbuddy/
+/说明.md
+/性能验证/
+.env
+.env.*
+Thumbs.db
+.DS_Store
+
+# 发布包、导出文件与个人工程
+*.zip
+*.exe
+*.wav
+*.mid
+*.midi
+*.nsg

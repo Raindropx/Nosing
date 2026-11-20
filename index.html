@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>NSG 歌声合成器 · 纯物理发声引擎</title>
+<link rel="stylesheet" href="css/aero.css">
+<link rel="stylesheet" href="css/themes.css">
+<!--NSG_EXE_CONFIG-->
+<script src="js/host-bridge.js"></script>
+</head>
+<body>
+<div id="bgLayer"></div>
+<div id="bgGloss"></div>
+<div id="bubbles"></div>
+
+<!-- ============ 首屏 ============ -->
+<div id="boot">
+  <div class="boot-box">
+    <div class="orb" aria-hidden="true">
+      <svg class="orb-svg" viewBox="0 0 100 100" focusable="false" aria-hidden="true">
+        <defs>
+          <radialGradient id="nsgBootSphere" cx="34%" cy="25%" r="74%">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="16%" stop-color="#d4f8ff"/>
+            <stop offset="42%" stop-color="#3fc6f2"/>
+            <stop offset="72%" stop-color="#0e74b0"/>
+            <stop offset="100%" stop-color="#06375a"/>
+          </radialGradient>
+          <radialGradient id="nsgBootAurora" cx="68%" cy="82%" r="56%">
+            <stop offset="0%" stop-color="#7affbe" stop-opacity="0.82"/>
+            <stop offset="52%" stop-color="#3ce8b5" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="#1188c4" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="nsgBootRim" x1="15%" y1="8%" x2="85%" y2="92%">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="45%" stop-color="#b8e6ff"/>
+            <stop offset="55%" stop-color="#4b8eb8"/>
+            <stop offset="100%" stop-color="#d8f6ff"/>
+          </linearGradient>
+          <linearGradient id="nsgBootRingGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#76f9ff" stop-opacity="0.15"/>
+            <stop offset="35%" stop-color="#84ffcb" stop-opacity="0.75"/>
+            <stop offset="70%" stop-color="#ffffff" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#58d5ff" stop-opacity="0.2"/>
+          </linearGradient>
+          <linearGradient id="nsgBootNGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="55%" stop-color="#e4fbff"/>
+            <stop offset="100%" stop-color="#96f7d2"/>
+          </linearGradient>
+          <linearGradient id="nsgBootGloss" x1="38%" y1="0%" x2="58%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+            <stop offset="55%" stop-color="#e5f9ff" stop-opacity="0.28"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="nsgBootClip">
+            <circle cx="50" cy="50" r="43"/>
+          </clipPath>
+        </defs>
+        <!-- 外层水晶银环与球体基底 -->
+        <circle cx="50" cy="50" r="46" fill="none" stroke="url(#nsgBootRim)" stroke-width="2.5"/>
+        <circle cx="50" cy="50" r="43.5" fill="url(#nsgBootSphere)" stroke="#084a75" stroke-width="1"/>
+        <circle cx="50" cy="50" r="43" fill="url(#nsgBootAurora)"/>
+        <!-- 球内声学网格、谐波环与脉冲 N -->
+        <g clip-path="url(#nsgBootClip)">
+          <circle cx="50" cy="50" r="33" fill="none" stroke="#b6f2ff" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2.5 4.5"/>
+          <line x1="10" y1="50" x2="90" y2="50" stroke="#9ceeff" stroke-opacity="0.18" stroke-width="1"/>
+          <!-- 背景倍频共振谱柱 -->
+          <g class="orb-bars" stroke="#85ffd0" stroke-opacity="0.34" stroke-width="2.6" stroke-linecap="round">
+            <line x1="27" y1="39" x2="27" y2="61"/>
+            <line x1="38" y1="31" x2="38" y2="69"/>
+            <line x1="50" y1="25" x2="50" y2="75"/>
+            <line x1="62" y1="32" x2="62" y2="68"/>
+            <line x1="73" y1="40" x2="73" y2="60"/>
+          </g>
+          <!-- 倾斜极光谐波脉冲环 -->
+          <ellipse class="orb-orbit" cx="50" cy="50" rx="39" ry="15" transform="rotate(-22 50 50)" fill="none" stroke="url(#nsgBootRingGrad)" stroke-width="2.2"/>
+          <!-- 副谐波正弦丝带 -->
+          <path class="orb-subwave" d="M 10 54 C 24 34, 38 68, 50 49 C 62 30, 76 65, 90 46" fill="none" stroke="#6dffbe" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round"/>
+          <!-- 主声带脉冲波形 + 艺术化 N 核心 -->
+          <path d="M 11 53 L 19 53 L 23 45 L 28 70 L 34 26 L 65 72 L 71 27 L 76 55 L 80 47 L 89 47" fill="none" stroke="#042e4d" stroke-opacity="0.55" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 11 53 L 19 53 L 23 45 L 28 70 L 34 26 L 65 72 L 71 27 L 76 55 L 80 47 L 89 47" fill="none" stroke="#47e8ff" stroke-opacity="0.65" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="orb-n-wave" d="M 11 53 L 19 53 L 23 45 L 28 70 L 34 26 L 65 72 L 71 27 L 76 55 L 80 47 L 89 47" fill="none" stroke="#d9fbff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="orb-n-core" d="M 28 70 L 34 26 L 65 72 L 71 27" fill="none" stroke="url(#nsgBootNGrad)" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- 共振峰极点高光锚点 -->
+          <circle cx="34" cy="26" r="3.2" fill="#ffffff" stroke="#53e6ff" stroke-width="1.2"/>
+          <circle cx="71" cy="27" r="3.2" fill="#ffffff" stroke="#6dffbe" stroke-width="1.2"/>
+          <!-- 顶部 Aero 弧形玻璃折光片 -->
+          <ellipse cx="39" cy="23" rx="26" ry="14" transform="rotate(-18 39 23)" fill="url(#nsgBootGloss)"/>
+        </g>
+        <!-- 内缘高光圈 -->
+        <circle cx="50" cy="50" r="42.5" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1"/>
+      </svg>
+    </div>
+    <h1 data-i18n-html="app.bootTitleHtml">NSG <span>歌声合成器</span></h1>
+    <div class="sub" data-i18n="app.bootSub">纯物理发声 · 人声可选模式B 48kHz · 伴奏 48kHz 立体声</div>
+    <div class="progwrap">
+      <div class="prog"><div class="prog-fill" id="progFill"></div><div class="prog-gloss"></div></div>
+      <div class="prog-text" id="progText">正在加载资源库</div>
+    </div>
+    <div class="marquee"><div class="marquee-in" id="marquee">正在加载资源库 …… 正在校准共振腔 …… 正在装载音色参数块 …… 正在准备多语种发音规则 …… 正在初始化声带脉冲表 ……&nbsp;&nbsp;&nbsp;&nbsp;正在加载资源库 …… 正在校准共振腔 …… 正在装载音色参数块 …… 正在准备多语种发音规则 …… 正在初始化声带脉冲表 ……&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
+  </div>
+</div>
+
+<!-- ============ 主界面 ============ -->
+<div id="app" class="hidden">
+  <div class="win">
+    <div class="titlebar">
+      <div class="tb-left"><span class="tb-orb" aria-hidden="true"><svg class="orb-svg" viewBox="0 0 32 32" focusable="false" aria-hidden="true"><defs><radialGradient id="nsgTbSphere" cx="34%" cy="24%" r="76%"><stop offset="0%" stop-color="#ffffff"/><stop offset="18%" stop-color="#ccf6ff"/><stop offset="48%" stop-color="#2bbdf0"/><stop offset="78%" stop-color="#0b68a3"/><stop offset="100%" stop-color="#053252"/></radialGradient><radialGradient id="nsgTbAurora" cx="70%" cy="82%" r="55%"><stop offset="0%" stop-color="#76ffbc" stop-opacity="0.85"/><stop offset="100%" stop-color="#1180b8" stop-opacity="0"/></radialGradient><linearGradient id="nsgTbGloss" x1="35%" y1="0%" x2="55%" y2="100%"><stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs><circle cx="16" cy="16" r="14.6" fill="url(#nsgTbSphere)" stroke="#ffffff" stroke-opacity="0.92" stroke-width="1.3"/><circle cx="16" cy="16" r="14" fill="url(#nsgTbAurora)"/><ellipse cx="16" cy="16" rx="12.2" ry="4.8" transform="rotate(-22 16 16)" fill="none" stroke="#7affce" stroke-opacity="0.65" stroke-width="1.1"/><path d="M 4.5 17 L 7.2 17 L 9 22.2 L 11 8.5 L 20.8 22.8 L 22.8 8.8 L 24.6 15.5 L 27.5 15.5" fill="none" stroke="#042b47" stroke-opacity="0.65" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 4.5 17 L 7.2 17 L 9 22.2 L 11 8.5 L 20.8 22.8 L 22.8 8.8 L 24.6 15.5 L 27.5 15.5" fill="none" stroke="#b5f8ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M 9 22.2 L 11 8.5 L 20.8 22.8 L 22.8 8.8" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="12.5" cy="7.5" rx="8.2" ry="4.3" transform="rotate(-18 12.5 7.5)" fill="url(#nsgTbGloss)"/></svg></span><b data-i18n="app.name">NSG 歌声合成器</b><!-- UI label only: 2008 is independent of the product version and may change with skins. --><i id="appVersionTag">v8.2008</i></div>
+      <div class="menubar">
+        <div class="mg"><button data-i18n="menu.start" class="mbtn" data-act="import">开始</button>
+          <div class="dropdown">
+            <a data-i18n="menu.newProject" data-act="newProject">新建</a>
+            <a data-i18n="menu.fileImport" data-act="fileImport">导入工程文件…（MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG）</a>
+            <a data-i18n="menu.demo" data-act="demo">载入示例乐谱</a>
+          </div>
+        </div>
+        <div class="mg"><button data-i18n="menu.export" class="mbtn" data-act="export">导出</button>
+          <div class="dropdown">
+            <a data-i18n="menu.expVocal" data-act="expVocal">导出本层人声</a>
+            <a data-i18n="menu.expVocalLayers" data-act="expVocalLayers">导出所有人声音层</a>
+            <a data-i18n="menu.expAccomp" data-act="expAccomp">导出伴奏</a>
+            <a data-i18n="menu.expMix" data-act="expMix">导出混音</a>
+            <a data-i18n="menu.expMidi" data-act="expMidi">导出全曲 MIDI</a>
+            <a data-i18n="menu.expVocalMidi" data-act="expVocalMidi">导出人声 MIDI（含歌词）</a>
+            <a data-i18n="menu.expAccompMidi" data-act="expAccompMidi">导出伴奏 MIDI</a>
+            <a data-i18n="menu.expUfdata" data-act="expUfdata">导出 ufdata（UtaFormatix）</a>
+            <a data-i18n="menu.expProj" data-act="expProj">导出工程文件 .nsg</a>
+          </div>
+        </div>
+        <div class="mg"><button data-i18n="menu.compose" data-i18n-title="menu.composeTitle" class="mbtn" data-act="compose" title="拖动曲线来谱曲：默认在末尾追加；选中多个音符时只改选中段音高，保留长度">快速谱曲</button></div>
+        <div class="mg"><button data-i18n="menu.arrange" class="mbtn" data-act="arrange">自动伴奏</button></div>
+        <div class="mg"><button data-i18n="menu.accompPresets" class="mbtn" data-act="accompPresets">伴奏乐器</button></div>
+        <div class="mg"><button data-i18n="menu.autoTune" class="mbtn" data-act="autoTune">自动调教</button></div>
+        <div class="mg"><button data-i18n="menu.extract" class="mbtn" data-act="extract">音色撅取</button></div>
+        <div class="mg"><button data-i18n="menu.bg" class="mbtn" data-act="bg">背景</button></div>
+        <div class="mg"><button data-i18n="menu.theme" class="mbtn" data-act="theme">主题</button></div>
+        <div class="ui-transparency">
+          <label for="uiTransparency" data-i18n="menu.uiTransparency">界面透明度</label>
+          <input type="range" id="uiTransparency" min="0" max="80" step="1" value="15" aria-describedby="uiTransparencyValue" title="数值越大，背景越清晰；0% 为不透明" data-i18n-title="menu.uiTransparencyTitle">
+          <output id="uiTransparencyValue" for="uiTransparency">15%</output>
+        </div>
+      </div>
+      <div class="tb-right">
+        <div class="mg lang-mg"><button class="wbtn" id="uiLangBtn" data-act="uiLang" title="Switch UI Language (English / 中文)" aria-label="切换界面语言 / Switch Language">language</button><div class="dropdown" id="uiLangMenu"></div></div>
+        <button class="wbtn" data-act="help" title="快捷键与操作（F1）" aria-label="快捷键与操作" data-i18n-title="menu.helpTitle" data-i18n-aria-label="menu.helpAria">?</button>
+        <button class="wbtn" data-act="about" data-i18n="menu.about">关于</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- 左：音色 -->
+      <aside class="panel left">
+        <div class="cap"><span class="capdot"></span><span data-i18n="left.title">音色参数块</span></div>
+        <div class="pbody">
+          <div class="cap2"><span data-i18n="left.singers">歌手</span><span class="mini" data-i18n="left.singersNote">预置 · 只读</span></div>
+          <div class="singerGrid" id="singerGrid"></div>
+          <div class="cap2"><span data-i18n="left.timbreParams">音色参数</span><span class="mini" data-i18n="left.timbreParamsNote">改一项即变自定义</span></div>
+          <div class="row">
+            <label data-i18n="left.gen">性别 GEN</label>
+            <input type="range" id="sGen" min="0" max="127" step="1" value="64" aria-label="音色性别 GEN" data-i18n-aria-label="left.genAria">
+            <span class="val" id="vGen">64</span>
+          </div>
+          <div class="row">
+            <label data-i18n="left.height">身高</label>
+            <input type="range" id="sHeight" min="140" max="200" step="1" value="160">
+            <span class="val" id="vHeight">160</span>
+          </div>
+          <div class="hint" data-i18n="left.heightHint">身高越高，声道越长，共振峰整体越低。</div>
+          <div class="row">
+            <label data-i18n="left.bw">共振峰宽度</label>
+            <input type="range" id="sBw" min="0.4" max="2.4" step="0.02" value="1">
+            <span class="val" id="vBw">1.00</span>
+          </div>
+          <div class="row">
+            <label data-i18n="left.hi">高阶共振峰</label>
+            <input type="range" id="sHi" min="0.65" max="1.30" step="0.005" value="1">
+            <span class="val" id="vHi">1.00</span>
+          </div>
+          <div class="row f3">
+            <label data-i18n="left.f456">F4·F5·F6</label>
+            <input type="number" id="f4" min="1500" max="7000" step="10" value="3300">
+            <input type="number" id="f5" min="1800" max="7400" step="10" value="4200">
+            <input type="number" id="f6" min="2000" max="7600" step="10" value="5200">
+          </div>
+          <div class="row">
+            <label data-i18n="left.lip">圆唇度</label>
+            <input type="range" id="sLip" min="0" max="0.30" step="0.01" value="0">
+            <span class="val" id="vLip">0.00</span>
+          </div>
+          <div class="row">
+            <label data-i18n="left.tilt">谱倾斜</label>
+            <input type="range" id="sTilt" min="-12" max="12" step="1" value="0">
+            <span class="val" id="vTilt">0</span>
+          </div>
+          <div class="row">
+            <label data-i18n="left.breath">气声</label>
+            <input type="range" id="sBre" min="0" max="0.30" step="0.01" value="0.02">
+            <span class="val" id="vBre">0.02</span>
+          </div>
+          <div class="row">
+            <label data-i18n="left.nasal">鼻腔耦合</label>
+            <input type="range" id="sNas" min="0" max="0.30" step="0.01" value="0.08">
+            <span class="val" id="vNas">0.08</span>
+          </div>
+          <details class="more">
+            <summary data-i18n="left.moreParams">更多音色参数 · 5</summary>
+            <div class="row">
+              <label data-i18n="left.fScale">声道缩放</label>
+              <input type="range" id="sScale" min="0.72" max="1.38" step="0.01" value="1">
+              <span class="val" id="vScale">1.00</span>
+            </div>
+            <div class="hint" data-i18n="left.fScaleHint">与身高解耦的第二根长度旋钮：只缩声道、不改“身体高度”。男女声、童声靠它在同一身高下分开。</div>
+            <div class="row">
+              <label data-i18n="left.warp">共振峰离散</label>
+              <input type="range" id="sWarp" min="-0.30" max="0.30" step="0.01" value="0">
+              <span class="val" id="vWarp">0.00</span>
+            </div>
+            <div class="hint" data-i18n="left.warpHint">正值把高阶共振峰往上推（细、亮），负值往下压（粗、闷）。这是“形状”，不是“长短”。</div>
+            <div class="row">
+              <label data-i18n="left.jitter">基频微扰</label>
+              <input type="range" id="sJit" min="0" max="0.02" step="0.001" value="0">
+              <span class="val" id="vJit">0.00%</span>
+            </div>
+            <div class="hint" data-i18n="left.jitterHint">周期抖动：0.2% 听不出，0.9% 明显沙。真实嗓音都有，是“粗糙感”的来源。</div>
+            <div class="row">
+              <label data-i18n="left.glottal">胸腔共鸣</label>
+              <input type="range" id="sGlo" min="0" max="1" step="0.01" value="0">
+              <span class="val" id="vGlo">0.00</span>
+            </div>
+            <div class="hint" data-i18n="left.glottalHint">与元音无关的固定低共振峰（大人约 280Hz、童声约 480Hz）：同一个人唱什么字都带着它。</div>
+            <div class="row">
+              <label title="模式B的有声高频延伸；周期谐波与随气声量变化的气流成分共同延伸至约20kHz" data-i18n="left.modeBHigh" data-i18n-title="left.modeBHighTitle">有声高频</label>
+              <input type="range" id="sModeBHigh" min="0" max="1" step="0.01" value="0.4">
+              <span class="val" id="vModeBHigh">40%</span>
+            </div>
+            <div class="hint" data-i18n="left.modeBHighHint">只调模式B元音的高次谐波；0 关闭延伸，默认 40%。不增加气声或清辅音。</div>
+          </details>
+          <div id="hifiControls" class="hifi-left" hidden>
+            <div class="cap2"><span data-i18n="left.hifiParams">HiFi 参数</span><span class="mini" data-i18n="left.hifiParamsNote">仅 48kHz</span></div>
+            <div class="row">
+              <label for="sWaveguide" title="HiFi 擦音前腔波导耦合程度（仅 48kHz HiFi 模式生效）：0% 关闭，50% 轻耦合，100% 强耦合（默认）。" data-i18n="left.waveguide" data-i18n-title="left.waveguideTitle">波导系数</label>
+              <input type="range" id="sWaveguide" min="0" max="1" step="0.01" value="1">
+              <span class="val" id="vWaveguide">100%</span>
+            </div>
+            <div class="row">
+              <label for="sHighPolish" title="HiFi 高频联合优化程度（HNM 去周期 + 平滑包络，仅 48kHz HiFi 模式生效）：0% 关闭，100% 全量启用（默认）。" data-i18n="left.highPolish" data-i18n-title="left.highPolishTitle">因果函数</label>
+              <input type="range" id="sHighPolish" min="0" max="1" step="0.01" value="1">
+              <span class="val" id="vHighPolish">100%</span>
+            </div>
+          </div>
+          <div class="cap2"><span data-i18n="left.myBlocks">我的音色块</span><span class="mini" data-i18n="left.myBlocksNote">保存在本机</span></div>
+          <div class="row2"><select id="blockSel"></select></div>
+          <div class="row2">
+            <button class="abtn wide primary" data-act="saveBlock" data-i18n="left.saveBlock">保存音色块</button>
+            <button class="abtn" data-act="delBlock" style="flex:none" data-i18n="left.delBlock">删除</button>
+          </div>
+          <div class="cap2" data-i18n="left.phonemizer">音素器</div>
+          <div class="row2">
+            <select id="langSel" title="选择人声发音规则；+ 接续前词，+~ / +* 延长元音。手动选择优先于导入的语言标记。" data-i18n-title="left.phonemizerTitle">
+              <option value="zh">普通话</option>
+              <option value="yue">粤语</option>
+              <option value="ja">日语</option>
+              <option value="en">英语</option>
+              <option value="de">德语</option>
+              <option value="pl">波兰语</option>
+              <option value="ru">俄罗斯语</option>
+              <option value="uk">乌克兰语</option>
+              <option value="fi">芬兰语</option>
+              <option value="es">西班牙语</option>
+              <option value="pt">葡萄牙语</option>
+              <option value="it">意大利语</option>
+              <option value="fr">法语</option>
+              <option value="ro">罗马尼亚语</option>
+              <option value="nan">闽南语</option>
+              <option value="hak">客家话（四县腔）</option>
+              <option value="nan-x-teochew">潮州话（府城音）</option>
+              <option value="ko">朝鲜语</option>
+              <option value="vi">越南语</option>
+              <option value="fil">菲律宾语（他加禄语）</option>
+              <option value="id">印尼语</option>
+              <option value="ms">马来语</option>
+              <option value="th">泰语</option>
+              <option value="tok">道本语</option>
+              <option value="eo">世界语</option>
+              <option value="asaxi">Asaxi</option>
+            </select>
+          </div>
+          <div class="cap2"><span data-i18n="left.lyrics">歌词输入</span><span class="mini" data-i18n="left.lyricsNote">铺音符接在末尾</span></div>
+          <textarea id="lyrBox" rows="2" placeholder="在这里输入歌词：按「快速谱曲」拖曲线出旋律，按「铺音符」接在序列末尾" data-i18n-placeholder="left.lyricsPlaceholder"></textarea>
+          <div class="row2">
+            <label class="lb" data-i18n="left.key">调性</label>
+            <select id="keySel" class="tiny" title="主音（与自动谱曲共用）" data-i18n-title="left.keyTitle"></select>
+            <label class="lb" data-i18n="left.scale">音阶</label>
+            <select id="scaleSel" class="tiny" title="铺音符所用的音阶" data-i18n-title="left.scaleTitle">
+              <option value="penta" selected>五声</option>
+              <option value="major">大调</option>
+              <option value="minor">小调</option>
+            </select>
+            <label class="lb" data-i18n="left.octave">八度</label>
+            <select id="octSel" class="tiny" title="铺音符的起始八度" data-i18n-title="left.octaveTitle">
+              <option value="-12">低</option>
+              <option value="0" selected>中</option>
+              <option value="12">高</option>
+            </select>
+          </div>
+          <div class="row2">
+            <button class="abtn wide primary" data-act="toNotes" data-i18n="left.toNotes">按歌词铺音符</button>
+            <button class="abtn" data-act="batchLyric" title="打开批量输入歌词框，按语种自动分词并填入选中或全部音符" style="flex:none" data-i18n="left.batchLyric" data-i18n-title="left.batchLyricTitle">批量填词…</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 中：卷帘 -->
+      <main class="center">
+        <div class="transport">
+          <button class="pbtn play" data-act="play" id="btnPlay" aria-label="从游标播放 / 停止" title="从游标播放 / 停止（空格）" data-i18n-aria-label="transport.playAria" data-i18n-title="transport.playTitle"></button>
+          <button class="pbtn stop" data-act="stop" aria-label="停止并保留位置；已停止时回到第一个音符" title="停止并保留位置；已停止时回到第一个音符" data-i18n-aria-label="transport.stopAria" data-i18n-title="transport.stopTitle"></button>
+          <div class="tsep"></div>
+          <label class="tl" data-i18n="transport.tempo">速度</label>
+          <input type="number" id="tempo" class="numin" value="120" min="40" max="220">
+          <span class="tl">BPM</span>
+          <button class="abtn tiny" data-act="tempoMap" id="tempoSeg" title="分段速度（Tempo Map）" data-i18n="transport.tempoMap" data-i18n-title="transport.tempoMapTitle">分段…</button>
+          <div class="tsep"></div>
+          <label class="tl" data-i18n="transport.tool">工具</label>
+          <div class="toolgroup">
+            <button class="tool" data-tool="pen" aria-pressed="false" title="画笔：点击添加音符、拖动调整（1）" data-i18n="tool.pen" data-i18n-title="tool.penTitle">画笔</button>
+            <button class="tool on" data-tool="select" aria-pressed="true" title="框选：拖出矩形选中多个音符；Ctrl+点击逐个多选，Shift+点击首尾范围选择；右键弹出操作菜单（2）" data-i18n="tool.select" data-i18n-title="tool.selectTitle">框选</button>
+            <button class="tool" data-tool="erase" aria-pressed="false" title="擦除：点击删除音符（3）" data-i18n="tool.erase" data-i18n-title="tool.eraseTitle">擦除</button>
+            <button class="tool" data-tool="bend" aria-pressed="false" title="（4）PIT：点曲线加点，拖动控制点，中键删除内部控制点，右键选择后段形状或删除左/右侧控制点；首尾点不可删除；Shift+点切换 S 曲线/直线" data-i18n="tool.bend" data-i18n-title="tool.bendTitle">PIT 控制点</button>
+            <button class="tool" data-tool="pit" aria-pressed="false" title="（5）PIT画笔：左键自由绘制实际 PIT 曲线（与控制点解耦）；右键拖动或 Shift+左键擦除画笔曲线，恢复由控制点决定的基准线" data-i18n="tool.pit" data-i18n-title="tool.pitTitle">PIT画笔</button>
+          </div>
+          <button class="abtn tiny" data-act="slur" id="btnSlur" title="延音符：接着上一个音节唱，不重发辅音（快捷键 S）" data-i18n="transport.slur" data-i18n-title="transport.slurTitle">延音</button>
+          <div class="tsep"></div>
+          <span class="tl" data-i18n="transport.snap">吸附</span>
+          <select id="snapSel" class="selin">
+            <option value="1">1/4</option>
+            <option value="0.5">1/8</option>
+            <option value="0.25" selected>1/16</option>
+            <option value="0.125">1/32</option>
+            <option value="0.3333">三连音</option>
+          </select>
+          <div class="tsep"></div>
+          <label class="tl" style="cursor:pointer" title="跳过口腔与鼻腔共振，直接听未经滤波的声带音" data-i18n-title="transport.rawSrcTitle"><input type="checkbox" id="rawChk"> <span data-i18n="transport.rawSrc">只听声带音</span></label>
+        </div>
+        <div class="rolltools">
+          <button class="abtn tiny" id="hdVoice" aria-pressed="false" title="开启原生 48kHz 模式B合成；关闭使用既有 16kHz 合成。切换会停止播放并重新渲染。" data-i18n="rolltools.hd" data-i18n-title="rolltools.hdTitle">HiFi</button>
+          <button class="abtn tiny" id="octaveUp" title="升高八度：有选中音符时只调整选中部分，否则调整当前轨道全部音符" data-i18n="rolltools.octUp" data-i18n-title="rolltools.octUpTitle">↑ 升八度</button>
+          <button class="abtn tiny" id="octaveDown" title="降低八度：有选中音符时只调整选中部分，否则调整当前轨道全部音符" data-i18n="rolltools.octDown" data-i18n-title="rolltools.octDownTitle">↓ 降八度</button>
+          <button class="abtn tiny" data-act="batchLyric" title="批量输入/修改选中音符或全曲歌词" data-i18n="rolltools.batchLyric" data-i18n-title="rolltools.batchLyricTitle">批量填词…</button>
+          <button class="abtn tiny" data-act="autoTune" title="按风格生成 PIT、颤音和 VEL，可分别勾选" data-i18n="rolltools.autoTune" data-i18n-title="rolltools.autoTuneTitle">自动调教…</button>
+          <button class="abtn tiny" data-act="simplifyPitch" title="优先提取颤音，自由移动 PIT 控制点拟合曲线，误差不超过 5 音分；有选区处理选区，否则处理整个人声轨，可撤销" data-i18n="rolltools.simplifyPit" data-i18n-title="rolltools.simplifyPitTitle">精简 PIT</button>
+          <button class="abtn tiny active" id="showPitch" aria-pressed="true" title="显示/隐藏实际 PIT 曲线，隐藏后仍参与合成（I）" data-i18n="rolltools.showPitch" data-i18n-title="rolltools.showPitchTitle">PIT 曲线</button>
+          <button class="abtn tiny active" id="showControlPoints" aria-pressed="true" title="显示/隐藏控制点与控制点连线，隐藏后仍参与合成（O）" data-i18n="rolltools.showCtrl" data-i18n-title="rolltools.showCtrlTitle">控制点</button>
+          <button class="abtn tiny active" id="showVibrato" aria-pressed="true" title="显示/隐藏独立颤音曲线、音符上的颤音开关与控制柄，隐藏后仍参与合成（U）" data-i18n="rolltools.showVib" data-i18n-title="rolltools.showVibTitle">~ 颤音按钮</button>
+          <button class="abtn tiny active" id="showPhones" aria-pressed="true" title="显示/隐藏音符上方的音素；双击音素修改发音，红色星号表示自定义发音。隐藏不影响合成。" data-i18n="rolltools.showPhones" data-i18n-title="rolltools.showPhonesTitle">音素</button>
+          <button class="abtn tiny active" id="phonePanel" aria-pressed="true" title="显示/隐藏下方音素调整面板；选中后方柄向左拉音头、菱形调整交叉结束，下方竖线调整时长，双击更换音素。蓝色与紫色交替区分相邻词组。" data-i18n="rolltools.phonePanel" data-i18n-title="rolltools.phonePanelTitle">音素面板</button>
+          <label><span data-i18n="rolltools.zoomX">横向</span> <input id="zoomX" type="range" min="8" max="360" value="88" aria-label="横向缩放" data-i18n-aria-label="rolltools.zoomXAria"></label>
+          <label><span data-i18n="rolltools.zoomY">纵向</span> <input id="zoomY" type="range" min="10" max="34" value="20" aria-label="纵向缩放" data-i18n-aria-label="rolltools.zoomYAria"></label>
+          <button class="abtn tiny" id="fitRoll" title="缩放到能看见全曲（F）" data-i18n="rolltools.fit" data-i18n-title="rolltools.fitTitle">适配</button>
+          <button class="abtn tiny" id="focusRoll" aria-pressed="false" title="隐藏左右侧栏，给卷帘更多空间" data-i18n-title="rolltools.focusTitle">专注卷帘</button>
+          <button class="abtn tiny" id="undoRoll" title="Ctrl+Z" data-i18n="rolltools.undo">↶ 撤销</button>
+          <button class="abtn tiny" id="redoRoll" title="Ctrl+Y / Ctrl+Shift+Z" data-i18n="rolltools.redo">↷ 重做</button>
+          <output id="cursorPosition">游标 1:1.00</output>
+        </div>
+        <div class="rollwrap"><canvas id="roll" data-tool="select" title="框选模式：左键拖选或移动音符；Ctrl+点击逐个多选，Shift+点击首尾范围选择；右键弹出操作菜单；双击改词，双击音素改发音" data-i18n-title="roll.canvasTitle"></canvas></div>
+        <div class="roll-scrollbar" id="rollScroll" tabindex="0" role="region" aria-label="钢琴卷帘横向滚动" title="拖动滚动条浏览曲谱，也可用方向键横向滚动" data-i18n-aria-label="roll.scrollAria" data-i18n-title="roll.scrollTitle"><div></div></div>
+        <div class="phone-inspector" id="phoneInspectorRow">
+          <span class="phone-caption" id="phoneSelected" title="蓝色、紫色按词组交替；同词的跨音符音节与延音保持同色" data-i18n-title="phone.selectTitle">请选择音素</span>
+          <fieldset id="phoneInspector" disabled>
+            <label><span data-i18n="phone.symbol">音素</span><input id="phoneSymbol" type="text" list="phoneSymbols" autocomplete="off" aria-label="更换选中的音素" data-i18n-aria-label="phone.symbolAria"></label>
+            <label title="相对所属音符起点的毫秒数；负数表示辅音前置" data-i18n-title="phone.startTitle"><span data-i18n="phone.start">起点 ms</span><input id="phoneStart" type="number" step="1"></label>
+            <label title="调整右侧边界，邻接音素的时长随之变化" data-i18n-title="phone.durTitle"><span data-i18n="phone.dur">时长 ms</span><input id="phoneDuration" type="number" min="0.1" step="1"></label>
+            <label title="将音头向左伸入前一音素尾部并平滑过渡；保留原边界与后续音素位置。也可拖动选中音素左侧的小方柄。" data-i18n-title="phone.antTitle"><span data-i18n="phone.ant">音头提前 ms</span><input id="phoneAnticipation" type="number" min="0" max="200" step="1"></label>
+            <label title="原边界之后继续过渡的时长；与音头提前共同决定完整交叉区，菱形调整过渡结束位置" data-i18n-title="phone.xfadeTitle"><span data-i18n="phone.xfade">交叉 ms</span><input id="phoneCrossfade" type="number" min="0" max="200" step="1"></label>
+            <label><span data-i18n="phone.word">词组</span><select id="phoneWordGroup"><option value="auto">自动区分</option><option value="join">接前词</option><option value="new">新词</option></select></label>
+            <button type="button" class="abtn tiny" id="phoneSequence" title="编辑所属音符的完整音素序列，也可增删音素" data-i18n="phone.seqBtn" data-i18n-title="phone.seqTitle">整组音素…</button>
+            <button type="button" class="abtn tiny" id="phoneTimingReset" title="恢复所属音符的自动时序与交叉，保留自定义发音；手动时序优先于辅音速度" data-i18n="phone.resetBtn" data-i18n-title="phone.resetTitle">自动时序</button>
+          </fieldset>
+          <span class="phone-hint" data-i18n="phone.hint">方柄向左拉音头 · 菱形调交叉 · 下方竖线调时长</span>
+          <datalist id="phoneSymbols"></datalist>
+        </div>
+        <div class="underbar">
+          <span class="uhint" title="点击标尺定位 / 拖动播放头；停止保留游标，空格继续播放。滚轮上下，Shift+滚轮横向，Ctrl+滚轮缩放。" data-i18n="under.hint" data-i18n-title="under.hintTitle">标尺定位 · 空格续播 · 双击歌词 · 1–5 切换工具 · F1 查看全部快捷键</span>
+          <div class="mixer">
+            <span class="mxcap" data-i18n="mix.cap">混音</span>
+            <div class="mx">
+              <span class="mxlab" data-i18n="mix.vocal">人声</span>
+              <input type="range" id="volVox" min="0" max="130" step="1" value="56" title="人声总音量（Master）" data-i18n-title="mix.vocalTitle">
+              <span class="mxval" id="vvVox">56%</span>
+              <button class="mxfx" id="loveReverb" type="button" aria-pressed="false" title="开启时人声音量设为 32%；预设立体声混响用于播放和混音导出，人声导出仍为单声道干声" data-i18n="mix.reverb" data-i18n-title="mix.reverbTitle">情歌混响</button>
+              <div class="leds" id="lVox"><i></i><i></i><i></i><i></i><i></i></div>
+              <button class="mxm" id="mVox" title="静音人声" data-i18n-title="mix.muteVocalTitle">M</button>
+            </div>
+            <div class="mx">
+              <span class="mxlab" data-i18n="mix.accomp">伴奏</span>
+              <input type="range" id="volAcc" min="0" max="130" step="1" value="75" title="伴奏轨音量" data-i18n-title="mix.accompTitle">
+              <span class="mxval" id="vvAcc">75%</span>
+              <div class="leds" id="lAcc"><i></i><i></i><i></i><i></i><i></i></div>
+              <button class="mxm" id="mAcc" title="静音伴奏" data-i18n-title="mix.muteAccompTitle">M</button>
+            </div>
+            <button class="mxpanic" id="panic" type="button" title="立即停止播放和所有音频，包括混响尾音" data-i18n-title="mix.panicTitle">Panic</button>
+          </div>
+          <span id="renderInfo"></span>
+        </div>
+      </main>
+
+      <!-- 右：曲谱参数 -->
+      <aside class="panel right">
+        <div class="cap"><span class="capdot"></span><span data-i18n="right.title">曲谱参数</span></div>
+        <div class="pbody">
+          <details class="roll-inspector layers-inspector" open>
+            <summary class="ins-heading"><b data-i18n="layer.heading">音层</b><span id="layerCount">1 轨</span></summary>
+            <div class="layer-toolbar" role="toolbar" aria-label="音层操作" data-i18n-aria-label="layer.toolbarAria">
+              <button type="button" class="abtn tiny layer-tool" id="layerAdd" title="新建空白人声音层" aria-label="新建人声音层" data-i18n-title="layer.addTitle" data-i18n-aria-label="layer.addAria">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="abtn tiny layer-tool layer-tool-import" id="layerImport" title="导入工程并附加为新音层（不覆盖现有工程）" data-i18n-title="layer.importTitle">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2.5 4.5h4l1.2 1.5h5.8v6.5h-11z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 7.5v3.5M6.3 9.3h3.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                <span data-i18n="layer.importLabel">导入…</span>
+              </button>
+              <span class="layer-tsep" aria-hidden="true"></span>
+              <button type="button" class="abtn tiny layer-tool" id="layerUnmuteAll" title="全部人声音层发声" aria-label="全部音层发声" data-i18n-title="layer.unmuteAllTitle" data-i18n-aria-label="layer.unmuteAllAria">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2.5 6.2h2.4l3.3-2.7v9L4.9 9.8H2.5z" fill="currentColor"/><path d="M10.3 5.5a3.5 3.5 0 0 1 0 5M12.2 3.8a6 6 0 0 1 0 8.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="abtn tiny layer-tool" id="layerMuteAll" title="全部人声音层静音" aria-label="全部音层静音" data-i18n-title="layer.muteAllTitle" data-i18n-aria-label="layer.muteAllAria">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2.5 6.2h2.4l3.3-2.7v9L4.9 9.8H2.5z" fill="currentColor"/><path d="M10.4 6.2l3.4 3.6M13.8 6.2l-3.4 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <span class="layer-tsep" aria-hidden="true"></span>
+              <button type="button" class="abtn tiny layer-tool" id="layerShowAll" title="全部音层在卷帘显示" aria-label="全部音层显示" data-i18n-title="layer.showAllTitle" data-i18n-aria-label="layer.showAllAria">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>
+              </button>
+              <button type="button" class="abtn tiny layer-tool" id="layerHideAll" title="隐藏全部人声音层卷帘显示" aria-label="全部音层隐藏" data-i18n-title="layer.hideAllTitle" data-i18n-aria-label="layer.hideAllAria">
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".55"/><path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="layer-list" id="layerList" role="list" aria-label="音层列表" data-i18n-aria-label="layer.listAria"></div>
+            <div class="hint ins-hint" data-i18n="layer.hint">点击人声音层切换编辑；点击色块可换色</div>
+          </details>
+          <details class="roll-inspector" open>
+            <summary class="ins-heading"><b>音符 / 调教</b><span id="insCount">请选择音符</span></summary>
+            <fieldset id="noteInspector" disabled>
+              <div class="ins-grid">
+                <label><span data-i18n="ins.lyric">歌词</span><input id="insLyric" type="text"></label>
+                <label><span data-i18n="ins.pitch">音高 MIDI</span><input id="insPitch" type="number" min="24" max="100" step="1"></label>
+                <label><span data-i18n="ins.dur">时值 / 拍</span><input id="insDur" type="number" min="0.0625" step="0.25"></label>
+                <label title="VEL 调整声带音、气声及摩擦噪声的相对力度；96 为默认，不影响辅音时长" data-i18n-title="ins.velTitle"><span data-i18n="ins.vel">VEL 力度</span><input id="insVel" type="number" min="1" max="127"></label>
+                <label title="100 为默认，越大辅音越快越短：200 为一半长度，0 为两倍（与 UTAU 的 Velocity 相同）。影响声母和韵尾，声母仍前置对拍；主元音至少保留 45%；延音链使用首音的设置" data-i18n-title="ins.consSpeedTitle"><span data-i18n="ins.consSpeed">辅音速度</span><input id="insConsonantSpeed" type="number" min="0" max="200" step="5" value="100"></label>
+                <div class="ins-sub" data-i18n="ins.vibSub">颤音参数</div>
+                <label><span data-i18n="ins.vibLen">颤音长度 %</span><input id="vibLength" type="number" min="0" max="100" step="1"></label>
+                <label><span data-i18n="ins.vibDepth">深度 / 音分</span><input id="vibDepth" type="number" min="0" max="200" step="1"></label>
+                <label title="每秒颤动次数；BPM 改变时每拍波数随实际时长变化。也可拖动音符旁带 Hz 数值的频率滑块" data-i18n-title="ins.vibRateTitle"><span data-i18n="ins.vibRate">颤音频率 / Hz</span><input id="vibRate" type="number" min="1" max="12" step="0.1"></label>
+                <label title="也可按住灰色颤音曲线左右拖动调相" data-i18n-title="ins.vibPhaseTitle"><span data-i18n="ins.vibPhase">相位 / °</span><input id="vibPhase" type="number" min="0" max="360" step="1"></label>
+                <label><span data-i18n="ins.vibFadeIn">淡入 %</span><input id="vibFadeIn" type="number" min="0" max="100" step="1"></label>
+                <label><span data-i18n="ins.vibFadeOut">淡出 %</span><input id="vibFadeOut" type="number" min="0" max="100" step="1"></label>
+                <div class="ins-sub" data-i18n="ins.pitSub">PIT 包络</div>
+                <label title="批量修改所选音符的全部 PIT 段；单段请右键控制点" data-i18n-title="ins.pitAllSegsTitle"><span data-i18n="ins.pitAllSegs">全部 PIT 段</span><select id="pitShape"><option value="" disabled>多种形状</option><option value="s">缓入缓出（S 曲线）</option><option value="l">直线</option><option value="i">缓入</option><option value="o">缓出</option><option value="sp">平滑（样条）</option></select></label>
+                <div class="ins-actions"><button id="vibToggle" class="abtn" type="button" data-i18n="ins.vibEnable">启用颤音</button><button id="pitReset" class="abtn" type="button" data-i18n="ins.pitReset">重置 PIT</button></div>
+              </div>
+            </fieldset>
+            <div class="hint ins-hint" data-i18n="ins.pitHint">PIT：中键删除控制点，右键调整后段形状</div>
+          </details>
+          <details class="roll-inspector acoustic-inspector">
+            <summary class="ins-heading"><b data-i18n="an.heading">声学分析</b></summary>
+            <div class="an-cap"><span data-i18n="an.curve">512 点滤波曲线</span><span class="mini" id="curveVowel">/a/</span></div>
+            <canvas id="cvCurve" class="an" width="272" height="118"></canvas>
+            <div class="an-cap"><span data-i18n="an.grid">1000 列频率网格</span><span class="mini" id="gridResolution">8Hz / 列</span></div>
+            <canvas id="cvGrid" class="an" width="272" height="150"></canvas>
+            <div class="an-cap"><span data-i18n="an.harm">倍频振幅</span><span class="mini" data-i18n="an.harmOrder">1–16 阶</span></div>
+            <canvas id="cvHarm" class="an" width="272" height="86" tabindex="-1"></canvas>
+          </details>
+        </div>
+      </aside>
+    </div>
+
+    <div class="statusbar">
+      <span id="status">就绪</span>
+      <span class="sb-right" id="audioQuality">人声 16kHz 单声道 · 伴奏 48kHz 立体声</span>
+    </div>
+  </div>
+</div>
+
+<div id="ctxMenu" class="ctx-menu" role="menu" aria-label="右键菜单" data-i18n-aria-label="ctx.aria" hidden></div>
+<div id="modalRoot"></div>
+<div id="processingNotice" role="status" aria-live="polite" hidden><div class="processing-notice-box"><span class="processing-notice-orb" aria-hidden="true"><svg class="orb-svg" viewBox="0 0 100 100" focusable="false" aria-hidden="true"><defs><radialGradient id="nsgProcSphere" cx="34%" cy="25%" r="74%"><stop offset="0%" stop-color="#ffffff"/><stop offset="16%" stop-color="#d4f8ff"/><stop offset="44%" stop-color="#3bc3f0"/><stop offset="74%" stop-color="#0d72ad"/><stop offset="100%" stop-color="#063659"/></radialGradient><radialGradient id="nsgProcAurora" cx="68%" cy="82%" r="56%"><stop offset="0%" stop-color="#78ffbe" stop-opacity="0.84"/><stop offset="55%" stop-color="#3ae6b2" stop-opacity="0.3"/><stop offset="100%" stop-color="#1186c2" stop-opacity="0"/></radialGradient><linearGradient id="nsgProcComet" gradientUnits="userSpaceOnUse" x1="5" y1="50" x2="95" y2="50"><stop offset="0%" stop-color="#5ce8b8" stop-opacity="0"/><stop offset="32%" stop-color="#3cd8ab" stop-opacity="0.38"/><stop offset="70%" stop-color="#1d9cd8" stop-opacity="0.82"/><stop offset="100%" stop-color="#0a699e" stop-opacity="1"/></linearGradient><linearGradient id="nsgProcGloss" x1="36%" y1="0%" x2="56%" y2="100%"><stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/><stop offset="60%" stop-color="#e5f9ff" stop-opacity="0.24"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></linearGradient><clipPath id="nsgProcClip"><circle cx="50" cy="50" r="33"/></clipPath></defs><circle class="proc-ripple" cx="50" cy="50" r="35" fill="none" stroke="#36b9f0" stroke-width="1.8"/><circle cx="50" cy="50" r="45" fill="none" stroke="#1f8fc4" stroke-opacity="0.16" stroke-width="4.5"/><circle class="proc-cal-ring" cx="50" cy="50" r="39.5" fill="none" stroke="#28a4d8" stroke-opacity="0.42" stroke-width="1.5" stroke-dasharray="3.5 5.5"/><g class="proc-comet"><path d="M 5 50 A 45 45 0 0 1 50 5 A 45 45 0 0 1 95 50" fill="none" stroke="url(#nsgProcComet)" stroke-width="5" stroke-linecap="round"/><circle cx="95" cy="50" r="3.1" fill="#0a699e"/><circle cx="95" cy="50" r="1.5" fill="#e8fbff"/></g><circle cx="50" cy="50" r="34" fill="url(#nsgProcSphere)" stroke="#ffffff" stroke-opacity="0.95" stroke-width="2"/><circle cx="50" cy="50" r="33" fill="url(#nsgProcAurora)"/><g clip-path="url(#nsgProcClip)"><g class="proc-bars" stroke="#8affd2" stroke-opacity="0.52" stroke-width="2.6" stroke-linecap="round"><line x1="31" y1="41" x2="31" y2="59"/><line x1="40" y1="33" x2="40" y2="67"/><line x1="50" y1="28" x2="50" y2="72"/><line x1="60" y1="34" x2="60" y2="66"/><line x1="69" y1="41" x2="69" y2="59"/></g><ellipse class="proc-orbit" cx="50" cy="50" rx="30" ry="11.5" transform="rotate(-22 50 50)" fill="none" stroke="#7effd0" stroke-opacity="0.62" stroke-width="1.8"/><path d="M 19 52 L 25 52 L 28 46 L 32 65 L 37 31 L 62 66 L 67 32 L 71 53 L 74 48 L 81 48" fill="none" stroke="#042c4a" stroke-opacity="0.58" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 19 52 L 25 52 L 28 46 L 32 65 L 37 31 L 62 66 L 67 32 L 71 53 L 74 48 L 81 48" fill="none" stroke="#62eeff" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 32 65 L 37 31 L 62 66 L 67 32" fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/><path class="proc-pulse-runner" pathLength="180" d="M 19 52 L 25 52 L 28 46 L 32 65 L 37 31 L 62 66 L 67 32 L 71 53 L 74 48 L 81 48" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="proc-node proc-node-1" cx="37" cy="31" r="2.6" fill="#ffffff" stroke="#53e6ff" stroke-width="1"/><circle class="proc-node proc-node-2" cx="67" cy="32" r="2.6" fill="#ffffff" stroke="#6dffbe" stroke-width="1"/><ellipse cx="41" cy="29" rx="20" ry="10.5" transform="rotate(-18 41 29)" fill="url(#nsgProcGloss)"/></g></svg></span><span class="processing-notice-content"><span><span data-i18n="status.wait">请稍候</span><span class="processing-notice-dots" aria-hidden="true"><i></i><i></i><i></i></span></span><small id="processingElapsed" aria-hidden="true">已用时 0 秒</small></span></div></div>
+<input type="file" id="fileInput" style="display:none" accept=".mid,.midi,.vsq,.vsqx,.vpr,.svp,.ust,.ustx,.tlp,.tlpx,.nn,.acep,.vcp,.vsp,.dsc,.ufdata,.ufd,.nsg,.json">
+<input type="file" id="layerFileInput" style="display:none" accept=".mid,.midi,.vsq,.vsqx,.vpr,.svp,.ust,.ustx,.tlp,.tlpx,.nn,.acep,.vcp,.vsp,.dsc,.ufdata,.ufd,.nsg,.json">
+<input type="file" id="audioInput" style="display:none" accept="audio/*">
+
+<script src="js/phonemes.js"></script>
+<script src="js/timbre.js"></script>
+<script src="js/data/th.js"></script>
+<script src="js/g2p.js"></script>
+<script src="js/tempo.js"></script>
+<script src="js/tuning.js"></script>
+<script src="js/instruments.js"></script>
+<script src="js/dsp.js"></script>
+<script src="js/analyze.js"></script>
+<script src="js/fft-wasm.js"></script>
+<script src="js/render-service.js"></script>
+<script src="js/fzstd.js"></script>
+<script src="js/fflate.js"></script>
+<script src="js/io.js"></script>
+<script src="js/reverb.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/pianoroll.js"></script>
+<script src="js/phoneme-panel.js"></script>
+<script src="js/compose.js"></script>
+<script src="assets/demo-project.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

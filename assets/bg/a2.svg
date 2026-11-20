@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160" viewBox="0 0 3840 2160"><desc>Frutiger Aero 风格软件背景壁纸，16:9 横向。整幅画面从边缘到边缘连续铺满：清澈青蓝海水，柔和的斜射阳光，零星小气泡，底部角落少量海草，中央是宁静低对比的蓝绿色渐变。无任何边框、描边、内框、矩形色块、界面、面板、按钮、文字、图标、标志或水印。整合细碎的细节为更干净的面。</desc>
+  <title>Frutiger Aero underwater software wallpaper</title>
+  <desc>Full-bleed tranquil cyan-blue ocean scene with soft diagonal sunlight, subtle bubbles and sparse sea grass, built entirely from editable vector shapes and gradients.</desc>
+  <defs>
+    <linearGradient id="ocean" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4fc9dc"/>
+      <stop offset=".28" stop-color="#168eae"/>
+      <stop offset=".58" stop-color="#087d9d"/>
+      <stop offset="1" stop-color="#07536f"/>
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="51%" cy="48%" r="67%">
+      <stop offset="0" stop-color="#7edbd7" stop-opacity=".72"/>
+      <stop offset=".38" stop-color="#43bdc9" stop-opacity=".34"/>
+      <stop offset="1" stop-color="#08708e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="surface" x1="0" y1="0" x2=".15" y2="1">
+      <stop offset="0" stop-color="#e6ffff" stop-opacity=".40"/>
+      <stop offset=".18" stop-color="#b9f7f4" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#b9f7f4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efffff" stop-opacity=".36"/>
+      <stop offset=".45" stop-color="#c9ffff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#bafff4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="grassA" x1="0" y1="1" x2=".7" y2="0">
+      <stop offset="0" stop-color="#064f61"/>
+      <stop offset=".55" stop-color="#168c8b"/>
+      <stop offset="1" stop-color="#6bd1b5"/>
+    </linearGradient>
+    <linearGradient id="grassB" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#07576a"/>
+      <stop offset="1" stop-color="#51c5b3"/>
+    </linearGradient>
+    <radialGradient id="bubble" cx="32%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".68"/>
+      <stop offset=".22" stop-color="#d9ffff" stop-opacity=".26"/>
+      <stop offset=".72" stop-color="#a8f5f8" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#eaffff" stop-opacity=".30"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <filter id="softSmall" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect width="3840" height="2160" fill="url(#ocean)"/>
+  <rect width="3840" height="2160" fill="url(#centerGlow)"/>
+
+  <path d="M-180 0H1080L2280 2160H980Z" fill="url(#ray)" opacity=".72"/>
+  <path d="M380 0H1250L2510 2160H1870Z" fill="url(#ray)" opacity=".42"/>
+  <path d="M1180 0H1650L2910 2160H2560Z" fill="url(#ray)" opacity=".20"/>
+  <path d="M-120 0H3840V430C3010 300 2430 360 1700 260C930 155 430 265-120 430Z" fill="url(#surface)"/>
+
+  <g fill="none" stroke="#d6ffff" stroke-linecap="round" filter="url(#soft)" opacity=".14">
+    <path d="M-80 470C410 300 720 360 1120 500S1810 730 2300 500 3240 320 3950 510" stroke-width="54"/>
+    <path d="M-90 710C500 550 840 620 1260 740S2070 920 2540 700 3400 570 3940 730" stroke-width="36"/>
+    <path d="M300 1160C820 1000 1210 1070 1600 1190S2380 1350 2870 1150 3550 1030 3920 1160" stroke-width="28"/>
+  </g>
+  <g fill="none" stroke="#b8f8f4" stroke-linecap="round" opacity=".10">
+    <path d="M-60 520C390 370 700 410 1110 550S1840 770 2310 540 3250 370 3910 540" stroke-width="5"/>
+    <path d="M-80 760C480 610 840 670 1270 790S2070 960 2550 750 3400 620 3910 770" stroke-width="4"/>
+  </g>
+
+  <g fill="#d9ffff" opacity=".23">
+    <circle cx="430" cy="890" r="4"/><circle cx="710" cy="570" r="3"/>
+    <circle cx="1030" cy="1280" r="4"/><circle cx="1450" cy="840" r="3"/>
+    <circle cx="1780" cy="1510" r="4"/><circle cx="2140" cy="1030" r="3"/>
+    <circle cx="2500" cy="670" r="4"/><circle cx="2860" cy="1420" r="3"/>
+    <circle cx="3250" cy="910" r="4"/><circle cx="3560" cy="1210" r="3"/>
+    <circle cx="3700" cy="520" r="3"/><circle cx="560" cy="1640" r="3"/>
+    <circle cx="1280" cy="1770" r="3"/><circle cx="3030" cy="1780" r="4"/>
+  </g>
+
+  <g fill="url(#bubble)" stroke="#e7ffff" stroke-opacity=".48">
+    <circle cx="520" cy="1130" r="19" stroke-width="3"/>
+    <circle cx="585" cy="1010" r="10" stroke-width="2"/>
+    <circle cx="720" cy="1250" r="27" stroke-width="3"/>
+    <circle cx="775" cy="1165" r="9" stroke-width="2"/>
+    <circle cx="1110" cy="650" r="15" stroke-width="2"/>
+    <circle cx="1190" cy="560" r="8" stroke-width="2"/>
+    <circle cx="1600" cy="1320" r="12" stroke-width="2"/>
+    <circle cx="1660" cy="1240" r="23" stroke-width="3"/>
+    <circle cx="2220" cy="690" r="10" stroke-width="2"/>
+    <circle cx="2280" cy="620" r="18" stroke-width="3"/>
+    <circle cx="2750" cy="1090" r="24" stroke-width="3"/>
+    <circle cx="2810" cy="1000" r="10" stroke-width="2"/>
+    <circle cx="3190" cy="760" r="14" stroke-width="2"/>
+    <circle cx="3250" cy="680" r="7" stroke-width="2"/>
+    <circle cx="3450" cy="1480" r="18" stroke-width="3"/>
+    <circle cx="3520" cy="1390" r="9" stroke-width="2"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" opacity=".48">
+    <path d="M510 1122q5-10 14-9M707 1238q7-13 17-13M1650 1308q4-7 10-7M2740 1078q8-13 18-12M3440 1468q6-10 14-10" stroke-width="4"/>
+  </g>
+
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 2160C70 2000 110 1830 95 1640C190 1810 205 1980 165 2160Z" fill="url(#grassA)" opacity=".88"/>
+    <path d="M75 2160C175 1990 235 1870 250 1680C300 1880 265 2040 220 2160Z" fill="url(#grassB)" opacity=".84"/>
+    <path d="M120 2160C265 2010 340 1870 365 1760C390 1950 325 2080 285 2160Z" fill="url(#grassA)" opacity=".72"/>
+    <path d="M0 2160C15 1990 20 1900 5 1815C85 1935 95 2060 80 2160Z" fill="#0a6572" opacity=".85"/>
+    <path d="M210 2160C260 2040 285 1940 280 1840C340 1980 330 2085 315 2160Z" fill="#0c7180" opacity=".72"/>
+
+    <path d="M3840 2160C3770 1990 3735 1810 3760 1620C3660 1800 3640 1990 3680 2160Z" fill="url(#grassA)" opacity=".86"/>
+    <path d="M3760 2160C3655 1995 3600 1855 3595 1685C3540 1880 3580 2050 3620 2160Z" fill="url(#grassB)" opacity=".82"/>
+    <path d="M3705 2160C3570 2010 3490 1870 3465 1765C3445 1945 3505 2080 3550 2160Z" fill="url(#grassA)" opacity=".72"/>
+    <path d="M3840 2160C3820 1990 3825 1900 3840 1810C3765 1940 3755 2060 3770 2160Z" fill="#0a6572" opacity=".84"/>
+    <path d="M3630 2160C3585 2040 3560 1945 3565 1840C3500 1980 3515 2085 3530 2160Z" fill="#0c7180" opacity=".7"/>
+  </g>
+
+  <g fill="none" stroke="#8be2ca" stroke-linecap="round" opacity=".42">
+    <path d="M94 2125C125 1960 120 1810 98 1680" stroke-width="7"/>
+    <path d="M218 2120C270 1950 290 1830 250 1710" stroke-width="6"/>
+    <path d="M3700 2120C3680 1940 3715 1780 3750 1660" stroke-width="7"/>
+    <path d="M3605 2115C3550 1945 3540 1820 3590 1715" stroke-width="6"/>
+  </g>
+
+  <path d="M0 2050C640 1980 1040 2110 1600 2070S2700 1990 3240 2070 3670 2080 3840 2040V2160H0Z" fill="#064d68" opacity=".18"/>
+</svg>
