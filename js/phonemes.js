@@ -171,7 +171,7 @@
   P.SP = { t: 'R' };
   NSG.specialPhone = function (text, lang) {
     var s = String(text === undefined ? '' : text).trim();
-    if (/^br$/i.test(s) || s === 'AP' || (!/^(yue|nan|hak|nan-x-teochew|ko|vi|pl|ru|uk|fi|eo|tok|asaxi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang || '') && /^ap$/i.test(s))) return 'br';
+    if (/^br$/i.test(s) || s === 'AP' || (!/^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|xdi8|ko|vi|pl|ru|uk|fi|eo|tok|asaxi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang || '') && /^ap$/i.test(s))) return 'br';
     if (/^SP$/i.test(s)) return 'SP';
     return null;
   };
@@ -471,6 +471,20 @@
   variant('r_uk', 'dx', { dur: 32, pl: 'alv' });
   variant('x_uk', 'x_ru', {});
   variant('hh_uk', 'h', { pl: 'glo', dur: 80, breathy: 0.20, breathyNoise: 1.4, na: { f: 1650, b: 2000, g: 0.08, v: true } });
+
+  /* Shidinn / Xdi8 (xdi8): dedicated nasal vowels, central rounded /ʉ/, and diphthong offglides;
+     do not retune existing languages. */
+  P.u_bar_xd = V3([310, 1550, 2350], 0.10);      // /ʉ/
+  P.ae_nas_xd = VN3([660, 1720, 2410], 0);       // /æ̃/ (Xdi8 2)
+  P.a_nas_xd = VN3([700, 1300, 2460], 0);        // /ɐ̃/ (Xdi8 T)
+  P.e_nas_xd = VN3([460, 1980, 2600], 0);        // /ẽ/ (Xdi8 8 nucleus)
+  P.at_nas_xd = VN3([500, 1480, 2480], 0);       // /ə̃/ (Xdi8 3 nucleus)
+  variant('I_nas_xd', 'i_nas_pt', { coda: 0.11, glide: true });   // /ɪ̯̃/ (Xdi8 8 offglide)
+  variant('U_nas_xd', 'u_nas_pt', { coda: 0.11, glide: true });   // /ʊ̯̃/ (Xdi8 3 offglide)
+  variant('E_off_xd', 'e_rom', { coda: 0.11, glide: true });      // /e̯/ (Xdi8 Y offglide)
+  variant('O_off_xd', 'o_rom', { coda: 0.11, glide: true });      // /o̯/ (Xdi8 L offglide)
+  variant('U_off_xd', 'U_ou', { coda: 0.12, glide: true });       // /ʊ̯/ (Xdi8 6 offglide)
+  variant('I_off_xd', 'I_rom', { coda: 0.11, glide: true });      // /ɪ̯/ (Xdi8 V offglide)
 
   NSG.PHONES = P;
 

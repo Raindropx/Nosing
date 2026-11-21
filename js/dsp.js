@@ -267,9 +267,9 @@
   // 普通话 n/l 与日语 m/n/ら行：给持阻形状留出可辨认的时间。
   // 只换算这两种语言的声母；韵尾、成音节鼻音与多语言共用表保持各自的参数。
   function clearSonorant(id, lang, onset) {
-    if (!onset || !/^(zh|ja)$/.test(lang)) return '';
+    if (!onset || !/^(zh|zh-x-sichuan|ja)$/.test(lang)) return '';
     if (/^(m|n|ny)$/.test(id)) return 'N';
-    if (lang === 'zh' && id === 'l_zh') return 'L';
+    if ((lang === 'zh' || lang === 'zh-x-sichuan') && id === 'l_zh') return 'L';
     if (lang === 'ja' && id === 'dx') return 'T';
     return '';
   }
@@ -923,7 +923,7 @@
       if (nLang === 'yue') {
         while (nucIdx > 0 && NSG.phoneOf(phList[nucIdx]).glide && NSG.phoneOf(phList[nucIdx - 1]).t === 'V') nucIdx--;
       }
-      if (nLang === 'zh' && nucIdx > 0 && /^(I|U|U_a|U_ou)$/.test(phList[nucIdx])) {
+      if ((nLang === 'zh' || nLang === 'zh-x-sichuan') && nucIdx > 0 && /^(I|U|U_a|U_ou)$/.test(phList[nucIdx])) {
         var prevVowel = NSG.phoneOf(phList[nucIdx - 1]);
         if (prevVowel.t === 'V' && prevVowel.f[0] > NSG.phoneOf(phList[nucIdx]).f[0]) nucIdx--;
       }
@@ -1056,7 +1056,8 @@
       var isEnglish = /^(en|de|pl|ru|uk)$/.test(note.lang || lang);
       var isRomance = /^(es|pt|it|fr|ro)$/.test(noteLang);
       var isEsperanto = noteLang === 'eo';
-      var zhNasalCoda = (note.lang || lang) === 'zh' && nuc === phones.length - 2 &&
+      var isMandarinLike = noteLang === 'zh' || noteLang === 'zh-x-sichuan';
+      var zhNasalCoda = isMandarinLike && nuc === phones.length - 2 &&
         NSG.phoneOf(phones[nuc]).t === 'V' && /^(n|ng)$/.test(phones[phones.length - 1]) ? phones[phones.length - 1] : '';
       function isGermanAspStop(index) {
         if ((note.lang || lang) !== 'de' || index >= nuclei[0] || !/^(p|t|k)$/.test(phones[index])) return false;
@@ -1069,7 +1070,7 @@
       function stopClosureRatio(index) {
         var phone = NSG.phoneOf(phones[index]);
         if (phone.t === 'A') {
-          if (noteLang === 'zh' && index < nuclei[0]) {
+          if (isMandarinLike && index < nuclei[0]) {
             if (phones[index] === 'ts_r') return 0.40;
             if (phones[index] === 'tsh_j') return 0.18;
           }
@@ -1099,10 +1100,10 @@
           if (dur > 0.50) return Math.min(cap, base + (dur - 0.50) * (cap - base));
           return Math.min(base, dur * shortFrac);
         }
-        var zhShortScale = (noteLang === 'zh' && index < preN &&
+        var zhShortScale = (isMandarinLike && index < preN &&
           (phone.t === 'F' || phone.t === 'A' || (phone.t === 'S' && phone.asp)) && dur < 0.18) ?
           (dur <= 0.08 ? 0.78 : 0.78 + 0.22 * ((dur - 0.08) / 0.10)) : 1;
-        if (noteLang === 'zh' && phones[index] === 'tsh_j' && index < nuclei[0]) {
+        if (isMandarinLike && phones[index] === 'tsh_j' && index < nuclei[0]) {
           var qBase = dur >= 0.25 ? 0.165 : dur <= 0.12 ? 0.135 : 0.135 + 0.030 * ((dur - 0.12) / 0.13);
           return qBase * consScale * zhShortScale;
         }
@@ -1343,7 +1344,7 @@
       var cur = start - pre;
       function singingJoin(firstEvent, phoneIndex) {
         if (manualTimes || !firstEvent) return;
-        if (noteLang === 'zh' && phoneIndex > 0 && phoneIndex === nuc && notePhone(phones[phoneIndex]).t === 'V') {
+        if (isMandarinLike && phoneIndex > 0 && phoneIndex === nuc && notePhone(phones[phoneIndex]).t === 'V') {
           var prevMedial = phones[phoneIndex - 1];
           if (phones[phoneIndex] === 'oU' && prevMedial === 'i') {
             firstEvent.singingLead = 0.040;
@@ -1387,7 +1388,7 @@
         var fade = ph0.t === 'V' ? 0.024 :
           /^(S|A|T)$/.test(ph0.t) ? 0.008 : ph0.t === 'F' ? 0.026 : 0.018;
         var leadFrac = 0.40, fadeFrac = 0.30;
-        if (noteLang === 'zh') {
+        if (isMandarinLike) {
           if (phones[0] === 'm') {
             lead = 0.040; fade = 0.040; leadFrac = 0.58; fadeFrac = 0.58;
           } else if (phones[0] === 'n' && 0 < nuclei[0]) {
@@ -1625,7 +1626,7 @@
           // 闽南语鼻化元音是音位对立，零点上移到鼻极点之上，不随音色的鼻音量变弱。
           var prevV = ev.length > noteEv0 ? ev[ev.length - 1] : null;
           var isEnGlide = noteLang === 'en' && c2 > 0 && /^(a:I|e:I|O:I|a:U|o:U)$/.test(phones[c2 - 1] + ':' + phones[c2]);
-          var isZhGlide = noteLang === 'zh' && c2 > nuc && /^(I|U)$/.test(phones[c2]);
+          var isZhGlide = isMandarinLike && c2 > nuc && /^(I|U)$/.test(phones[c2]);
           var isDialectGlide = /^(hak|nan-x-teochew)$/.test(noteLang) && c2 > nuc && /^(i|u)(~)?$/.test(phones[c2]);
           var nextNasal = nasalTract && !(ph.nz >= 0.5) && c2 + 1 < phones.length && notePhone(phones[c2 + 1]).t === 'N' ?
             notePhone(phones[c2 + 1]) : null;
@@ -1733,13 +1734,14 @@
           }
         } else if (ph.t === 'F') {
           var labiodental = ((isEnglish || isRomance || isEsperanto) && /^(f|v|fy_ru|vy_ru)$/.test(phones[c2])) ||
-            (noteLang === 'hak' && phones[c2] === 'v');
+            ((noteLang === 'hak' || noteLang === 'zh-x-sichuan') && phones[c2] === 'v');
           var enVoicedFric = ((noteLang === 'en' || isEsperanto) && /^(dh|z|zh)$/.test(phones[c2])) ||
-            (isRomance && /^(z|zh)$/.test(phones[c2]));
+            (isRomance && /^(z|zh)$/.test(phones[c2])) ||
+            ((noteLang === 'zh-x-sichuan' || noteLang === 'xdi8') && phones[c2] === 'z');
           var germanVelar = /^(x_de|x_pl|x_ru|x_uk)$/.test(phones[c2]);
           var spanishVelar = phones[c2] === 'x_es';
           var germanR = (noteLang === 'de' && phones[c2] === 'r_de') || (noteLang === 'fr' && phones[c2] === 'r_fr');
-          var mandarinH = noteLang === 'zh' && phones[c2] === 'h' && onsetCons;
+          var mandarinH = isMandarinLike && phones[c2] === 'h' && onsetCons;
           var mandarinMedialH = mandarinH && c2 === 0 && !!prevChain &&
             Math.abs(prevChain.endSec - start) < 1e-4 && ev.length > 0 && ev[ev.length - 1].av > 0;
           var zhHScale = mandarinH && hasVowel ?
@@ -1814,10 +1816,10 @@
           // 普通话 c / ch：前段保留摩擦，后段转为后接元音塑形的送气；
           // 普通话 zh：加强闭塞并略收摩擦，与送气 ch 及擦音 sh 拉开。
           // tsh / ts_r 也被其他语言使用，限定语言及声母位置，不修改共享音素。
-          var mandarinC = (note.lang || lang) === 'zh' && phones[c2] === 'tsh' && onsetCons;
-          var mandarinCh = (note.lang || lang) === 'zh' && phones[c2] === 'tsh_r' && onsetCons;
-          var mandarinZh = (note.lang || lang) === 'zh' && phones[c2] === 'ts_r' && onsetCons;
-          var mandarinQ = (note.lang || lang) === 'zh' && phones[c2] === 'tsh_j' && onsetCons;
+          var mandarinC = isMandarinLike && phones[c2] === 'tsh' && onsetCons;
+          var mandarinCh = isMandarinLike && phones[c2] === 'tsh_r' && onsetCons;
+          var mandarinZh = isMandarinLike && phones[c2] === 'ts_r' && onsetCons;
+          var mandarinQ = isMandarinLike && phones[c2] === 'tsh_j' && onsetCons;
           // 噪声绕过元音声道；按音色频段增益与当前音节相对基准电平的比例标定（与采样率无关）。
           var enAffrFc = ph.na ? ph.na.f : 3100, enAffrBw = ph.na ? ph.na.b : 1100;
           var enAffrRef = Math.sqrt(Math.max(1e-18, refPower(timbre)));

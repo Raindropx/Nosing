@@ -9,14 +9,14 @@
   var NSG = root.NSG = root.NSG || {};
   root.NSG_DICT = root.NSG_DICT || {};
 
-  var DICT_FILE = { zh: 'js/data/zh.js', yue: 'js/data/yue.js', ja: 'js/data/ja.js', en: 'js/data/en.js', de: 'js/data/de.js', nan: 'js/data/nan.js', th: 'js/data/th.js',
-    hak: 'js/data/hak.js', 'nan-x-teochew': 'js/data/nan-x-teochew.js' };
+  var DICT_FILE = { zh: 'js/data/zh.js', 'zh-x-sichuan': 'js/data/zh-x-sichuan.js', yue: 'js/data/yue.js', ja: 'js/data/ja.js', en: 'js/data/en.js', de: 'js/data/de.js', nan: 'js/data/nan.js', th: 'js/data/th.js',
+    hak: 'js/data/hak.js', 'nan-x-teochew': 'js/data/nan-x-teochew.js', xdi8: 'js/data/xdi8.js' };
   var cache = {};
   var g2pCache = new Map(), G2P_CACHE_MAX = 4096;
   var ROMANCE_LANG = /^(es|pt|it|fr|ro)$/;
   var SOUTHEAST_ASIAN_LANG = /^(fil|id|ms|th)$/;
   NSG.isWordPhonemizer = function (lang) {
-    return /^(en|de|pl|ru|uk|fi|eo|tok|asaxi)$/.test(lang) || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang);
+    return /^(en|de|pl|ru|uk|fi|eo|tok|asaxi|xdi8)$/.test(lang) || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang);
   };
 
   function sameStringArray(a, b) {
@@ -445,6 +445,66 @@
     if (m[3] && m[3] !== 'n') phones.push(STOP_OR_NASAL[m[3]]);
     if (m[4]) phones.push('q');
     return phones;
+  }
+
+  /* ---------------- 四川话（成都音） ---------------- */
+  var SC_INIT = ['ng', 'ny', 'rz', 'zh', 'ch', 'sh', 'b', 'p', 'm', 'f', 'v', 'd', 't', 'n', 'l', 'g', 'k', 'h', 'j', 'q', 'x', 'r', 'z', 'c', 's', 'y', 'w'];
+  var SC_INIT_MAP = {
+    b: ['b'], p: ['ph'], m: ['m'], f: ['f'], v: ['v'], d: ['d'], t: ['t_h'], n: ['n'], ny: ['ny'], l: ['l_zh'],
+    g: ['g'], k: ['kh'], h: ['h'], ng: ['ng'], j: ['ts_j'], q: ['tsh_j'], x: ['xc'],
+    z: ['ts'], zh: ['ts'], c: ['tsh'], ch: ['tsh'], s: ['s'], sh: ['s'],
+    r: ['z'], rz: ['z'], y: ['jj'], w: ['w']
+  };
+  // 成都话：单韵母 e 为前中 [ɛ]（非普通话 ɤ）；o 为纯 [o]（含波/我/喝/角）；
+  // 平翘合流、r/rz 为浊擦 [z]、n 在齐撮前腭化为 [ɲ]、-eng/-ing 并入 -en/-in（唇音后 eng 为 ong）、
+  // 保留 iai（街/介）、ue（国/阔）、üo（学/药/脚/略）。
+  var SC_FIN = {
+    a: ['a'], o: ['o'], e: ['E'], 'ê': ['E'], ai: ['af', 'I'], ei: ['e', 'I'], ao: ['Ao', 'U_a'], ou: ['o_ou', 'U_ou'],
+    an: ['af', 'n'], en: ['@', 'n'], ang: ['A', 'ng'], eng: ['@', 'n'], ong: ['o', 'ng'], er: ['6'],
+    i: ['i'], ia: ['i', 'a'], ie: ['i', 'E'], iai: ['i', 'af', 'I'], iao: ['i', 'Ao', 'U_a'], iu: ['i', 'oU', 'U'],
+    ian: ['i', 'E', 'n'], 'in': ['i', 'n'], iang: ['i', 'A', 'ng'], ing: ['i', 'n'], iong: ['y_medial', 'o', 'ng'],
+    u: ['u'], ua: ['u_medial', 'a'], uo: ['u_medial', 'o'], ue: ['u_medial', 'E'], uai: ['u_medial', 'af', 'I'],
+    ui: ['u_medial', 'e', 'I'], uei: ['u_medial', 'e', 'I'], uan: ['u_medial', 'af', 'n'],
+    un: ['u_medial', '@', 'n'], uen: ['u_medial', '@', 'n'], uang: ['u_medial', 'A', 'ng'], ueng: ['u_medial', '@', 'n'],
+    v: ['y'], ve: ['y_ue', 'E'], vo: ['y_medial', 'o'], van: ['y_medial', 'E', 'n'], vn: ['y', 'n'],
+    '1': ['1']
+  };
+  function sichuanSyllable(py) {
+    py = py.replace(/[1-5]$/, '').toLowerCase().replace(/ü/g, 'v').replace(/u:/g, 'v').replace(/ȵ/g, 'ny');
+    if (/^(m|n|ng)$/.test(py)) return [py];
+    var ini = '', fin = py;
+    for (var i = 0; i < SC_INIT.length; i++) {
+      var t = SC_INIT[i];
+      if (py.indexOf(t) === 0 && py.length > t.length) { ini = t; fin = py.slice(t.length); break; }
+    }
+    var out = [];
+    if (ini === 'y') {
+      if (fin === 'i') return ['i'];
+      if (fin === 'e') return SC_FIN.ie.slice();
+      if (fin === 'an') return SC_FIN.ian.slice();
+      if (fin === 'in' || fin === 'ing') return ['i', 'n'];
+      if (fin === 'ong') return SC_FIN.iong.slice();
+      if (fin === 'u') return ['y'];
+      if (fin === 'ue') return SC_FIN.ve.slice();
+      if (fin === 'uo') return SC_FIN.vo.slice();
+      if (fin === 'uan') return SC_FIN.van.slice();
+      if (fin === 'un') return ['y', 'n'];
+      out = ['jj'];
+    } else if (ini === 'w') {
+      if (fin === 'u') return ['u'];
+      if (fin === 'eng') return ['o', 'ng'];
+      out = ['w'];
+    } else if (ini) {
+      if (ini === 'n' && /^[iv]/.test(fin)) out = ['ny'];
+      else out = SC_INIT_MAP[ini].slice();
+      if (ini === 'j' || ini === 'q' || ini === 'x') fin = fin.replace(/^u/, 'v');
+      if ((ini === 'n' || ini === 'l') && fin === 'ue') fin = 've';
+      if (/^(b|p|m|f)$/.test(ini) && fin === 'eng') fin = 'ong';
+    }
+    if (fin === 'i' && /^(z|c|s|zh|ch|sh|r|rz)$/.test(ini)) fin = '1';
+    var f = Object.hasOwn(SC_FIN, fin) ? SC_FIN[fin] : null;
+    if (!f) return out.concat('@');
+    return out.concat(f);
   }
 
   /* ---------------- 日语 ---------------- */
@@ -1159,6 +1219,7 @@
   }
 
   function conlang(text, lang) {
+    if (lang === 'xdi8') return xdi8Text(text);
     var words = text.normalize('NFC').match(lang === 'eo' ? /[a-zĉĝĥĵŝŭ]+(?:[-'’][a-zĉĝĥĵŝŭ]+)*['’]?(?:#[1-9]\d*)?/gi :
       lang === 'tok' ? /[a-z]+(?:#[1-9]\d*)?/gi :
       // 词内弯撇号 ’ 是口语缩约记号（s’wo、p’nå），不是喉塞音，也不拆词；词尾 ’ 仍为引号。
@@ -1171,6 +1232,185 @@
       if (indexed && syllables.length) {
         var index = +indexed[2] - 1, syllable = syllables[Math.min(index, syllables.length - 1)];
         result.push(Object.assign({}, syllable, { text: word, extend: index >= syllables.length }));
+      } else result = result.concat(syllables);
+    });
+    return result;
+  }
+
+  /* ---------------- 希顶语（Shidinn / Xdi8） ----------------
+     支持聊天字母（Chat Alphabet）、希顶字母 PUA 编码（U+E021–U+E0AD）及汉字输入。
+     音值依据希顶语 45 字母体系（29 声母 + 16 韵母）与社区通行的国际音标分析。 */
+  var XDI8_CHAT_ALPHABET = ' bpmwjqxynzDsrHNldtgkh45vF7BcfuaoeEAYL62T83V1i';
+  var XDI8_INITS = 'bpmwjqxynzDsrHNldtgkh45vF7Bcf';
+  var XDI8_FINS = 'aoeEAYL62T83V1';
+  var XDI8_INIT_ONSET = {
+    b: ['b'], p: ['ph'], m: ['m'], w: ['v_fi'], f: ['f'],
+    j: ['ts_j'], q: ['tsh_j'], x: ['xc'], y: ['jj'], n: ['ny'],
+    z: ['ts'], D: ['tsh'], s: ['s'], r: ['rj'], H: ['n', 'z'],
+    N: ['ng'], l: ['n'], d: ['d'], t: ['t_h'], g: ['g'], k: ['kh'], h: ['x_vi'], '4': [],
+    '5': ['ng'], v: ['n'], F: ['d'], '7': ['t_h'], B: ['g'], c: ['kh']
+  };
+  var XDI8_FIN_MAP = {
+    a: ['a'], o: ['o_rom'], e: ['e_rom'],
+    Y: ['ae', 'E_off_xd'], L: ['a_j', 'O_off_xd'], '6': ['@', 'U_off_xd'],
+    '2': ['ae_nas_xd'], T: ['a_nas_xd'], '8': ['e_nas_xd', 'I_nas_xd'],
+    '3': ['at_nas_xd', 'U_nas_xd'], V: ['e_rom', 'I_off_xd']
+  };
+  function xdPUAToChat(text) {
+    return text.replace(/[\ue021-\ue02f\ue031-\ue03f\ue041-\ue08d\ue090-\ue09d\ue0a0-\ue0ad]/g, function (chr) {
+      var cc = chr.charCodeAt(0), row = (cc - 0xe020) >> 4;
+      var ord = (cc & 15) + Math.floor(row / 3) * 16;
+      return XDI8_CHAT_ALPHABET[ord] || '';
+    });
+  }
+  function normalizeXdi8Chat(text) {
+    // 去掉大小写前缀（^ ~ ⇧ ⇩）；保留有独立音位的大写字母 ABDEFHLNTVY，其余句首大写还原为小写。
+    return xdPUAToChat(text)
+      .replace(/[\^~⇧⇩](?=[a-zA-Z1-8])/g, '')
+      .replace(/[CGIJKMOPQRSUWXZ]/g, function (c) { return c.toLowerCase(); });
+  }
+  function xdi8ValidCombo(ini, med, fin) {
+    if (!ini) return !med && !!fin;
+    var labialized = /^[5vF7Bc]$/.test(ini);
+    if (!med) {
+      if (!fin) return true;
+      if (labialized) return /^[aoeEYL62T83V]$/.test(fin);
+      if (/^[jqxynzDsrH]$/.test(ini)) return /^[aoeEAYL62T83V]$/.test(fin);
+      return XDI8_FINS.indexOf(fin) >= 0;
+    }
+    if (med === 'i') {
+      if (!fin) return true;
+      if (labialized) return /^[aoeYL62T83V]$/.test(fin);
+      return /^[aoeAYL62T83V]$/.test(fin);
+    }
+    if (med === 'u') {
+      if (labialized) return false;
+      if (/^[wf]$/.test(ini)) return !fin;
+      if (!fin) return true;
+      if (/^[bpm]$/.test(ini)) return /^[aoeEYL62T83V1]$/.test(fin);
+      if (/^[Nldtgkh4]$/.test(ini)) return /^[aoeEYL62T83V]$/.test(fin);
+      return /^[aoeYL62T83V]$/.test(fin);
+    }
+    return false;
+  }
+  function xdi8SyllablePhones(ini, med, fin) {
+    if (!ini) {
+      if (fin === 'E' || fin === 'i') return ['jj', 'i'];
+      if (fin === 'A') return ['H_fr', 'y'];
+      if (fin === 'u') return ['v_fi', 'u'];
+      if (fin === '1') return ['eu_ko'];
+      return (XDI8_FIN_MAP[fin] || ['@']).slice();
+    }
+    var onset = XDI8_INIT_ONSET[ini].slice();
+    if (!med && !fin) {
+      if (/^[bpmw]$/.test(ini)) return onset.concat(['o_rom']);
+      if (ini === 'f') return ['f', 'u'];
+      if (ini === 'y') return ['v_fi', 'ae', 'E_off_xd'];
+      if (/^[jqxn]$/.test(ini)) return onset.concat(['i']);
+      if (/^[zDsrH]$/.test(ini)) return onset.concat(['1']);
+      if (/^[Nldtgkh4]$/.test(ini)) return onset.concat(['e_rom']);
+      return onset.concat(['u']); // 5 v F 7 B c
+    }
+    // 单个介音作韵母（如 bi=bE, bu=bA）
+    if (med && !fin) { fin = med === 'i' ? 'E' : 'A'; med = ''; }
+    if (/^[bpm]$/.test(ini)) {
+      if (fin === 'E') return onset.concat(['i']);
+      if (fin === 'A') return onset.concat([med === 'i' ? 'u_bar_xd' : 'u']);
+      if (fin === '1') return onset.concat(['eu_ko']);
+      return onset.concat(med === 'i' ? ['jj'] : [], XDI8_FIN_MAP[fin]);
+    }
+    if (/^[wf]$/.test(ini)) {
+      if (fin === 'E') return onset.concat(['r', 'i']);
+      if (fin === 'A') return onset.concat([med === 'i' ? '1r' : 'u']);
+      if (fin === '1') return onset.concat(['eu_ko']);
+      return onset.concat(med === 'i' ? ['r'] : [], XDI8_FIN_MAP[fin]);
+    }
+    if (/^[jqxyn]$/.test(ini)) {
+      if (fin === 'E') return onset.concat(['i']);
+      if (fin === 'A') return ini === 'y' ? ['H_fr', 'y'] : onset.concat(['y']);
+      if (med === 'u') return (ini === 'y' ? ['H_fr'] : onset.concat(['w'])).concat(XDI8_FIN_MAP[fin]);
+      return onset.concat(XDI8_FIN_MAP[fin]);
+    }
+    if (/^[zDsrH]$/.test(ini)) {
+      if (fin === 'E') return onset.concat(['1']);
+      if (fin === 'A') return onset.concat(['u']);
+      return onset.concat(med === 'u' ? ['w'] : [], XDI8_FIN_MAP[fin]);
+    }
+    if (/^[Nldtgkh4]$/.test(ini)) {
+      if (fin === 'E') {
+        if (med === 'u') return (ini === '4' ? ['H_fr'] : /^[Ngk]$/.test(ini) ? onset.concat(['w', 'H_fr']) : onset.concat(['w'])).concat(['i']);
+        return (/^[Ngkh4]$/.test(ini) ? onset.concat(['jj']) : onset).concat(['i']);
+      }
+      if (fin === 'A') {
+        if (med === 'i') return /^[ldt]$/.test(ini) ? onset.concat(['y']) : (ini === '4' ? ['H_fr', 'u_bar_xd'] : onset.concat(['u_bar_xd']));
+        return onset.concat(['u']);
+      }
+      if (fin === '1') return onset.concat([/^[ldt]$/.test(ini) ? 'I_ro' : 'eu_ko']);
+      if (med === 'i') return onset.concat(['jj'], XDI8_FIN_MAP[fin]);
+      if (med === 'u') return (ini === '4' ? ['H_fr'] : onset.concat(['w'])).concat(XDI8_FIN_MAP[fin]);
+      return onset.concat(XDI8_FIN_MAP[fin]);
+    }
+    // Labialized alveolar / velar: 5 v F 7 B c
+    if (fin === 'E') return onset.concat(/^[5Bc]$/.test(ini) ? ['H_fr', 'i'] : ['w', 'i']);
+    return onset.concat(med === 'i' ? ['H_fr'] : ['w'], XDI8_FIN_MAP[fin]);
+  }
+  function xdi8ChatSyllables(chat, displayWord) {
+    var groups = [];
+    chat.split(/['’]/).forEach(function (part) {
+      var i = 0;
+      while (i < part.length) {
+        var c0 = part[i], c1 = part[i + 1] || '', c2 = part[i + 2] || '';
+        if (XDI8_INITS.indexOf(c0) >= 0) {
+          if ((c1 === 'i' || c1 === 'u') && c2 && XDI8_FINS.indexOf(c2) >= 0 && xdi8ValidCombo(c0, c1, c2)) {
+            groups.push({ roman: c0 + c1 + c2, phones: xdi8SyllablePhones(c0, c1, c2) });
+            i += 3; continue;
+          }
+          if (c1 && (XDI8_FINS.indexOf(c1) >= 0 || c1 === 'i' || c1 === 'u') &&
+              xdi8ValidCombo(c0, (c1 === 'i' || c1 === 'u') ? c1 : '', (c1 === 'i' || c1 === 'u') ? '' : c1)) {
+            groups.push({ roman: c0 + c1, phones: xdi8SyllablePhones(c0, (c1 === 'i' || c1 === 'u') ? c1 : '', (c1 === 'i' || c1 === 'u') ? '' : c1) });
+            i += 2; continue;
+          }
+          groups.push({ roman: c0, phones: xdi8SyllablePhones(c0, '', '') });
+          i += 1; continue;
+        }
+        if (XDI8_FINS.indexOf(c0) >= 0 || c0 === 'i' || c0 === 'u') {
+          groups.push({ roman: c0, phones: xdi8SyllablePhones('', '', c0) });
+          i += 1; continue;
+        }
+        i += 1;
+      }
+    });
+    return groups.map(function (g, idx) {
+      return {
+        text: groups.length === 1 ? displayWord : displayWord + '#' + (idx + 1),
+        word: displayWord,
+        roman: g.roman,
+        phones: g.phones
+      };
+    });
+  }
+  function xdi8Word(raw) {
+    if (raw.length >= 1 && isHan(raw)) {
+      var d = cache.xdi8 || (root.NSG_DICT.xdi8 ? (cache.xdi8 = makeMap(root.NSG_DICT.xdi8, 'xdi8')) : {});
+      var chat = d[raw];
+      if (!chat) return [{ text: raw, word: raw, roman: '?', phones: ['@'] }];
+      return xdi8ChatSyllables(chat, raw);
+    }
+    var norm = normalizeXdi8Chat(raw);
+    return xdi8ChatSyllables(norm, raw);
+  }
+  function xdi8Text(text) {
+    var result = [];
+    // 匹配单个汉字（可带 #n 续接号）或希顶字母/聊天字母词（可含 PUA、大小写前缀、隔音撇号、#n）
+    var re = /(?:[\u3400-\u9fff\u3007]|[\ud840-\ud888][\udc00-\udfff])(?:#[1-9]\d*)?|(?:[a-zA-Z1-8\ue021-\ue02f\ue031-\ue03f\ue041-\ue08d\ue090-\ue09d\ue0a0-\ue0ad'’^~⇧⇩]+(?:#[1-9]\d*)?)/g;
+    var words = text.match(re) || [];
+    words.forEach(function (entry) {
+      var indexed = entry.match(/^(.+?)#([1-9]\d*)$/), raw = indexed ? indexed[1] : entry;
+      var syllables = xdi8Word(raw);
+      if (!syllables.length) return;
+      if (indexed) {
+        var index = +indexed[2] - 1, syllable = syllables[Math.min(index, syllables.length - 1)];
+        result.push(Object.assign({}, syllable, { text: entry, extend: index >= syllables.length }));
       } else result = result.concat(syllables);
     });
     return result;
@@ -3128,7 +3368,7 @@
   }
 
   /* ---------------- 统一入口 ---------------- */
-  var LANG_INITIALS = { zh: ZH_INIT, yue: YUE_INIT, nan: NAN_INIT };
+  var LANG_INITIALS = { zh: ZH_INIT, 'zh-x-sichuan': SC_INIT, yue: YUE_INIT, nan: NAN_INIT };
 
   NSG.g2p = function (text, lang) {
     lang = lang || 'zh';
@@ -3153,10 +3393,10 @@
     if (hinted) return hinted;
     // 小写 ap 在粤拼、臺羅与新增语言中按歌词解析；大写 AP 仍是换气标记。
     var parts = text.split(lang === 'eo' || lang === 'fi' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /(?<![\p{L}\p{M}'’-])([bB][rR]|AP|[sS][pP])(?![\p{L}\p{M}'’-])/gu :
-      /^(tok|asaxi)$/.test(lang) ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
+      /^(tok|asaxi|xdi8)$/.test(lang) ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
       lang === 'de' ? /(?<![a-zäöüßà-öø-ÿ\u0300-\u036f])(br|AP|SP)(?![a-zäöüßà-öø-ÿ\u0300-\u036f])/gi :
       /^(pl|ru|uk)$/.test(lang) ? /(?<![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])([bB][rR]|AP|[sS][pP])(?![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])/g :
-      /^(yue|nan|hak|nan-x-teochew|ko|vi)$/.test(lang) ? /(\b(?:[bB][rR]|AP|[sS][pP])\b)/g : /(\b(?:br|AP|SP)\b)/gi);
+      /^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|ko|vi)$/.test(lang) ? /(\b(?:[bB][rR]|AP|[sS][pP])\b)/g : /(\b(?:br|AP|SP)\b)/gi);
     if (parts.length > 1) {
       var syllables = [];
       parts.forEach(function (part) {
@@ -3168,7 +3408,7 @@
     }
     if (lang === 'nan') text = normalizeNan(text);
     if (HAK_TEOCHEW.test(lang)) text = text.normalize('NFC');
-    if (lang === 'zh') text = text.replace(/ü/gi, 'v').replace(/u:/gi, 'v');
+    if (lang === 'zh' || lang === 'zh-x-sichuan') text = text.replace(/ü/gi, 'v').replace(/u:/gi, 'v').replace(/ȵ/gi, 'ny');
     var out = [];
     var i = 0;
     if (lang === 'ko') return koResolve(koTokens(text));
@@ -3180,7 +3420,7 @@
     if (lang === 'fi') return finnish(text);
     if (ROMANCE_LANG.test(lang)) return romance(text, lang);
     if (SOUTHEAST_ASIAN_LANG.test(lang)) return southeastAsian(text, lang);
-    if (lang === 'eo' || lang === 'tok' || lang === 'asaxi') return conlang(text, lang);
+    if (lang === 'eo' || lang === 'tok' || lang === 'asaxi' || lang === 'xdi8') return conlang(text, lang);
     if (lang === 'en') {
       var words = text.split(/[\s，。！？；：、]+|(?<=[a-z0-9'’])\s*[,.;:!?]+\s*(?=[a-z'’])/i).filter(Boolean);
       for (var w = 0; w < words.length; w++) {
@@ -3286,7 +3526,7 @@
       return out;
     }
     // 汉字逐字取音，罗马字按各拼音方案切分。
-    var conv = { zh: zhSyllable, yue: yueSyllable, nan: nanSyllable, hak: hakSyllable, 'nan-x-teochew': teochewSyllable };
+    var conv = { zh: zhSyllable, 'zh-x-sichuan': sichuanSyllable, yue: yueSyllable, nan: nanSyllable, hak: hakSyllable, 'nan-x-teochew': teochewSyllable };
     while (i < text.length) {
       var cp2 = text.codePointAt(i), cl2 = cp2 > 0xffff ? 2 : 1, ch2 = text.slice(i, i + cl2);
       if (ch2 === ' ' || ch2 === '　' || ch2 === '\n') { i++; continue; }
@@ -3318,11 +3558,12 @@
           out.push({ text: token, phones: conv[lang](roman), roman: roman, tone: tone });
           continue;
         }
-        while (i < text.length && /[a-zA-ZêÊ']/.test(text[i])) i++;
+        while (i < text.length && (lang === 'zh-x-sichuan' ? /[a-zA-ZêÊ'1-5]/ : /[a-zA-ZêÊ']/).test(text[i])) i++;
         var chunk = text.slice(start, i);
         var sylls = splitRoman(chunk, lang);
         for (var s = 0; s < sylls.length; s++) {
-          out.push({ text: sylls[s], phones: conv[lang](sylls[s]), roman: sylls[s] });
+          var tm = lang === 'zh-x-sichuan' ? sylls[s].match(/([1-5])$/) : null;
+          out.push({ text: sylls[s], phones: conv[lang](sylls[s]), roman: sylls[s], tone: tm ? +tm[1] : 0 });
         }
         continue;
       }
@@ -3529,9 +3770,16 @@
       });
       return separated;
     }
+    if (lang === 'zh-x-sichuan' && /[1-5](?=[a-zê])/.test(str)) {
+      var byTone = [];
+      str.split(/(?<=[1-5])(?=[a-zê])/).forEach(function (part) {
+        if (part) byTone = byTone.concat(splitRoman(part, lang));
+      });
+      return byTone;
+    }
     var inits = LANG_INITIALS[lang] || [];
     var out = [], cur = '';
-    var vowels = lang === 'zh' ? 'aeiouvê' : lang === 'yue' ? 'aeiouy' : 'aeiou';
+    var vowels = lang === 'zh' || lang === 'zh-x-sichuan' ? 'aeiouvê' : lang === 'yue' ? 'aeiouy' : 'aeiou';
     for (var i = 0; i < str.length; i++) {
       cur += str[i];
       var nxt = str[i + 1];
@@ -3539,7 +3787,7 @@
       var isV = vowels.indexOf(str[i]) >= 0;
       var nextV = vowels.indexOf(nxt) >= 0;
       // 粤语韵尾 -m/-n/-ng/-p/-t/-k 后接下一声母：sik'faan、gwong'dung、jyut'ping。
-      var afterCoda = lang === 'zh' ? /[aeiouvê](ng|n|r)$/.test(cur) :
+      var afterCoda = (lang === 'zh' || lang === 'zh-x-sichuan') ? /[aeiouvê](ng|n|r)$/.test(cur) :
         lang === 'yue' && /[aeiouy](ng|m|n|p|t|k)$/.test(cur);
       if ((isV && !nextV) || afterCoda) {
         // 判断 nxt 是否与后面的元音构成合法声母
@@ -3586,7 +3834,7 @@
     var SLUR_RE = /^(?:[-—–―‿=＿~～]+)$/;
     var tokens = [];
 
-    if (lang === 'zh' || lang === 'yue' || lang === 'nan' || HAK_TEOCHEW.test(lang)) {
+    if (lang === 'zh' || lang === 'zh-x-sichuan' || lang === 'yue' || lang === 'nan' || HAK_TEOCHEW.test(lang)) {
       rawChunks.forEach(function (chunk) {
         var i = 0;
         while (i < chunk.length) {
@@ -3740,6 +3988,27 @@
       var restored = restore(chunk).trim();
       if (!restored) return;
       if (SLUR_RE.test(restored)) { tokens.push('-'); return; }
+      if (lang === 'xdi8' && /[\u3400-\u9fff\u3007]|[\ud840-\ud888][\udc00-\udfff]/.test(restored)) {
+        // 希顶语混写汉字时按单字拆词，聊天字母/PUA 仍按空白分整词。
+        var xi = 0;
+        while (xi < restored.length) {
+          var xcp = restored.codePointAt(xi), xcl = xcp > 0xffff ? 2 : 1, xch = restored.slice(xi, xi + xcl);
+          var xTwo = restored.slice(xi, xi + 2);
+          if (xTwo === '+~' || xTwo === '+*') { tokens.push(xTwo); xi += 2; continue; }
+          if (xch === '+') { tokens.push('+'); xi++; continue; }
+          if (SLUR_RE.test(xch) && !(xch === '~' && /[a-zA-Z1-8]/.test(restored[xi + 1] || ''))) { tokens.push('-'); xi++; continue; }
+          if (isHanCode(xcp)) { tokens.push(xch); xi += xcl; continue; }
+          var xbuf = '';
+          while (xi < restored.length && !isHanCode(restored.codePointAt(xi)) &&
+              !(SLUR_RE.test(restored[xi]) && !(restored[xi] === '~' && /[a-zA-Z1-8]/.test(restored[xi + 1] || ''))) &&
+              restored[xi] !== '+') {
+            var bcl2 = restored.codePointAt(xi) > 0xffff ? 2 : 1;
+            xbuf += restored.slice(xi, xi + bcl2); xi += bcl2;
+          }
+          if (xbuf) tokens.push(xbuf);
+        }
+        return;
+      }
       tokens.push(restored);
     });
 
@@ -3771,9 +4040,9 @@
     return tokens;
   };
 
-  NSG.langName = { zh: '普通话', yue: '粤语', ja: '日语', en: '英语', de: '德语', pl: '波兰语',
+  NSG.langName = { zh: '普通话', 'zh-x-sichuan': '四川话（成都音）', yue: '粤语', ja: '日语', en: '英语', de: '德语', pl: '波兰语',
     ru: '俄罗斯语', uk: '乌克兰语', fi: '芬兰语', es: '西班牙语', pt: '葡萄牙语', it: '意大利语', fr: '法语', ro: '罗马尼亚语',
     nan: '闽南语', hak: '客家话（四县腔）', 'nan-x-teochew': '潮州话（府城音）',
     ko: '朝鲜语', vi: '越南语', fil: '菲律宾语（他加禄语）', id: '印尼语',
-    ms: '马来语', th: '泰语', eo: '世界语', tok: '道本语', asaxi: 'Asaxi' };
+    ms: '马来语', th: '泰语', eo: '世界语', tok: '道本语', asaxi: 'Asaxi', xdi8: '希顶语' };
 })(typeof window !== 'undefined' ? window : global);

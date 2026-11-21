@@ -846,6 +846,8 @@
     var key = String(value || '').trim().toLowerCase().replace(/_/g, '-');
     if (/^(?:zh-)?hak(?:-|$)/.test(key) || /^(hakka|客家[話话語语]|客[語语])$/.test(key)) return 'hak';
     if (/^(nan-x-teochew|teochew|chaozhou|潮州[話话語语]|潮[語语])$/.test(key)) return 'nan-x-teochew';
+    if (/^(?:zh|cmn)-x-(?:sichuan|chengdu)$/.test(key) || /^(sichuan(?:ese)?|chengdu|四川[話话語语]?|成都[話话語语]?|蜀[語语]|川[話话])$/.test(key)) return 'zh-x-sichuan';
+    if (/^(?:art-x-)?(?:xdi8|shidinn|xiding)$/.test(key) || /^(希[顶頂][語语]?)$/.test(key)) return 'xdi8';
     if (/^eo(?:-|$)/.test(key) || /^(epo|esperanto|世界语)$/.test(key)) return 'eo';
     if (/^de(?:-|$)/.test(key) || /^(deu|ger|german|deutsch|德语)$/.test(key)) return 'de';
     if (/^pl(?:-|$)/.test(key) || /^(pol|polish|polski|波兰语)$/.test(key)) return 'pl';
@@ -873,9 +875,11 @@
   function phonemizerLang(value) {
     var name = String(value || '');
     var code = importLang(name);
-    if (/^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|hak|nan-x-teochew)$/.test(code)) return code;
+    if (/^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|hak|nan-x-teochew|zh-x-sichuan|xdi8)$/.test(code)) return code;
     if (/Hakka/i.test(name)) return 'hak';
     if (/Teochew|Chaozhou/i.test(name)) return 'nan-x-teochew';
+    if (/Sichuan|Chengdu|四川|成都/i.test(name)) return 'zh-x-sichuan';
+    if (/Xdi8|Shidinn|希[顶頂]/i.test(name)) return 'xdi8';
     if (/Esperanto/i.test(name)) return 'eo';
     if (/(?:^|[.\s])(?:Finnish|Suomi)/i.test(name)) return 'fi';
     if (/Spanish|Español|Castellano/i.test(name)) return 'es';
@@ -3438,7 +3442,7 @@
     return {
       format: 'DSC', title: title, tempo: Math.round(tempo * 100) / 100,
       tempos: tempoSegs,
-      lang: langMap[firstVocalRow['语种']] || (/^(fi|eo|hak|nan-x-teochew)$/.test(rowLang) ? rowLang : 'zh'),
+      lang: langMap[firstVocalRow['语种']] || (/^(fi|eo|hak|nan-x-teochew|zh-x-sichuan|xdi8)$/.test(rowLang) ? rowLang : 'zh'),
       root: root, notes: mainTrack.notes,
       acc: acc.length ? acc : null,
       importTracks: importTracks,

@@ -18,6 +18,8 @@
   var FUNC = {
     hak: '𠊎 你 佢 个 係 毋 無'.split(' '),
     'nan-x-teochew': '我 汝 伊 个 是 呾 无 無'.split(' '),
+    'zh-x-sichuan': '的 地 得 了 着 过 在 是 和 跟 同 就 也 都 很 又 还 再 才 只 不 没 别 会 能 要 可 把 被 给 吗 呢 吧 啊 呀 嘛 噻 哈 咯 咧 哦 我 你 他 她 它 这 那 啥 咋 个 些'.split(' '),
+    xdi8: 'de sE bA wo Vnu8 的 地 得 了 着 过 在 是 和 就 也 都 很 不 没 我 你 他 她 它 这 那 吗 呢 吧 啊'.split(' '),
     eo: 'la kaj aŭ sed de da al el en kun sen por per pri sur sub ĉe ĝis je ke se do mi vi li ŝi ĝi ni ili si ne'.split(' '),
     tok: ('li e la pi o en anu taso kin').split(/\s+/),
     asaxi: [], // 词类需词典判定；不沿用普通话虚词表。

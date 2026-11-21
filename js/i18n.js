@@ -1032,6 +1032,7 @@
     'langs.nan': 'Minnan (Hokkien)',
     'langs.hak': 'Hakka (Sixian)',
     'langs.nan-x-teochew': 'Teochew (Chaozhou City)',
+    'langs.zh-x-sichuan': 'Sichuanese (Chengdu)',
     'langs.ko': 'Korean',
     'langs.vi': 'Vietnamese',
     'langs.fil': 'Filipino (Tagalog)',
@@ -1041,6 +1042,7 @@
     'langs.tok': 'Toki Pona',
     'langs.eo': 'Esperanto',
     'langs.asaxi': 'Asaxi',
+    'langs.xdi8': 'Shidinn (Xdi8)',
 
     /* ---- Timbre Presets ---- */
     'presets.base.name': 'Reference',

@@ -19,6 +19,8 @@
 | `js/data/de.js` | Wiktionary 贡献者及 devio-at 的德语读音资料，派生字典按 CC BY-SA 4.0 提供。 [版本、署名与转换说明](assets/licenses/german-dictionary.md) |
 | `js/data/th.js` | Wiktionary 贡献者及 PyThaiNLP 的泰语读音资料，派生字典按 CC BY-SA 3.0 提供。 [版本、署名与转换说明](assets/licenses/thai-dictionary.md) |
 | `js/data/nan-x-teochew.js` | lim_iong_puan 的 pyPengIm 府城音字表，BSD-3-Clause。完整版权和许可声明保留在文件头。 [版本、署名与转换说明](assets/licenses/hakka-teochew.md#潮州府城音) |
+| `js/data/zh-x-sichuan.js` | GiantAILab/DiaMoE-TTS 的成都话单字读音表，MIT。完整许可声明保留在文件头。 [来源与转换说明](assets/licenses/sichuan-xdi8.md#四川话成都音) |
+| `js/data/xdi8.js` | DGCK81LNN/xdi8-transcriber 的汉字—希顶字表，MIT；希顶语拼读音系规则参考社区国际音标分析与 yuanhao-chen-nyoeghau/Xdi8Translator（MIT）。 [来源与转换说明](assets/licenses/sichuan-xdi8.md#希顶语shidinn--xdi8) |
 
 ## 背景与示例曲谱
 

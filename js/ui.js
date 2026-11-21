@@ -1801,7 +1801,7 @@
       { t: t('boot.step6', null, '正在绘制频率网格'), p: 96 }
     ];
     var i = 0;
-    var langs = ['zh', 'yue', 'ja', 'en', 'de', 'nan', 'hak', 'nan-x-teochew'];
+    var langs = ['zh', 'zh-x-sichuan', 'yue', 'ja', 'en', 'de', 'nan', 'hak', 'nan-x-teochew', 'xdi8'];
     var loaded = 0, failed = [];
     langs.forEach(function (L) {
       NSG.loadDict(L).then(function () { loaded++; }, function () { failed.push(L); });
