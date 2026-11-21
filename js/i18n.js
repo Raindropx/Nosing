@@ -1047,6 +1047,7 @@
     'langs.eo': 'Esperanto',
     'langs.asaxi': 'Asaxi',
     'langs.xdi8': 'Shidinn (Xdi8)',
+    'langs.tlh': 'Klingon',
 
     /* ---- Timbre Presets ---- */
     'presets.base.name': 'Reference',

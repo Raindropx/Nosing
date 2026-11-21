@@ -16,7 +16,7 @@
   var ROMANCE_LANG = /^(es|pt|it|fr|ro)$/;
   var SOUTHEAST_ASIAN_LANG = /^(fil|id|ms|th)$/;
   NSG.isWordPhonemizer = function (lang) {
-    return /^(en|de|pl|ru|uk|fi|eo|tok|asaxi|xdi8)$/.test(lang) || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang);
+    return /^(en|de|pl|ru|uk|fi|eo|tok|asaxi|xdi8|tlh)$/.test(lang) || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang);
   };
 
   function sameStringArray(a, b) {
@@ -40,7 +40,7 @@
 
   NSG.loadDict = function (lang) {
     // 规则音素器不需要外部字典；主线程与 Worker 均可直接使用。
-    if (/^(ko|vi|pl|ru|uk|fi|eo|tok|asaxi|fil|id|ms)$/.test(lang) || ROMANCE_LANG.test(lang)) return Promise.resolve({});
+    if (/^(ko|vi|pl|ru|uk|fi|eo|tok|asaxi|tlh|fil|id|ms)$/.test(lang) || ROMANCE_LANG.test(lang)) return Promise.resolve({});
     if (cache[lang]) return Promise.resolve(cache[lang]);
     if (root.NSG_DICT[lang]) {
       cache[lang] = makeMap(root.NSG_DICT[lang], lang);
@@ -1220,6 +1220,7 @@
 
   function conlang(text, lang) {
     if (lang === 'xdi8') return xdi8Text(text);
+    if (lang === 'tlh') return klingonText(text);
     var words = text.normalize('NFC').match(lang === 'eo' ? /[a-zĉĝĥĵŝŭ]+(?:[-'’][a-zĉĝĥĵŝŭ]+)*['’]?(?:#[1-9]\d*)?/gi :
       lang === 'tok' ? /[a-z]+(?:#[1-9]\d*)?/gi :
       // 词内弯撇号 ’ 是口语缩约记号（s’wo、p’nå），不是喉塞音，也不拆词；词尾 ’ 仍为引号。
@@ -1407,6 +1408,119 @@
     words.forEach(function (entry) {
       var indexed = entry.match(/^(.+?)#([1-9]\d*)$/), raw = indexed ? indexed[1] : entry;
       var syllables = xdi8Word(raw);
+      if (!syllables.length) return;
+      if (indexed) {
+        var index = +indexed[2] - 1, syllable = syllables[Math.min(index, syllables.length - 1)];
+        result.push(Object.assign({}, syllable, { text: entry, extend: index >= syllables.length }));
+      } else result = result.concat(syllables);
+    });
+    return result;
+  }
+
+  /* ---------------- 克林贡语（Klingon / tlhIngan Hol） ----------------
+     依据 Marc Okrand《The Klingon Dictionary》标准音系（21 辅音 + 5 元音），
+     支持标准大小写拉丁转写与 pIqaD CSUR 私有区编码（U+F8D0–U+F8E9）。
+     区分 q (/qʰ/) 与 Q (/q͡χ/)，以及 ngh (n+gh) 与 ngH (ng+H)；
+     音节结构为 CV(C) 或 CVCC（-rgh、-w'、-y'），不含复声母。 */
+  var TLH_PIQAD = [
+    'a', 'b', 'ch', 'D', 'e', 'gh', 'H', 'I', 'j', 'l', 'm', 'n', 'ng',
+    'o', 'p', 'q', 'Q', 'r', 'S', 't', 'tlh', 'u', 'v', 'w', 'y', "'"
+  ];
+  var TLH_VOWEL = { a: 'a_tlh', e: 'e_tlh', I: 'I_tlh', o: 'o_tlh', u: 'u_tlh' };
+  var TLH_CONS = {
+    b: 'bv', ch: 'ch_en', D: 'D_tlh', gh: 'gh_tlh', H: 'H_tlh', j: 'jh_en',
+    l: 'l', m: 'm', n: 'n', ng: 'ng', p: 'ph', q: 'q_tlh', Q: 'Q_tlh',
+    r: 'r_tlh', S: 'sr', t: 't_h', tlh: 'tlh_tlh', v: 'v', w: 'w', y: 'jj', "'": 'q'
+  };
+  var TLH_SINGLE = {
+    a: 'a', A: 'a', e: 'e', E: 'e', I: 'I', i: 'I', o: 'o', O: 'o', u: 'u', U: 'u',
+    b: 'b', B: 'b', D: 'D', d: 'D', H: 'H', h: 'H', j: 'j', J: 'j',
+    l: 'l', L: 'l', m: 'm', M: 'm', n: 'n', N: 'n', p: 'p', P: 'p',
+    q: 'q', Q: 'Q', r: 'r', R: 'r', S: 'S', s: 'S', t: 't', T: 't',
+    v: 'v', V: 'v', w: 'w', W: 'w', y: 'y', Y: 'y', "'": "'"
+  };
+  function tlhPiqadToLatin(text) {
+    return text
+      .replace(/[\uf8d0-\uf8e9]/g, function (chr) { return TLH_PIQAD[chr.charCodeAt(0) - 0xf8d0] || ''; })
+      .replace(/\uf8fd/g, ', ')
+      .replace(/\uf8fe/g, '. ')
+      .replace(/[’‘ʼʔ]/g, "'");
+  }
+  function klingonGraphemes(part) {
+    var out = [], i = 0, len = part.length;
+    while (i < len) {
+      var s3 = part.slice(i, i + 3), s2 = part.slice(i, i + 2), c0 = part[i];
+      if (/^tlh$/i.test(s3)) { out.push('tlh'); i += 3; continue; }
+      // 规范拼写中 h 仅用于 ch/gh/tlh，H 为独立辅音 /x/；因此 ngh 切为 n + gh，ngH 切为 ng + H。
+      if (/^[nN]gh$/.test(s3)) { out.push('n', 'gh'); i += 3; continue; }
+      if (/^ch$/i.test(s2)) { out.push('ch'); i += 2; continue; }
+      if (/^gh$/i.test(s2)) { out.push('gh'); i += 2; continue; }
+      if (/^ng$/i.test(s2)) { out.push('ng'); i += 2; continue; }
+      if (TLH_SINGLE[c0]) { out.push(TLH_SINGLE[c0]); i += 1; continue; }
+      i += 1;
+    }
+    return out;
+  }
+  function klingonSyllablePhones(graphemes) {
+    var vIdx = -1;
+    for (var k = 0; k < graphemes.length; k++) {
+      if (TLH_VOWEL[graphemes[k]]) { vIdx = k; break; }
+    }
+    var phones = [];
+    for (var i = 0; i < graphemes.length; i++) {
+      var g = graphemes[i];
+      if (TLH_VOWEL[g]) {
+        phones.push(TLH_VOWEL[g]);
+      } else if (vIdx >= 0 && i === vIdx + 1 && g === 'y') {
+        phones.push('I_rom');
+      } else if (vIdx >= 0 && i === vIdx + 1 && g === 'w') {
+        phones.push(graphemes[vIdx] === 'u' ? 'w' : 'U_rom');
+      } else if (TLH_CONS[g]) {
+        phones.push(TLH_CONS[g]);
+      }
+    }
+    return phones;
+  }
+  function klingonWord(raw) {
+    var latin = tlhPiqadToLatin(raw);
+    var groups = [];
+    latin.split('-').forEach(function (part) {
+      var gs = klingonGraphemes(part);
+      if (!gs.length) return;
+      var vowels = [];
+      for (var i = 0; i < gs.length; i++) if (TLH_VOWEL[gs[i]]) vowels.push(i);
+      if (!vowels.length) {
+        groups.push({ roman: gs.join(''), phones: klingonSyllablePhones(gs) });
+        return;
+      }
+      var starts = [0];
+      for (var v = 1; v < vowels.length; v++) {
+        // 克林贡语禁止复声母、音节优先取单辅音声母，故切分点为下一元音前 1 位（无夹辅音则紧贴元音）。
+        var cut = vowels[v] > vowels[v - 1] + 1 ? vowels[v] - 1 : vowels[v];
+        starts.push(cut);
+      }
+      for (var s = 0; s < starts.length; s++) {
+        var slice = gs.slice(starts[s], starts[s + 1]);
+        if (slice.length) groups.push({ roman: slice.join(''), phones: klingonSyllablePhones(slice) });
+      }
+    });
+    return groups.map(function (g, idx) {
+      return {
+        text: groups.length === 1 ? raw : raw + '#' + (idx + 1),
+        word: raw,
+        roman: g.roman,
+        phones: g.phones
+      };
+    });
+  }
+  function klingonText(text) {
+    var result = [];
+    var re = /[a-zA-Z'’‘ʼʔ\uf8d0-\uf8e9]+(?:-[a-zA-Z'’‘ʼʔ\uf8d0-\uf8e9]+)*(?:#[1-9]\d*)?/g;
+    var words = text.normalize('NFC').match(re) || [];
+    words.forEach(function (entry) {
+      var indexed = entry.match(/^(.+?)#([1-9]\d*)$/), raw = indexed ? indexed[1] : entry;
+      if (!/[a-zA-Z\uf8d0-\uf8e9]/.test(raw)) return;
+      var syllables = klingonWord(raw);
       if (!syllables.length) return;
       if (indexed) {
         var index = +indexed[2] - 1, syllable = syllables[Math.min(index, syllables.length - 1)];
@@ -3393,7 +3507,7 @@
     if (hinted) return hinted;
     // 小写 ap 在粤拼、臺羅与新增语言中按歌词解析；大写 AP 仍是换气标记。
     var parts = text.split(lang === 'eo' || lang === 'fi' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /(?<![\p{L}\p{M}'’-])([bB][rR]|AP|[sS][pP])(?![\p{L}\p{M}'’-])/gu :
-      /^(tok|asaxi|xdi8)$/.test(lang) ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
+      /^(tok|asaxi|xdi8|tlh)$/.test(lang) ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
       lang === 'de' ? /(?<![a-zäöüßà-öø-ÿ\u0300-\u036f])(br|AP|SP)(?![a-zäöüßà-öø-ÿ\u0300-\u036f])/gi :
       /^(pl|ru|uk)$/.test(lang) ? /(?<![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])([bB][rR]|AP|[sS][pP])(?![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])/g :
       /^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|ko|vi)$/.test(lang) ? /(\b(?:[bB][rR]|AP|[sS][pP])\b)/g : /(\b(?:br|AP|SP)\b)/gi);
@@ -3420,7 +3534,7 @@
     if (lang === 'fi') return finnish(text);
     if (ROMANCE_LANG.test(lang)) return romance(text, lang);
     if (SOUTHEAST_ASIAN_LANG.test(lang)) return southeastAsian(text, lang);
-    if (lang === 'eo' || lang === 'tok' || lang === 'asaxi' || lang === 'xdi8') return conlang(text, lang);
+    if (lang === 'eo' || lang === 'tok' || lang === 'asaxi' || lang === 'xdi8' || lang === 'tlh') return conlang(text, lang);
     if (lang === 'en') {
       var words = text.split(/[\s，。！？；：、]+|(?<=[a-z0-9'’])\s*[,.;:!?]+\s*(?=[a-z'’])/i).filter(Boolean);
       for (var w = 0; w < words.length; w++) {
@@ -3826,7 +3940,7 @@
     };
 
     var rawChunks = str.replace(/[　\t\n]+/g, ' ')
-      .split(lang === 'eo' || lang === 'fi' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /[\s,.!?¡¿;:，。！？；：、()（）「」『』“”"«»…ฯ๚๛]+/ :
+      .split(lang === 'eo' || lang === 'fi' || lang === 'tlh' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /[\s,.!?¡¿;:，。！？；：、()（）「」『』“”"«»…ฯ๚๛\uf8fd\uf8fe]+/ :
         /[\s,.\!\?;:，。！？；：、\(\)（）「」『』“”"…]+/)
       .filter(Boolean);
 
@@ -4044,5 +4158,5 @@
     ru: '俄罗斯语', uk: '乌克兰语', fi: '芬兰语', es: '西班牙语', pt: '葡萄牙语', it: '意大利语', fr: '法语', ro: '罗马尼亚语',
     nan: '闽南语', hak: '客家话（四县腔）', 'nan-x-teochew': '潮州话（府城音）',
     ko: '朝鲜语', vi: '越南语', fil: '菲律宾语（他加禄语）', id: '印尼语',
-    ms: '马来语', th: '泰语', eo: '世界语', tok: '道本语', asaxi: 'Asaxi', xdi8: '希顶语' };
+    ms: '马来语', th: '泰语', eo: '世界语', tok: '道本语', asaxi: 'Asaxi', xdi8: '希顶语', tlh: '克林贡语' };
 })(typeof window !== 'undefined' ? window : global);

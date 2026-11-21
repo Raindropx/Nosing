@@ -228,6 +228,8 @@
     else if (cons.pl === 'pal') { f2 = 0.35 * F2 + 1500; f3 = 0.5 * F3 + 1550; }
     // 唇软腭（越南语 -c/-ng 的 [k͡p ŋ͡m]）：软腭的 F2/F3 靠拢，再叠唇音的整体下压与圆唇。
     else if (cons.pl === 'lv') { f2 = 0.60 * F2 + 250; f3 = 0.5 * F3 + 0.5 * (f2 + 500); lip += 0.05; }
+    // 小舌（克林贡语 q/Q/H）：舌根后缩拉低 F2 并略抬 F1，F2/F3 不像软腭那样靠拢。
+    else if (cons.pl === 'uvu') { f1 = Math.max(300, F1 * 0.72); f2 = 0.45 * F2 + 480; f3 = Math.min(F3 * 0.96, f2 + 950); }
     else { f2 = 0.65 * F2 + 650; f3 = Math.min(F3 * 0.92, f2 + 380 + 0.12 * Math.max(0, F3 - f2)); }
     f2 = Math.max(f2, f1 + 250);
     f3 = Math.max(f3, f2 + 300);
@@ -827,12 +829,15 @@
   function stopPlaceOf(id) {
     if (/^(p|ph|p_j|b|bv|py_ru|by_ru)$/.test(id)) return 'lab';
     if (/^(t|t_h|t_j|d|dv|ty_ru|dy_ru)$/.test(id)) return 'alv';
+    if (id === 'D_tlh') return 'ret';
     if (/^(k|kh|k_j|g|gv|ky_ru|gy_ru)$/.test(id)) return 'vel';
+    if (id === 'q_tlh') return 'uvu';
     return '';
   }
   function affricatePlaceOf(id) {
     if (/^(pf_de|v_ax)$/.test(id)) return 'lab';
-    if (/^(ts|tsh|dz|ts_r|tsh_r|dz_r|ch_en|jh_en|chx_ax|ts_j|tsh_j|dz_j|z_r|jj_ko|c_vi)$/.test(id)) return 'cor';
+    if (/^(ts|tsh|dz|ts_r|tsh_r|dz_r|ch_en|jh_en|chx_ax|ts_j|tsh_j|dz_j|z_r|jj_ko|c_vi|tlh_tlh)$/.test(id)) return 'cor';
+    if (id === 'Q_tlh') return 'uvu';
     return '';
   }
   function continuantGroupOf(id) {
@@ -843,7 +848,7 @@
     if (/^(l|l_zh|l_ru|l_uk)$/.test(id)) return 'l';
     if (/^(ly_ru|ly_rom)$/.test(id)) return 'ly';
     if (/^(r|rj)$/.test(id)) return 'r';
-    if (/^(dx|r_pl|r_ru|r_uk|r_fi)$/.test(id)) return 'dx';
+    if (/^(dx|r_pl|r_ru|r_uk|r_fi|r_tlh)$/.test(id)) return 'dx';
     if (id === 'rr_es') return 'rr_es';
     if (id === 'w') return 'w';
     if (/^(jj|y_es)$/.test(id)) return 'jj';
@@ -860,7 +865,8 @@
     if (id === 'zx_pl') return 'zx';
     if (/^(h|h_ko|hh_uk|x_ax)$/.test(id)) return 'h';
     if (/^(ch_de|xy_ru)$/.test(id)) return 'ch_de';
-    if (/^(x_de|x_pl|x_ru|x_uk|x_vi|x_es|gh_vi|h_ax)$/.test(id)) return 'x';
+    if (/^(x_de|x_pl|x_ru|x_uk|x_vi|x_es|gh_vi|h_ax|H_tlh)$/.test(id)) return 'x';
+    if (id === 'gh_tlh') return 'gh_tlh';
     if (id === 'r_de') return 'r_de';
     if (id === 'r_fr') return 'r_fr';
     return '';
@@ -870,8 +876,9 @@
     var sp1 = stopPlaceOf(id1);
     if (sp1) {
       if (stopPlaceOf(id2) === sp1) return true;
-      if (sp1 === 'alv' && (affricatePlaceOf(id2) === 'cor' || /^(dx|r_pl|r_ru|r_uk)$/.test(id2))) return true;
+      if (sp1 === 'alv' && (affricatePlaceOf(id2) === 'cor' || /^(dx|r_pl|r_ru|r_uk|r_tlh)$/.test(id2))) return true;
       if (sp1 === 'lab' && affricatePlaceOf(id2) === 'lab') return true;
+      if (sp1 === 'uvu' && affricatePlaceOf(id2) === 'uvu') return true;
       return false;
     }
     var ap1 = affricatePlaceOf(id1);
@@ -1094,7 +1101,7 @@
         if (zhNasalCoda && index === phones.length - 1) return (zhNasalCoda === 'n' ? 0.105 : 0.125) * consScale;
         // 留出可辨认的唇齿擦音尾；短音仍服从 55% 的辅音总预算。
         if ((isEnglish || isRomance || isEsperanto) && /^(f|fy_ru)$/.test(phones[index])) return 0.115 * consScale;
-        if ((isEnglish || isRomance || isEsperanto) && /^(v|vy_ru)$/.test(phones[index])) return 0.095 * consScale;
+        if ((isEnglish || isRomance || isEsperanto || noteLang === 'tlh') && /^(v|vy_ru)$/.test(phones[index])) return 0.095 * consScale;
         if (isGermanAspStop(index)) return (phones[index] === 't' ? 0.092 : 0.098) * consScale;
         function adaptiveMedialDur(base, cap, shortFrac) {
           if (dur > 0.50) return Math.min(cap, base + (dur - 0.50) * (cap - base));
@@ -1702,7 +1709,7 @@
           // 闪音 ɾ：舌尖轻碰齿龈，声带不停。声道短暂收向齿龈音轨、电平快速下沉约 10dB，
           // 再随一个很弱的带声小爆破放开。没有静音，所以不会与 t/d 的闭塞混同。
           var tapNb = clear === 'T' ? locusNeighbour(phones, c2, notePhone) : null;
-          var fiTapPairs = !locus && noteLang === 'fi' && ph.pl ? locusPairs(ph, nearestVowel(c2), timbre) : null;
+          var fiTapPairs = !locus && (noteLang === 'fi' || noteLang === 'tlh') && ph.pl ? locusPairs(ph, nearestVowel(c2), timbre) : null;
           var tapPairs = (clear === 'T' && japaneseTapPairs(tapNb, timbre)) || locus || fiTapPairs || consonantPairs;
           var tapVowel = consonantPairsVowel(c2);
           var tapAv = hasVowel ? relLevel(tapPairs, tapVowel, TAP_LEVEL) : 0.3;
@@ -1734,13 +1741,13 @@
           }
         } else if (ph.t === 'F') {
           var labiodental = ((isEnglish || isRomance || isEsperanto) && /^(f|v|fy_ru|vy_ru)$/.test(phones[c2])) ||
-            ((noteLang === 'hak' || noteLang === 'zh-x-sichuan') && phones[c2] === 'v');
+            ((noteLang === 'hak' || noteLang === 'zh-x-sichuan' || noteLang === 'tlh') && phones[c2] === 'v');
           var enVoicedFric = ((noteLang === 'en' || isEsperanto) && /^(dh|z|zh)$/.test(phones[c2])) ||
             (isRomance && /^(z|zh)$/.test(phones[c2])) ||
             ((noteLang === 'zh-x-sichuan' || noteLang === 'xdi8') && phones[c2] === 'z');
-          var germanVelar = /^(x_de|x_pl|x_ru|x_uk)$/.test(phones[c2]);
+          var germanVelar = /^(x_de|x_pl|x_ru|x_uk|H_tlh)$/.test(phones[c2]);
           var spanishVelar = phones[c2] === 'x_es';
-          var germanR = (noteLang === 'de' && phones[c2] === 'r_de') || (noteLang === 'fr' && phones[c2] === 'r_fr');
+          var germanR = (noteLang === 'de' && phones[c2] === 'r_de') || (noteLang === 'fr' && phones[c2] === 'r_fr') || phones[c2] === 'gh_tlh';
           var mandarinH = isMandarinLike && phones[c2] === 'h' && onsetCons;
           var mandarinMedialH = mandarinH && c2 === 0 && !!prevChain &&
             Math.abs(prevChain.endSec - start) < 1e-4 && ev.length > 0 && ev[ev.length - 1].av > 0;
@@ -1762,7 +1769,7 @@
           // 通用擦音表是一组 /ə/ 式的固定峰；有部位信息时改用随相邻元音变化的音轨。
           // 英语 /v/ 的弱带声已按相邻元音声道单独标定，保持不变。
           if (locus && !(labiodental && ph.na.v && ph.pl !== 'pal')) frictionPairs = locus;
-          else if ((isRomance || isEsperanto || (noteLang === 'fi' && ph.pl === 'glo')) && !locus && !(labiodental && ph.na.v) && ph.pl) {
+          else if ((isRomance || isEsperanto || noteLang === 'tlh' || (noteLang === 'fi' && ph.pl === 'glo')) && !locus && !(labiodental && ph.na.v) && ph.pl) {
             var nbFric = nearestVowel(c2);
             if (nbFric) {
               frictionPairs = ph.pl === 'glo' ? NSG.formantsOf(nbFric, timbre).pairs : (locusPairs(ph, nbFric, timbre) || frictionPairs);
@@ -1812,7 +1819,8 @@
               fric: 0, nasal: 0, voiceTau: voicedAffricate ? 0.006 : undefined,
               fc: ph.na ? ph.na.f : 4000, fbw: ph.na ? ph.na.b : 1200 });
           }
-          var englishAffricate = (isEnglish || isRomance || isEsperanto) && /^(ch_en|jh_en)$/.test(phones[c2]);
+          var englishAffricate = (isEnglish || isRomance || isEsperanto || noteLang === 'tlh') && /^(ch_en|jh_en)$/.test(phones[c2]);
+          var klingonUvularAffricate = phones[c2] === 'Q_tlh';
           // 普通话 c / ch：前段保留摩擦，后段转为后接元音塑形的送气；
           // 普通话 zh：加强闭塞并略收摩擦，与送气 ch 及擦音 sh 拉开。
           // tsh / ts_r 也被其他语言使用，限定语言及声母位置，不修改共享音素。
@@ -1827,6 +1835,7 @@
             Math.max(0.60, Math.min(1, nucleusLevels[nearestNucleus] / enAffrRef)) : 1;
           var affricateGain = englishAffricate ?
             sibilantScale(ph) * bandNoiseScale(timbre, enAffrFc, enAffrBw) * enAffrVowel * (ph.na && !ph.na.v ? 0.96 : 0.85) :
+            klingonUvularAffricate ? 7.5 * bandNoiseScale(timbre, ph.na ? ph.na.f : 1450, ph.na ? ph.na.b : 1150) :
             (note.lang || lang) === 'de' && phones[c2] === 'pf_de' ? F_GAIN * bandNoiseScale(timbre, ph.na ? ph.na.f : 2300, ph.na ? ph.na.b : 1500) :
             sibilantScale(ph) * bandNoiseScale(timbre, ph.na ? ph.na.f : 3000, ph.na ? ph.na.b : 1200);
           if (geminateRole[c2] === 'first') {
@@ -1843,7 +1852,7 @@
               av: ph.na && ph.na.v ? (englishAffricate ? 0.14 : 0.28) * segmentComp : 0,
               // c 的高频摩擦略收，保留闭塞与送气对立，避免 cao/cong 的起音抢过元音。
               fric: (ph.na ? ph.na.g : 0.3) * affricateGain * (mandarinZh || mandarinC ? 0.85 : 1),
-              burstBoost: englishAffricate && ph.na && !ph.na.v ? 0.40 : 0,
+              burstBoost: englishAffricate && ph.na && !ph.na.v ? 0.40 : klingonUvularAffricate ? 0.35 : 0,
               voiceTau: englishAffricate && ph.na && ph.na.v ? 0.006 : undefined,
               fc: ph.na ? ph.na.f : 4000, fbw: ph.na ? ph.na.b : 1200, nasal: 0
             });

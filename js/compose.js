@@ -20,6 +20,7 @@
     'nan-x-teochew': '我 汝 伊 个 是 呾 无 無'.split(' '),
     'zh-x-sichuan': '的 地 得 了 着 过 在 是 和 跟 同 就 也 都 很 又 还 再 才 只 不 没 别 会 能 要 可 把 被 给 吗 呢 吧 啊 呀 嘛 噻 哈 咯 咧 哦 我 你 他 她 它 这 那 啥 咋 个 些'.split(' '),
     xdi8: 'de sE bA wo Vnu8 的 地 得 了 着 过 在 是 和 就 也 都 很 不 没 我 你 他 她 它 这 那 吗 呢 吧 啊'.split(' '),
+    tlh: "jih soh ghah 'oh mah tlhih chah bih 'e' net je joq pagh 'ej qoj 'ach 'a vaj ghiq ngugh pa' nadev nuqdaq nuq 'iv chay' qatlh ghorgh hija' hislah ghobe' qo' luq".split(' '),
     eo: 'la kaj aŭ sed de da al el en kun sen por per pri sur sub ĉe ĝis je ke se do mi vi li ŝi ĝi ni ili si ne'.split(' '),
     tok: ('li e la pi o en anu taso kin').split(/\s+/),
     asaxi: [], // 词类需词典判定；不沿用普通话虚词表。
@@ -308,7 +309,7 @@
     /* 先按标点切句，再把过长的句子切开（一口气唱不完） */
     // Asaxi m.m / n.n 是重鼻音的音节界，不是句号；保留给 G2P。
     var phraseText = lang === 'asaxi' ? (text || '').replace(/([mn])\.(?=\1)/gi, '$1\uE000') : (text || '');
-    var sentenceBreak = /^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang) ? /[，。、；：！？,.;:!?¡¿…—~ฯ๚๛\n\r]+|(?<![\p{L}\p{M}])-|-(?![\p{L}\p{M}])/u :
+    var sentenceBreak = /^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|tlh)$/.test(lang) ? /[，。、；：！？,.;:!?¡¿…—~ฯ๚๛\uf8fd\uf8fe\n\r]+|(?<![\p{L}\p{M}'’\uf8d0-\uf8e9])-|-(?![\p{L}\p{M}'’\uf8d0-\uf8e9])/u :
       /[，。、；：！？,.;:!?…—\-~\n\r]+/;
     var raw = phraseText.split(sentenceBreak).map(function (s) {
       return s.replace(/\uE000/g, '.').trim();

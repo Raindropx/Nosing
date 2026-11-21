@@ -848,6 +848,7 @@
     if (/^(nan-x-teochew|teochew|chaozhou|潮州[話话語语]|潮[語语])$/.test(key)) return 'nan-x-teochew';
     if (/^(?:zh|cmn)-x-(?:sichuan|chengdu)$/.test(key) || /^(sichuan(?:ese)?|chengdu|四川[話话語语]?|成都[話话語语]?|蜀[語语]|川[話话])$/.test(key)) return 'zh-x-sichuan';
     if (/^(?:art-x-)?(?:xdi8|shidinn|xiding)$/.test(key) || /^(希[顶頂][語语]?)$/.test(key)) return 'xdi8';
+    if (/^(?:tlh|tlhingan(?:-hol)?|klingon|piqad)(?:-|$)/.test(key) || /^(克林[贡貢][語语]?)$/.test(key)) return 'tlh';
     if (/^eo(?:-|$)/.test(key) || /^(epo|esperanto|世界语)$/.test(key)) return 'eo';
     if (/^de(?:-|$)/.test(key) || /^(deu|ger|german|deutsch|德语)$/.test(key)) return 'de';
     if (/^pl(?:-|$)/.test(key) || /^(pol|polish|polski|波兰语)$/.test(key)) return 'pl';
@@ -875,11 +876,12 @@
   function phonemizerLang(value) {
     var name = String(value || '');
     var code = importLang(name);
-    if (/^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|hak|nan-x-teochew|zh-x-sichuan|xdi8)$/.test(code)) return code;
+    if (/^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|hak|nan-x-teochew|zh-x-sichuan|xdi8|tlh)$/.test(code)) return code;
     if (/Hakka/i.test(name)) return 'hak';
     if (/Teochew|Chaozhou/i.test(name)) return 'nan-x-teochew';
     if (/Sichuan|Chengdu|四川|成都/i.test(name)) return 'zh-x-sichuan';
     if (/Xdi8|Shidinn|希[顶頂]/i.test(name)) return 'xdi8';
+    if (/Klingon|tlhIngan|pIqaD|克林[贡貢]/i.test(name)) return 'tlh';
     if (/Esperanto/i.test(name)) return 'eo';
     if (/(?:^|[.\s])(?:Finnish|Suomi)/i.test(name)) return 'fi';
     if (/Spanish|Español|Castellano/i.test(name)) return 'es';
@@ -931,6 +933,7 @@
     'ya yan yang yao ye yi yin ying yo yong you yu yue yuan yun wa wai wan wang wei wen weng wo wu').split(/\s+/));
   function guessLyricLanguage(notes) {
     var lyrics = notes.map(function (n) { return cleanLyric(n.lyric || n.lyrics || ''); });
+    if (lyrics.some(function (s) { return /[\uf8d0-\uf8e9]/.test(s); })) return 'tlh';
     if (lyrics.some(function (s) { return /[ก-ฮ]/.test(s); })) return 'th';
     if (lyrics.some(function (s) { return /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]/.test(s); })) return 'ko';
     if (lyrics.some(function (s) { return /[ăâđêôơư\u1ea0-\u1ef9]/i.test(s.normalize('NFC')); })) return 'vi';
@@ -3442,7 +3445,7 @@
     return {
       format: 'DSC', title: title, tempo: Math.round(tempo * 100) / 100,
       tempos: tempoSegs,
-      lang: langMap[firstVocalRow['语种']] || (/^(fi|eo|hak|nan-x-teochew|zh-x-sichuan|xdi8)$/.test(rowLang) ? rowLang : 'zh'),
+      lang: langMap[firstVocalRow['语种']] || (/^(fi|eo|hak|nan-x-teochew|zh-x-sichuan|xdi8|tlh)$/.test(rowLang) ? rowLang : 'zh'),
       root: root, notes: mainTrack.notes,
       acc: acc.length ? acc : null,
       importTracks: importTracks,

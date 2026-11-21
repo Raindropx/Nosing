@@ -171,7 +171,7 @@
   P.SP = { t: 'R' };
   NSG.specialPhone = function (text, lang) {
     var s = String(text === undefined ? '' : text).trim();
-    if (/^br$/i.test(s) || s === 'AP' || (!/^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|xdi8|ko|vi|pl|ru|uk|fi|eo|tok|asaxi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang || '') && /^ap$/i.test(s))) return 'br';
+    if (/^br$/i.test(s) || s === 'AP' || (!/^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|xdi8|tlh|ko|vi|pl|ru|uk|fi|eo|tok|asaxi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang || '') && /^ap$/i.test(s))) return 'br';
     if (/^SP$/i.test(s)) return 'SP';
     return null;
   };
@@ -485,6 +485,24 @@
   variant('O_off_xd', 'o_rom', { coda: 0.11, glide: true });      // /o̯/ (Xdi8 L offglide)
   variant('U_off_xd', 'U_ou', { coda: 0.12, glide: true });       // /ʊ̯/ (Xdi8 6 offglide)
   variant('I_off_xd', 'I_rom', { coda: 0.11, glide: true });      // /ɪ̯/ (Xdi8 V offglide)
+
+  /* Klingon (tlh): 5 vowels (/ɑ ɛ ɪ o u/), retroflex /ɖ/, uvular /qʰ q͡χ χ/,
+     voiced velar /ɣ/, alveolar lateral affricate /t͡ɬ/, and trilled /r/;
+     do not retune existing languages. */
+  P.a_tlh = V3([710, 1080, 2440], 0);        // a /ɑ/
+  P.e_tlh = V3([580, 1790, 2500], 0);        // e /ɛ/
+  P.I_tlh = V3([400, 1960, 2550], 0);        // I /ɪ/
+  P.o_tlh = V3([460, 890, 2430], 0.05);      // o /o/
+  P.u_tlh = V3([315, 790, 2240], 0.12);      // u /u/
+  variant('D_tlh', 'dv', { pl: 'ret', dur: 54, closure: 0.68, na: { f: 2600, b: 1300, g: 0.44, v: true } });   // D /ɖ/
+  variant('q_tlh', 'kh', { pl: 'uvu', dur: 115, closure: 0.28, asp: 0.34, na: { f: 1350, b: 850, g: 0.62, v: false } }); // q /qʰ/
+  P.Q_tlh = AF(1450, 1150, 0.30, false);                                                                        // Q /q͡χ/
+  Object.assign(P.Q_tlh, { dur: 145, closure: 0.25, pl: 'uvu' });
+  variant('H_tlh', 'x_de', { pl: 'uvu', dur: 115, na: { f: 1650, b: 1400, g: 0.28, v: false } });               // H /x~χ/
+  variant('gh_tlh', 'h', { pl: 'vel', dur: 82, na: { f: 1650, b: 1200, g: 0.16, v: true } });                   // gh /ɣ/
+  P.tlh_tlh = AF(4200, 2200, 0.26, false);                                                                      // tlh /t͡ɬ/
+  Object.assign(P.tlh_tlh, { dur: 135, closure: 0.26, pl: 'alv' });
+  variant('r_tlh', 'dx', { dur: 64, pl: 'alv', taps: 2 });                                                      // r /r/
 
   NSG.PHONES = P;
 
