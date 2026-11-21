@@ -2,7 +2,7 @@
    NSG · 文件读写
    导入：MIDI / VSQ(VOCALOID2, 实为 SMF) / VSQX(V3、V4) / VPR(V5、V6) / SVP / UST / USTX / NN /
          TuneLab(TLP / TLPX) / VSP(VOCALINA) / VCP(CANTOR 2) / DSC / ufdata(UtaFormatix) / NSG
-         及 project-imports.js 中的 CeVIO / VoiSona / DeepVocal / Sharpkey / MUTA / VocalSharp / Vogen
+         及 project-imports.js 中的 CeVIO / VoiSona / DeepVocal / Sharpkey / MUTA / VocalSharp / Vogen / Y77 / AISingers
    导出：WAV / ZIP / MIDI / ufdata / NSG 工程
    格式一律按「内容嗅探」判定，不看扩展名 —— 有的 .vsq 其实是 SMF、
    别人的 .vsq 可能是 XML，扩展名靠不住。
@@ -496,7 +496,7 @@
       } catch (ignored) { }
       return done(/\.vpr$/.test(nm) ? 'vpr' : 'unknown');
     }
-    var projectExt = nm.match(/\.(ccs|ccst|tssln|dv|sk|mtp|vspx|vog)$/);
+    var projectExt = nm.match(/\.(ccs|ccst|tssln|dv|sk|mtp|vspx|vog|y77|aisp)$/);
     if (projectExt) return done(projectExt[1]);
     // TLPX is a bare CBOR map, without a file magic; inspect its root fields.
     if (b.length && (b[0] >> 5 === 5 || b[0] >> 5 === 6)) {
@@ -1993,9 +1993,10 @@
       warn: '已读取 UST 音高曲线；独立颤音、音量包络与采样声库设置未转换' }, [{ name: settings.projectname || settings.project || 'UTAU 人声', lang: lang, notes: notes, sampledPit: !mode2 }]);
   };
 
-  function nnReading(n, lyric, pinyin) {
-    // 汉字显示保持原样，发音优先使用工程保存的拼音（包括多音字）。
-    if (!n.slur && /[\u3400-\u9fff]/.test(lyric) && /^[a-zvü]+[1-5]?$/i.test(pinyin) && NSG.g2p) {
+  function nnReading(n, lyric, pinyin, allowRomanLyric) {
+    // 歌词显示保持原样，发音优先使用工程保存的拼音（包括多音字）。
+    var useReading = /[\u3400-\u9fff]/.test(lyric) || (allowRomanLyric && lyric !== pinyin && NSG.noteKind(n) === 'voiced');
+    if (!n.slur && useReading && /^[a-zvü]+[1-5]?$/i.test(pinyin) && NSG.g2p) {
       var reading = NSG.g2p(pinyin, 'zh');
       if (reading.length) {
         n.phones = reading.reduce(function (all, s) { return all.concat(s.phones); }, []);
@@ -4216,7 +4217,8 @@
       case 'nn': { var dn = dec(); res = IO.readNN(dn.text); res.enc = dn.enc; break; }
       case 'vcp': { res = IO.readVCP(bytes); break; }
       case 'vsp': { res = IO.readVSP(bytes); break; }
-      case 'ccs': case 'ccst': case 'tssln': case 'dv': case 'sk': case 'mtp': case 'vspx': case 'vog': {
+      case 'ccs': case 'ccst': case 'tssln': case 'dv': case 'sk': case 'mtp': case 'vspx': case 'vog':
+      case 'y77': case 'aisp': {
         if (!NSG.readExternalProject && typeof require === 'function') require('./project-imports.js');
         res = NSG.readExternalProject(kind, bytes, {
           decodeText: IO.decodeText, setLyric: setLyric, importLang: importLang, guessLyricLanguage: guessLyricLanguage,

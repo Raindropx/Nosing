@@ -4926,7 +4926,7 @@
       try {
         var bytes = new Uint8Array(rd.result);
         var kind = NSG.IO.sniff(bytes, f.name);
-        if (kind === 'unknown') { setStatus(t('imp.unknownFormat', null, '无法识别文件格式')); alert(t('imp.unknownFormatAlert', null, '认不出这个文件格式。支持 MIDI、VSQ、VSQX、VPR、SVP、UST、USTX、TLP、TLPX、NN、ACEP、VCP、VSP、DSC、ufdata、NSG、CCS、CCST、TSSLN、DV、SK、MTP、VSPX 和 VOG。')); return; }
+        if (kind === 'unknown') { setStatus(t('imp.unknownFormat', null, '无法识别文件格式')); alert(t('imp.unknownFormatAlert', null, '认不出这个文件格式。支持 MIDI、VSQ、VSQX、VPR、SVP、UST、USTX、TLP、TLPX、NN、Y77、AISP、ACEP、VCP、VSP、DSC、ufdata、NSG、CCS、CCST、TSSLN、DV、SK、MTP、VSPX 和 VOG。')); return; }
         setStatus(t('imp.reading', null, '正在读取工程…'));
         var res = (await getRenderer().compute('read', { name: f.name, bytes: bytes })).imported;
         if (!currentImport(context)) return;

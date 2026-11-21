@@ -529,8 +529,119 @@
       audio: names.some(name => /^accom\.path$/i.test(name) || /\.(?:wav|mp3|flac|ogg|m4a|aac)$/i.test(name)) };
   }
 
+  function projectJSON(text, format) {
+    try { return JSON.parse(text); }
+    catch (_) { check(false, format); }
+  }
+
+  function mandarinScoreNote(tick, length, pitch, lyric, pinyin, format, helpers) {
+    const reading = typeof pinyin === 'string' ? pinyin.trim().replace(/u:/gi, 'v') : '';
+    check([tick, length, pitch].every(Number.isSafeInteger), format);
+    const note = noteAt(tick, length, pitch, lyric || reading, 'zh', format, helpers);
+    check(note, format);
+    helpers.nnReading(note, note.lyric, reading, true);
+    return note;
+  }
+
+  function readY77(text, format, helpers) {
+    const project = projectJSON(text, format);
+    check(project && Array.isArray(project.notes), format);
+    const bpm = project.bpm ?? 120;
+    const ticksPerUnit = PPQ / 16;
+    check(Number.isFinite(bpm) && bpm > 0, format);
+    const notes = project.notes.map(src => {
+      check(src && [src.start, src.len, src.pitch].every(Number.isSafeInteger) && src.start >= 0, format);
+      // Yuan77 numbers piano-roll rows from the top.
+      const note = mandarinScoreNote(src.start * ticksPerUnit, src.len * ticksPerUnit, 88 - src.pitch, src.lyric, src.py, format, helpers);
+      const samples = src.pit ?? [], pbs = src.pbs ?? 0;
+      check(Array.isArray(samples) && Number.isFinite(pbs) && pbs >= 0, format);
+      if (samples.length) {
+        note.pb = samples.map((value, i) => {
+          const cents = (value - 50) * 2 * (pbs + 1);
+          check(Number.isFinite(value) && Number.isFinite(cents), format);
+          return [i / Math.max(1, samples.length - 1), cents, 'l'];
+        });
+        // Keep the source transition when the per-note curve moves to track PIT.
+        note.pitchJoin = false;
+      }
+      return note;
+    });
+    return { tracks: [{ name: '元七七', lang: 'zh', phonemizer: 'zh', notes: groupPart(notes, helpers) }],
+      events: [{ tick: 0, bpm }], meter: (project.bbar ?? 4) !== 4 || (project.bbeat ?? 4) !== 4 };
+  }
+
+  function aispPitch(raw, format) {
+    if (raw == null) return [];
+    const tokens = typeof raw === 'string' ? raw.match(/\S+/g) || [] : raw;
+    check(Array.isArray(tokens), format);
+    const points = [];
+    let count = 0;
+    for (const token of tokens) {
+      const [rawValue, repeat = '1', extra] = typeof token === 'string' ? token.split('x') : [token];
+      const cents = Number(rawValue) * 10, size = Number(repeat);
+      check((typeof rawValue === 'number' || (typeof rawValue === 'string' && rawValue.trim())) &&
+        extra === undefined && Number.isFinite(cents) && Number.isSafeInteger(size) && size > 0 &&
+        Number.isSafeInteger(count + size), format);
+      // Preserve the ends of a repeated run without allocating a point per sample.
+      points.push([count, cents, 'l']);
+      count += size;
+      if (size > 1) points.push([count - 1, cents, 'l']);
+    }
+    // AISP stores samples over [0, 1), so the last one holds to the note's end.
+    for (const point of points) point[0] /= count;
+    return points;
+  }
+
+  function readAISingers(text, format, helpers) {
+    const source = text.trim();
+    const split = source.search(/[\r\n]/);
+    check(split >= 0, format);
+    const header = projectJSON(source.slice(0, split), format);
+    const body = projectJSON(source.slice(split), format);
+    check(header && Array.isArray(header.tempo) && body && Array.isArray(body.tracks), format);
+    const ticksPerUnit = PPQ / 32;
+    const events = header.tempo.map(src => {
+      check(src && Number.isSafeInteger(src.start_128) && src.start_128 >= 0, format);
+      const tick = src.start_128 * ticksPerUnit, bpm = src.tempo_float;
+      check(Number.isSafeInteger(tick) && Number.isFinite(bpm) && bpm > 0, format);
+      return { tick, bpm };
+    });
+    const meters = header.signature ?? [];
+    check(Array.isArray(meters) && meters.every(m => m && typeof m === 'object'), format);
+    let audio = false, nonVocal = false, mix = false;
+    const tracks = [];
+    for (const track of body.tracks) {
+      check(track && typeof track === 'object', format);
+      if (track.t === 1) { audio = true; continue; }
+      if (track.t !== 0) { nonVocal = true; continue; }
+      const clips = track.im ?? [];
+      check(Array.isArray(clips), format);
+      const notes = clips.flatMap(clip => {
+        check(clip && Number.isSafeInteger(clip.s) && Array.isArray(clip.n ?? []), format);
+        const clipNotes = (clip.n ?? []).map(src => {
+          check(src && [src.s, src.l, src.m].every(Number.isSafeInteger), format);
+          // Clip positions are absolute. Note positions are relative, and m uses C0 = 0.
+          const tick = (clip.s + src.s) * ticksPerUnit;
+          const note = mandarinScoreNote(tick, src.l * ticksPerUnit, src.m + 12, src.ly, src.py, format, helpers);
+          const pitch = aispPitch(src.pit, format);
+          if (pitch.length) {
+            note.pb = pitch;
+            note.pitchJoin = false;
+          }
+          return note;
+        });
+        return groupPart(clipNotes, helpers);
+      });
+      mix ||= bool(track.s) || (Number.isFinite(track.v) && track.v !== 0);
+      tracks.push({ name: track.n || track.sn, lang: 'zh', phonemizer: 'zh', muted: bool(track.m), notes });
+    }
+    return { tracks, events, audio, nonVocal, mix, meter: hasMeterChanges(meters.map(m => ({
+      bar: m.start_bar, numerator: m.beat_zi, denominator: m.beat_mu
+    }))) };
+  }
+
   const formats = { dv: 'DeepVocal', sk: 'Sharpkey', mtp: 'MUTA', ccs: 'CeVIO', ccst: 'CeVIO',
-    tssln: 'VoiSona', vspx: 'VocalSharp', vog: 'Vogen' };
+    tssln: 'VoiSona', vspx: 'VocalSharp', vog: 'Vogen', y77: 'Y77', aisp: 'AISingers' };
   NSG.readExternalProject = function (kind, bytes, helpers) {
     const format = formats[kind];
     let result, enc = 'utf-8';
@@ -549,6 +660,14 @@
         break;
       }
       case 'vog': result = readVogen(bytes, format, helpers); break;
+      case 'y77':
+      case 'aisp': {
+        let source;
+        try { source = utf8.decode(bytes); }
+        catch (_) { check(false, format); }
+        result = kind === 'y77' ? readY77(source, format, helpers) : readAISingers(source, format, helpers);
+        break;
+      }
     }
     if (!result.tracks.some(track => track.notes.length)) throw new Error(format + ' 工程中没有可导入的人声音符');
     // Pitch fitting indexes its source notes by ID before the editor assigns its own IDs.
@@ -556,6 +675,8 @@
     const tempos = tempoMap(result.events);
     let warn = '原声库、手工音素、独立颤音与效果未转换';
     if (result.audio) warn += '；伴奏与音频轨未导入';
+    if (result.nonVocal) warn += '；非人声轨道未导入';
+    if (result.mix) warn += '；轨道音量与独奏设置未导入';
     if (result.talk) warn += '；说话轨未导入';
     if (result.meter) warn += '；拍号及拍号变化暂不转换';
     if (result.tempoConflict) warn += '；同位置的不同轨道速度以首条为准';

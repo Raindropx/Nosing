@@ -335,7 +335,7 @@
 
     'menu.start': '开始',
     'menu.newProject': '新建',
-    'menu.fileImport': '导入工程文件…（MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG）',
+    'menu.fileImport': '导入工程文件…（MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / Y77 / AISP / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG）',
     'menu.demo': '载入示例乐谱',
     'menu.export': '导出',
     'menu.expVocal': '导出本层人声',
@@ -692,7 +692,7 @@
 
     'menu.start': 'Start',
     'menu.newProject': 'New Project',
-    'menu.fileImport': 'Import Project… (MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG)',
+    'menu.fileImport': 'Import Project… (MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / Y77 / AISP / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG)',
     'menu.demo': 'Load Demo Score',
     'menu.export': 'Export',
     'menu.expVocal': 'Export Current Vocal Layer',
@@ -1582,7 +1582,7 @@
     'imp.normalizing': 'Normalizing imported pitch curves…',
     'imp.staleProject': 'Project changed during import; result discarded. Please re-import.',
     'imp.unknownFormat': 'Unrecognized file format',
-    'imp.unknownFormatAlert': 'Unrecognized file format. Supported formats include MIDI, VSQ, VSQX, VPR, SVP, UST, USTX, TLP, TLPX, NN, ACEP, VCP, VSP, DSC, ufdata, NSG, CCS, CCST, TSSLN, DV, SK, MTP, VSPX and VOG.',
+    'imp.unknownFormatAlert': 'Unrecognized file format. Supported formats include MIDI, VSQ, VSQX, VPR, SVP, UST, USTX, TLP, TLPX, NN, Y77, AISP, ACEP, VCP, VSP, DSC, ufdata, NSG, CCS, CCST, TSSLN, DV, SK, MTP, VSPX and VOG.',
     'imp.failed': 'Import failed: {msg}',
     'imp.readError': 'Failed to read file',
     'imp.readErrorDetail': 'Failed to read file: {msg}',
@@ -2247,6 +2247,7 @@
         .replace(/NN 颤音、音量包络与声库设置未转换/g, 'NN vibrato, volume envelopes, and voicebank settings were not converted')
         .replace(/(\d+) 个外部音频片段未导入/g, '$1 external audio clip(s) not imported')
         .replace(/；非人声轨道未导入/g, '; non-vocal tracks were not imported')
+        .replace(/；轨道音量与独奏设置未导入/g, '; track volume and solo settings were not imported')
         .replace(/；旧版伴奏未导入/g, '; legacy accompaniment was not imported')
         .replace(/原声库、手工音素、独立颤音与效果未转换/g, 'Voicebanks, manual phonemes, separate vibrato and effects were not converted')
         .replace(/；伴奏与音频轨未导入/g, '; accompaniment and audio tracks were not imported')
