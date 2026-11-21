@@ -6466,6 +6466,24 @@
       c.stroke(); c.setLineDash([]);
     }
 
+    /* 试听乐谱时的播放头 */
+    if (ctxData && typeof ctxData.playheadX === 'number' && isFinite(ctxData.playheadX)) {
+      var phX = eyePlotX(Math.max(0, Math.min(1, ctxData.playheadX)));
+      c.save();
+      c.strokeStyle = P.eyeStepHalo; c.lineWidth = 4;
+      c.beginPath(); c.moveTo(phX, eyePlotY(1)); c.lineTo(phX, eyePlotY(0)); c.stroke();
+      c.strokeStyle = P.eyeStepLine; c.lineWidth = 1.8;
+      c.beginPath(); c.moveTo(phX, eyePlotY(1)); c.lineTo(phX, eyePlotY(0)); c.stroke();
+      c.fillStyle = P.eyeStepLine;
+      c.beginPath();
+      c.moveTo(phX, eyePlotY(1) + 5);
+      c.lineTo(phX - 4, eyePlotY(1) - 1);
+      c.lineTo(phX + 4, eyePlotY(1) - 1);
+      c.closePath();
+      c.fill();
+      c.restore();
+    }
+
     /* 标题（左上）与图例（右上）：都贴着画布内侧画，别越界 */
     c.fillStyle = P.eyeTitle; c.font = 'bold 10px Consolas, monospace';
     c.textAlign = 'left';
@@ -6540,6 +6558,10 @@
       '<div class="row2"><label class="lb">' + t('compose.span', null, '跨度') + '</label><input type="number" id="cpSpan" class="numin" min="2" max="14" step="1" value="7" style="width:56px"><span class="mini">' + t('compose.spanUnit', null, '级') + '</span></div>' +
       '<div class="cap2">' + t('compose.contourCap', null, '旋律轮廓') + '</div>' +
       '<div id="eyeOut" class="eyeout"></div>' +
+      '<div class="eyepreview">' +
+      '<button type="button" class="abtn" id="cpPrevScale" title="' + escAttr(t('compose.previewScaleTitle', null, '用钢琴弹奏当前选定的音阶')) + '">' + t('compose.previewScale', null, '▶ 预览音阶') + '</button>' +
+      '<button type="button" class="abtn" id="cpPrevScore" title="' + escAttr(t('compose.previewScoreTitle', null, '用钢琴弹奏当前谱曲设定下的实际乐谱')) + '">' + t('compose.previewScore', null, '▶ 预览乐谱') + '</button>' +
+      '</div>' +
       '</div></div>';
 
     var m = modal(t('compose.title', null, '快速谱曲 · 曲线编辑器'), body,
@@ -6552,14 +6574,222 @@
     var rootSel = $('#cpRoot', m.el);
     var scaleSel = $('#cpScale', m.el);
     var spanIn = $('#cpSpan', m.el);
+    var prevScaleBtn = $('#cpPrevScale', m.el);
+    var prevScoreBtn = $('#cpPrevScore', m.el);
     rootSel.value = String(state.score.root || 62);
     scaleSel.value = $('#scaleSel').value || 'penta';
+
+    /* 钢琴预览（选定音阶 / 当前设定实际乐谱） */
+    var previewSource = null, previewRenderer = null, previewReq = 0;
+    var previewKind = null, previewBusy = false, previewRaf = 0, previewPlayheadX = null;
+
+    function syncPreviewBtns() {
+      var prepLabel = t('compose.previewPrep', null, '… 准备中');
+      var stopLabel = t('compose.previewStop', null, '■ 停止预览');
+      var scaleActive = previewKind === 'scale';
+      var scoreActive = previewKind === 'score';
+      if (prevScaleBtn) {
+        prevScaleBtn.textContent = scaleActive ? (previewBusy ? prepLabel : stopLabel) : t('compose.previewScale', null, '▶ 预览音阶');
+        prevScaleBtn.classList.toggle('gold', scaleActive);
+      }
+      if (prevScoreBtn) {
+        prevScoreBtn.textContent = scoreActive ? (previewBusy ? prepLabel : stopLabel) : t('compose.previewScore', null, '▶ 预览乐谱');
+        prevScoreBtn.classList.toggle('gold', scoreActive);
+      }
+    }
+
+    function stopComposePreview(closeWorker) {
+      previewReq++;
+      var hadVisual = previewPlayheadX !== null || !!previewRaf;
+      if (previewRaf) { cancelAnimationFrame(previewRaf); previewRaf = 0; }
+      previewPlayheadX = null;
+      if (previewSource) {
+        var src = previewSource;
+        previewSource = null;
+        src.onended = null;
+        try { src.stop(); } catch (e) {}
+        try { src.disconnect(); } catch (e) {}
+      }
+      if ((closeWorker || previewBusy) && previewRenderer) {
+        previewRenderer.close();
+        previewRenderer = null;
+      }
+      previewKind = null;
+      previewBusy = false;
+      syncPreviewBtns();
+      if (hadVisual && m.isOpen()) redraw();
+    }
+
+    function buildScalePreviewData() {
+      var root = parseInt(rootSel.value, 10);
+      if (!isFinite(root)) root = 60;
+      var degs = NSG.COMPOSE.SCALES[scaleSel.value] || NSG.COMPOSE.SCALES.penta;
+      var stepBeats = degs.length > 8 ? 0.35 : 0.45;
+      var notes = [];
+      for (var i = 0; i <= degs.length; i++) {
+        var isLast = i === degs.length;
+        notes.push({
+          start: i * stepBeats,
+          dur: isLast ? stepBeats * 2.4 : stepBeats * 1.15,
+          pitch: NSG.COMPOSE.degToMidi(root, degs, i),
+          vel: (i === 0 || isLast) ? 94 : 84,
+          inst: 'piano'
+        });
+      }
+      return {
+        score: { tempo: 120, tracks: [{ type: 'inst', space: 'intimate', notes: notes }] },
+        trackPlayhead: null
+      };
+    }
+
+    function buildScorePreviewData() {
+      var res = buildMelody();
+      if (!res.notes.length) return null;
+      var tm = NSG.TEMPO.map(state.score);
+      var offset = res.notes[0].start || 0;
+      var previewNotes = res.notes.map(function (n) {
+        return {
+          start: Math.max(0, n.start - offset),
+          dur: Math.max(0.0625, n.dur),
+          pitch: n.pitch,
+          vel: n.vel || 96,
+          inst: 'piano'
+        };
+      });
+      var endBeat = 0;
+      previewNotes.forEach(function (n) { endBeat = Math.max(endBeat, n.start + n.dur); });
+      var previewScore;
+      if (selectionMode) {
+        var shiftedTempos = [{ beat: 0, bpm: tm.bpmAt(offset) }];
+        tm.list.forEach(function (seg) {
+          if (seg.beat > offset + 1e-6) {
+            shiftedTempos.push({ beat: seg.beat - offset, bpm: seg.bpm });
+          }
+        });
+        previewScore = {
+          tempo: shiftedTempos[0].bpm,
+          tempos: shiftedTempos,
+          tracks: [{ type: 'inst', space: 'intimate', notes: previewNotes }]
+        };
+      } else {
+        var appendStart = 0;
+        roll.notes.forEach(function (n) { appendStart = Math.max(appendStart, n.start + n.dur); });
+        previewScore = {
+          tempo: tm.bpmAt(appendStart),
+          tracks: [{ type: 'inst', space: 'intimate', notes: previewNotes }]
+        };
+      }
+      var shiftedTm = NSG.TEMPO.map(previewScore);
+      var selDur = selectedEnd - selectedStart || 1;
+      return {
+        score: previewScore,
+        trackPlayhead: function (elapsedSec) {
+          if (elapsedSec < 0) return 0;
+          var curBeat = shiftedTm.beatOf(elapsedSec);
+          if (curBeat > endBeat) return null;
+          if (selectionMode) {
+            return Math.max(0, Math.min(1, (offset + curBeat - selectedStart) / selDur));
+          }
+          var totalN = previewNotes.length;
+          if (!totalN) return null;
+          if (curBeat <= previewNotes[0].start) return 0;
+          for (var q = 0; q < totalN; q++) {
+            var nt = previewNotes[q];
+            if (curBeat <= nt.start + nt.dur) {
+              var frac = nt.dur > 0 ? Math.max(0, Math.min(1, (curBeat - nt.start) / nt.dur)) : 1;
+              return (q + frac) / totalN;
+            }
+            if (q + 1 < totalN && curBeat < previewNotes[q + 1].start) {
+              return (q + 1) / totalN;
+            }
+          }
+          return 1;
+        }
+      };
+    }
+
+    async function playComposePreview(kind) {
+      if (previewKind === kind) {
+        stopComposePreview(false);
+        return;
+      }
+      stopComposePreview(false);
+      stopPlay();
+      var data = kind === 'scale' ? buildScalePreviewData() : buildScorePreviewData();
+      if (!data || !data.score) {
+        setStatus(selectionMode
+          ? t('compose.noNotesAlertSel', null, '选中段没有可谱曲的发声音符')
+          : t('compose.noNotesAlert', null, '没有可用的音节'));
+        return;
+      }
+      var req = previewReq;
+      var ctx = ensureCtx();
+      previewKind = kind;
+      previewBusy = true;
+      syncPreviewBtns();
+      try {
+        if (!previewRenderer) previewRenderer = NSG.Renderer.create();
+        var r = await previewRenderer.accomp(data.score);
+        if (!m.isOpen() || req !== previewReq) return;
+        previewBusy = false;
+        if (!r || !r.audio || !r.audio.channels || !r.audio.channels[0] || !r.audio.channels[0].length) {
+          stopComposePreview(false);
+          return;
+        }
+        if (ctx.state === 'suspended') await ctx.resume();
+        if (!m.isOpen() || req !== previewReq) return;
+        var audio = r.audio;
+        var buffer = ctx.createBuffer(audio.channels.length, audio.channels[0].length, audio.sr);
+        audio.channels.forEach(function (pcm, ch) { buffer.copyToChannel(pcm, ch); });
+        var src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        previewSource = src;
+        syncPreviewBtns();
+        var startAt = ctx.currentTime;
+        src.onended = function () {
+          try { src.disconnect(); } catch (e) {}
+          if (previewSource === src) {
+            previewSource = null;
+            if (previewRaf) { cancelAnimationFrame(previewRaf); previewRaf = 0; }
+            previewPlayheadX = null;
+            previewKind = null;
+            previewBusy = false;
+            syncPreviewBtns();
+            if (m.isOpen()) redraw();
+          }
+        };
+        src.start(startAt);
+        if (kind === 'score' && data.trackPlayhead) {
+          var tick = function () {
+            if (!m.isOpen() || req !== previewReq || previewSource !== src) return;
+            var ph = data.trackPlayhead(ctx.currentTime - startAt);
+            previewPlayheadX = ph;
+            redraw();
+            if (ph !== null) previewRaf = requestAnimationFrame(tick);
+            else previewRaf = 0;
+          };
+          previewRaf = requestAnimationFrame(tick);
+        }
+      } catch (e) {
+        if (m.isOpen() && req === previewReq && e.name !== 'AbortError') {
+          previewBusy = false;
+          previewKind = null;
+          syncPreviewBtns();
+          setStatus(t('compose.previewFail', { msg: tMsg(e.message) }, '钢琴预览失败：' + e.message));
+        }
+      }
+    }
+
+    if (prevScaleBtn) prevScaleBtn.onclick = function () { playComposePreview('scale'); };
+    if (prevScoreBtn) prevScoreBtn.onclick = function () { playComposePreview('score'); };
 
     function currentStyle() {
       var st = NSG.COMPOSE.styleById(state.composeStyle);
       return st;
     }
     function refreshOut() {
+      if (previewKind === 'score') stopComposePreview(false);
       var st = currentStyle();
       spanIn.value = spanIn.value || st.span;
       var res = buildMelody();
@@ -6574,8 +6804,9 @@
           '–' + noteName(Math.max.apply(null, res.notes.map(function (n) { return n.pitch; }))))
         : '<span style="color:#b03020">' + (selectionMode ? t('compose.noVoicedSel', null, '选中段没有发声音符') : t('compose.noSyl', null, '没有解析出音节')) + '</span>') +
         '<div style="margin-top:3px;opacity:.82;font-size:10px">' + scaleNotes + '</div>';
+      if (prevScoreBtn) prevScoreBtn.disabled = !res.notes.length;
       lastRes = res;
-      drawEyeEditor(cv, { syl: res.syl, steps: res.steps, ranges: res.ranges, span: res.span, momOn: momChk.checked });
+      drawEyeEditor(cv, { syl: res.syl, steps: res.steps, ranges: res.ranges, span: res.span, momOn: momChk.checked, playheadX: previewPlayheadX });
     }
     function buildMelody() {
       var lyric = lyrBox.value;
@@ -6693,7 +6924,8 @@
         steps: lastRes ? lastRes.steps : null,
         ranges: lastRes ? lastRes.ranges : null,
         span: lastRes ? lastRes.span : 1,
-        momOn: momChk.checked
+        momOn: momChk.checked,
+        playheadX: previewPlayheadX
       });
     }
     /* 拖动 */
@@ -6801,6 +7033,7 @@
     window.addEventListener('mousemove', onEyeMove);
     window.addEventListener('mouseup', onEyeUp);
     function cleanupEyeListeners() {
+      stopComposePreview(true);
       if (window.removeEventListener) {
         window.removeEventListener('mousemove', onEyeMove);
         window.removeEventListener('mouseup', onEyeUp);
@@ -6873,8 +7106,8 @@
     };
     momChk.onchange = refreshOut;
     lyrBox.addEventListener('input', function () { refreshOut(); });
-    rootSel.onchange = refreshOut;
-    scaleSel.onchange = refreshOut;
+    rootSel.onchange = function () { if (previewKind === 'scale') stopComposePreview(false); refreshOut(); };
+    scaleSel.onchange = function () { if (previewKind === 'scale') stopComposePreview(false); refreshOut(); };
     spanIn.onchange = refreshOut;
 
     /* 风格按钮（一行小字，跟眼睛联动） */
