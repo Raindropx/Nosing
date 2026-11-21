@@ -1155,9 +1155,20 @@
     return tr && typeof tr.pan === 'number' && isFinite(tr.pan) ? Math.max(-1, Math.min(1, tr.pan)) : 0;
   }
 
+  var LANG_SHORT_CODES = {
+    'zh-x-sichuan': 'SC',
+    'nan-x-teochew': 'TEO'
+  };
+
   function langShortCode(code) {
     var s = String(code || 'zh').trim();
     if (!s) return 'ZH';
+    var lower = s.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(LANG_SHORT_CODES, lower)) {
+      return LANG_SHORT_CODES[lower];
+    }
+    var xm = /-x-([a-z0-9]+)/i.exec(s);
+    if (xm && xm[1]) return xm[1].toUpperCase().slice(0, 5);
     return s.toUpperCase().slice(0, 5);
   }
 
@@ -1521,9 +1532,10 @@
       actions.appendChild(mixBox);
 
       var effLang = trackEffectiveLang(tr);
+      var shortCode = langShortCode(effLang);
       var langBadge = document.createElement('span');
-      langBadge.className = 'layer-lang';
-      langBadge.textContent = langShortCode(effLang);
+      langBadge.className = 'layer-lang' + (shortCode.length >= 5 ? ' layer-lang-5' : shortCode.length === 4 ? ' layer-lang-4' : '');
+      langBadge.textContent = shortCode;
       langBadge.title = t('layer.phonemizerTitle', { name: tLangName(effLang) }, '音层音素器：' + ((NSG.langName && NSG.langName[effLang]) || effLang));
 
       body.appendChild(head);
