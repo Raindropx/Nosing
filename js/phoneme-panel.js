@@ -393,8 +393,19 @@
     if (this._emit() && this.onPhoneCommit) this.onPhoneCommit();
     return true;
   };
+  P._defaultCanvasTitle = function () {
+    if (this._defaultCvTitle === undefined) this._defaultCvTitle = (this.cv && this.cv.title) || '';
+    var i18nKey = (this.cv && typeof this.cv.getAttribute === 'function')
+      ? this.cv.getAttribute('data-i18n-title')
+      : null;
+    if (i18nKey) return tr(i18nKey, null, this._defaultCvTitle);
+    if (NSG.I18N && typeof NSG.I18N.has === 'function' && NSG.I18N.has('roll.canvasTitle')) {
+      return tr('roll.canvasTitle', null, this._defaultCvTitle);
+    }
+    return this._defaultCvTitle;
+  };
   P._updateHover = function (p) {
-    if (this._defaultCvTitle === undefined) this._defaultCvTitle = this.cv.title || '';
+    var defaultTitle = this._defaultCanvasTitle();
     var hit = this.hitPhoneBlock(p.x, p.y);
     this.cv.style.cursor = hit ? (hit.mode === 'phoneBoundary' || hit.mode === 'phoneAnticipation' ? 'ew-resize' : hit.mode === 'phoneCrossfade' ? 'col-resize' : 'pointer')
       : (this._hoverCursor ? this._hoverCursor(p) : '');
@@ -407,7 +418,7 @@
       }, hit.block.phone.phone + ' · ' + durMs +
         'ms · 音头提前 ' + antMs + 'ms · 交叉 ' + xfMs + 'ms · 双击更换音素');
     } else {
-      this.cv.title = this._defaultCvTitle;
+      this.cv.title = defaultTitle;
     }
   };
 })(typeof window !== 'undefined' ? window : global);

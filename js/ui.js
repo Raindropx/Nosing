@@ -2032,6 +2032,9 @@
     if (NSG && NSG.I18N && typeof NSG.I18N.applyDom === 'function' && typeof document !== 'undefined') {
       NSG.I18N.applyDom(document);
     }
+    if (roll && roll.cv) {
+      roll._defaultCvTitle = roll.cv.title || '';
+    }
     var langBtn = $('#uiLangBtn');
     if (langBtn) {
       var meta = NSG && NSG.I18N && typeof NSG.I18N.getLanguageMeta === 'function' ? NSG.I18N.getLanguageMeta() : null;
