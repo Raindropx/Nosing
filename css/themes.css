@@ -679,6 +679,11 @@
   color: var(--t9x-primary-text);
   box-shadow: none;
 }
+:root[data-theme="9x"] .ctx-item.has-sub[aria-expanded="true"]:not(:hover):not(:focus-visible) {
+  background: rgba(0, 0, 128, .22);
+  color: var(--t9x-text);
+  box-shadow: none;
+}
 :root[data-theme="9x"] .ctx-item.danger:not(:disabled):hover { background: var(--t9x-danger); color: #ffffff; }
 :root[data-theme="9x"] .ctx-head { color: var(--t9x-val-text); border-bottom-color: var(--t9x-shadow); }
 :root[data-theme="9x"] .ctx-key { color: inherit; opacity: .8; }
@@ -1650,6 +1655,12 @@
   color: #ffffff;
   box-shadow: 0 0 8px var(--tcp-neon-24);
 }
+:root[data-theme="cyberpunk"] .ctx-item.has-sub[aria-expanded="true"]:not(:hover):not(:focus-visible) {
+  background: rgba(0, 240, 255, .08);
+  border-color: var(--tcp-neon-42);
+  color: var(--tcp-text);
+  box-shadow: none;
+}
 :root[data-theme="cyberpunk"] .ctx-item.danger:not(:disabled):hover {
   background: var(--tcp-hot-30);
   border-color: var(--tcp-hot);
@@ -2294,6 +2305,12 @@
   background: var(--txp-dropdown-sel);
   color: #ffffff;
   border-color: var(--txp-dropdown-sel);
+  box-shadow: none;
+}
+:root[data-theme="xp"] .ctx-item.has-sub[aria-expanded="true"]:not(:hover):not(:focus-visible) {
+  background: rgba(49, 106, 197, .22);
+  border-color: rgba(49, 106, 197, .38);
+  color: var(--txp-text);
   box-shadow: none;
 }
 :root[data-theme="xp"] .ctx-item.danger:not(:disabled):hover { background: var(--txp-danger); color: #ffffff; }
@@ -3089,6 +3106,12 @@
   border-color: var(--tpx-warn);
   box-shadow: none;
 }
+:root[data-theme="pixel"] .ctx-item.has-sub[aria-expanded="true"]:not(:hover):not(:focus-visible) {
+  background: rgba(92, 60, 146, .45);
+  border-color: rgba(255, 216, 102, .45);
+  color: var(--tpx-ink);
+  box-shadow: none;
+}
 :root[data-theme="pixel"] .ctx-item.danger:not(:disabled):hover { background: #ff453a; color: #ffffff; }
 :root[data-theme="pixel"] .ctx-head { color: var(--tpx-warn); border-bottom-color: var(--tpx-line); }
 :root[data-theme="pixel"] .ctx-key { color: var(--tpx-accent); }
@@ -3679,6 +3702,12 @@
 :root[data-theme="modern"] .ctx-item:focus-visible:not(:disabled) {
   background: var(--md-primary-container);
   color: var(--md-on-primary-container);
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-theme="modern"] .ctx-item.has-sub[aria-expanded="true"]:not(:hover):not(:focus-visible) {
+  background: color-mix(in srgb, var(--md-primary-container) 52%, transparent);
+  color: var(--md-on-surface);
   border-color: transparent;
   box-shadow: none;
 }

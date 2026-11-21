@@ -5503,6 +5503,12 @@
         btn.appendChild(keySpan);
       }
       btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      btn.addEventListener('mouseenter', function () {
+        if (document.activeElement && document.activeElement !== menu &&
+            menu.contains && menu.contains(document.activeElement) && menu.focus) {
+          menu.focus();
+        }
+      });
 
       if (hasChildren) {
         btn.setAttribute('aria-haspopup', 'menu');
@@ -5584,8 +5590,9 @@
     var top = Math.max(6, Math.min(y, vh - rect.height - 8));
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
-    if (actionButtons.length && actionButtons[0].focus) {
-      actionButtons[0].focus();
+    menu.tabIndex = -1;
+    if (menu.focus) {
+      menu.focus();
     }
     return true;
   }
@@ -5887,7 +5894,15 @@
         if (e.key === 'Escape') { e.preventDefault(); closeContextMenu(); return; }
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         e.preventDefault();
-        var enabled = $$('.ctx-item:not(:disabled)', menu);
+        var activeSub = document.activeElement && document.activeElement.closest
+          ? document.activeElement.closest('.ctx-submenu')
+          : null;
+        var scope = activeSub && !activeSub.hidden ? activeSub : menu;
+        var enabled = $$('.ctx-item:not(:disabled)', scope).filter(function (el) {
+          if (el.closest && el.closest('[hidden]')) return false;
+          if (scope === menu && el.closest && el.closest('.ctx-submenu')) return false;
+          return true;
+        });
         if (!enabled.length) return;
         var idx = enabled.indexOf(document.activeElement);
         var next = e.key === 'ArrowDown' ? (idx + 1) % enabled.length : (idx <= 0 ? enabled.length - 1 : idx - 1);
