@@ -1936,6 +1936,7 @@
     bindUI();
     buildSingerGrid();
     fillKeySel();
+    fillScaleSel();
     applyTimbreToUI();
     loadDemo(true);
     roll.showControlPoints = true;
@@ -2066,11 +2067,13 @@
         langSel.options[i].textContent = tLangName(langSel.options[i].value);
       }
     }
-    syncSelectOptions($('#scaleSel'), {
-      penta: t('left.scalePenta', null, '五声'),
-      major: t('left.scaleMajor', null, '大调'),
-      minor: t('left.scaleMinor', null, '小调')
-    });
+    fillScaleSel();
+    var openCpScale = $('#cpScale');
+    if (openCpScale) {
+      var curCpScale = openCpScale.value || 'penta';
+      openCpScale.innerHTML = scaleOptionsHtml();
+      openCpScale.value = NSG.COMPOSE.SCALES[curCpScale] ? curCpScale : 'penta';
+    }
     syncSelectOptions($('#octSel'), {
       '-12': t('left.octLow', null, '低'),
       '0': t('left.octMid', null, '中'),
@@ -3172,6 +3175,32 @@
     if (!sel) return;
     sel.innerHTML = keyOptionsHtml();
     sel.value = String(state.score.root || 60);
+  }
+  function scaleOptionsHtml() {
+    var groups = (NSG.COMPOSE && NSG.COMPOSE.SCALE_GROUPS) || [];
+    var list = (NSG.COMPOSE && NSG.COMPOSE.SCALE_LIST) || [];
+    var esc = function (s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    };
+    if (!groups.length || !list.length) {
+      return '<option value="penta">' + esc(t('scale.penta', null, '五声（宫调）')) + '</option>';
+    }
+    return groups.map(function (g) {
+      var items = list.filter(function (item) { return item.group === g.id; });
+      if (!items.length) return '';
+      var label = esc(t('scaleGroup.' + g.id, null, g.name));
+      var opts = items.map(function (item) {
+        return '<option value="' + esc(item.id) + '">' + esc(t('scale.' + item.id, null, item.name)) + '</option>';
+      }).join('');
+      return '<optgroup label="' + label + '">' + opts + '</optgroup>';
+    }).join('');
+  }
+  function fillScaleSel() {
+    var sel = $('#scaleSel');
+    if (!sel) return;
+    var cur = sel.value || 'penta';
+    sel.innerHTML = scaleOptionsHtml();
+    sel.value = (NSG.COMPOSE && NSG.COMPOSE.SCALES && NSG.COMPOSE.SCALES[cur]) ? cur : 'penta';
   }
 
   /* ---------------- 分段速度 ---------------- */
@@ -6507,7 +6536,7 @@
       '<textarea id="cpLyr" rows="3"' + (selectionMode ? ' readonly' : '') + '>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</textarea>' +
       '<div class="row2"><label class="lb">' + t('left.key', null, '调性') + '</label><select id="cpRoot" class="tiny">' + keyOptionsHtml() + '</select></div>' +
       '<div class="row2"><label class="lb">' + t('left.scale', null, '音阶') + '</label><select id="cpScale" class="tiny">' +
-      '<option value="penta">' + t('left.scalePenta', null, '五声') + '</option><option value="major">' + t('left.scaleMajor', null, '大调') + '</option><option value="minor">' + t('left.scaleMinor', null, '小调') + '</option></select></div>' +
+      scaleOptionsHtml() + '</select></div>' +
       '<div class="row2"><label class="lb">' + t('compose.span', null, '跨度') + '</label><input type="number" id="cpSpan" class="numin" min="2" max="14" step="1" value="7" style="width:56px"><span class="mini">' + t('compose.spanUnit', null, '级') + '</span></div>' +
       '<div class="cap2">' + t('compose.contourCap', null, '旋律轮廓') + '</div>' +
       '<div id="eyeOut" class="eyeout"></div>' +
@@ -6534,14 +6563,17 @@
       var st = currentStyle();
       spanIn.value = spanIn.value || st.span;
       var res = buildMelody();
-      $('#eyeOut', m.el).innerHTML = res.notes.length
+      var scaleNotes = res.degs.map(function (d) { return KEY_NAMES[((res.root + d) % 12 + 12) % 12]; }).join(' ');
+      scaleSel.title = scaleNotes;
+      $('#eyeOut', m.el).innerHTML = (res.notes.length
         ? t('compose.outSummary', {
             n: res.notes.length,
             lo: noteName(Math.min.apply(null, res.notes.map(function (n) { return n.pitch; }))),
             hi: noteName(Math.max.apply(null, res.notes.map(function (n) { return n.pitch; })))
           }, '音符 <b>' + res.notes.length + '</b> · 音域 ' + noteName(Math.min.apply(null, res.notes.map(function (n) { return n.pitch; }))) +
           '–' + noteName(Math.max.apply(null, res.notes.map(function (n) { return n.pitch; }))))
-        : '<span style="color:#b03020">' + (selectionMode ? t('compose.noVoicedSel', null, '选中段没有发声音符') : t('compose.noSyl', null, '没有解析出音节')) + '</span>';
+        : '<span style="color:#b03020">' + (selectionMode ? t('compose.noVoicedSel', null, '选中段没有发声音符') : t('compose.noSyl', null, '没有解析出音节')) + '</span>') +
+        '<div style="margin-top:3px;opacity:.82;font-size:10px">' + scaleNotes + '</div>';
       lastRes = res;
       drawEyeEditor(cv, { syl: res.syl, steps: res.steps, ranges: res.ranges, span: res.span, momOn: momChk.checked });
     }
@@ -6566,10 +6598,13 @@
           return [(n.start - selectedStart) / duration, (n.start + n.dur - selectedStart) / duration];
         });
       }
-      /* 量化后的音级：按本句实际音域缩放后再画，
-         否则实词/虚词的一级偏移会把线顶到画布外 */
+      /* 量化后的音级：单调音阶按音级序绘制；非单调音阶（如「大」）按实际半音高度映射，
+         让红线直接反映出大跳与离调拐折的真实轮廓 */
+      var nonMonotonic = degs.some(function (v, idx) { return idx > 0 && v < degs[idx - 1]; });
       var steps = notes.map(function (n) {
-        var d = n.pitch - root, oct = Math.floor(d / 12), pc = ((d % 12) + 12) % 12;
+        var d = n.pitch - root;
+        if (nonMonotonic) return (d / 12) * span;
+        var oct = Math.floor(d / 12), pc = ((d % 12) + 12) % 12;
         var idx = degs.indexOf(pc);
         return idx < 0 ? (oct + 0.5) * degs.length : oct * degs.length + idx;
       });
@@ -6878,6 +6913,7 @@
       if (!res.notes.length) { alert(selectionMode ? t('compose.noNotesAlertSel', null, '选中段没有可谱曲的发声音符') : t('compose.noNotesAlert', null, '没有可用的音节')); return; }
       state.score.root = res.root;
       $('#keySel').value = String(res.root);
+      if ($('#scaleSel')) $('#scaleSel').value = scaleSel.value;
       if (selectionMode) {
         var pitches = {};
         res.notes.forEach(function (n) { pitches[n.id] = n.pitch; });

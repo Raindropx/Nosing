@@ -56,13 +56,85 @@
     return false;
   }
 
-  /* 五声音阶（大调）：0 2 4 7 9；另附大调、自然小调 */
+  /* 音阶库：常用调式、教会调式、蓝调爵士、东亚与世界民族、对称与著名特殊音阶 */
   var PENTA = [0, 2, 4, 7, 9];
-  C.SCALES = {
-    penta: PENTA,
-    major: [0, 2, 4, 5, 7, 9, 11],
-    minor: [0, 2, 3, 5, 7, 8, 10]
-  };
+  C.SCALE_GROUPS = [
+    { id: 'common', name: '常用音阶' },
+    { id: 'modes', name: '教会调式' },
+    { id: 'jazz', name: '蓝调与爵士' },
+    { id: 'world', name: '东亚与世界民族' },
+    { id: 'special', name: '对称与著名特殊音阶' }
+  ];
+  C.SCALE_LIST = [
+    // 常用音阶
+    { id: 'penta', group: 'common', name: '五声（宫调）', degs: PENTA },
+    { id: 'pentaMinor', group: 'common', name: '小调五声（羽调）', degs: [0, 3, 5, 7, 10] },
+    { id: 'major', group: 'common', name: '自然大调', degs: [0, 2, 4, 5, 7, 9, 11] },
+    { id: 'minor', group: 'common', name: '自然小调', degs: [0, 2, 3, 5, 7, 8, 10] },
+    { id: 'harmonicMinor', group: 'common', name: '和声小调', degs: [0, 2, 3, 5, 7, 8, 11] },
+    { id: 'melodicMinor', group: 'common', name: '旋律小调', degs: [0, 2, 3, 5, 7, 9, 11] },
+    { id: 'harmonicMajor', group: 'common', name: '和声大调', degs: [0, 2, 4, 5, 7, 8, 11] },
+    // 教会调式
+    { id: 'dorian', group: 'modes', name: '多利亚（Dorian）', degs: [0, 2, 3, 5, 7, 9, 10] },
+    { id: 'phrygian', group: 'modes', name: '弗里吉亚（Phrygian）', degs: [0, 1, 3, 5, 7, 8, 10] },
+    { id: 'lydian', group: 'modes', name: '利底亚（Lydian）', degs: [0, 2, 4, 6, 7, 9, 11] },
+    { id: 'mixolydian', group: 'modes', name: '混合利底亚（Mixolydian）', degs: [0, 2, 4, 5, 7, 9, 10] },
+    { id: 'locrian', group: 'modes', name: '洛克里亚（Locrian）', degs: [0, 1, 3, 5, 6, 8, 10] },
+    // 蓝调与爵士
+    { id: 'blues', group: 'jazz', name: '小调蓝调（Blues）', degs: [0, 3, 5, 6, 7, 10] },
+    { id: 'bluesMajor', group: 'jazz', name: '大调蓝调', degs: [0, 2, 3, 4, 7, 9] },
+    { id: 'bebopDominant', group: 'jazz', name: '比波普属音阶', degs: [0, 2, 4, 5, 7, 9, 10, 11] },
+    { id: 'lydianDominant', group: 'jazz', name: '利底亚属音阶（泛音）', degs: [0, 2, 4, 6, 7, 9, 10] },
+    { id: 'altered', group: 'jazz', name: '变化音阶（Altered）', degs: [0, 1, 3, 4, 6, 8, 10] },
+    // 东亚与世界民族
+    { id: 'shang', group: 'world', name: '中国五声·商调', degs: [0, 2, 5, 7, 10] },
+    { id: 'jue', group: 'world', name: '中国五声·角调', degs: [0, 3, 5, 8, 10] },
+    { id: 'zhi', group: 'world', name: '中国五声·徵调（阳音阶）', degs: [0, 2, 5, 7, 9] },
+    { id: 'hirajoshi', group: 'world', name: '日本·平调子（Hirajoshi）', degs: [0, 2, 3, 7, 8] },
+    { id: 'insen', group: 'world', name: '日本·阴旋法（In-Sen）', degs: [0, 1, 5, 7, 10] },
+    { id: 'miyakoBushi', group: 'world', name: '日本·都节音阶（樱花）', degs: [0, 1, 5, 7, 8] },
+    { id: 'ryukyu', group: 'world', name: '琉球音阶（冲绳）', degs: [0, 4, 5, 7, 11] },
+    { id: 'iwato', group: 'world', name: '日本·岩户音阶（Iwato）', degs: [0, 1, 5, 6, 10] },
+    { id: 'phrygianDominant', group: 'world', name: '弗里吉亚属音阶（希贾兹/弗拉明戈）', degs: [0, 1, 4, 5, 7, 8, 10] },
+    { id: 'doubleHarmonic', group: 'world', name: '双重和声大调（拜占庭）', degs: [0, 1, 4, 5, 7, 8, 11] },
+    { id: 'hungarianMinor', group: 'world', name: '匈牙利小调（吉普赛）', degs: [0, 2, 3, 6, 7, 8, 11] },
+    { id: 'ukrainianDorian', group: 'world', name: '乌克兰多利亚', degs: [0, 2, 3, 6, 7, 9, 10] },
+    { id: 'persian', group: 'world', name: '波斯音阶', degs: [0, 1, 4, 5, 6, 8, 11] },
+    { id: 'pelog', group: 'world', name: '巴厘佩洛格（Pelog）', degs: [0, 1, 3, 7, 8] },
+    { id: 'todi', group: 'world', name: '印度托迪拉格（Todi）', degs: [0, 1, 3, 6, 7, 8, 11] },
+    // 对称与著名特殊音阶
+    { id: 'all', group: 'special', name: '大', degs: [0, 4, 7, 11, 5, 1, 2, 9, 6, 3, 8, 10] },
+    { id: 'wholeTone', group: 'special', name: '全音阶（德彪西）', degs: [0, 2, 4, 6, 8, 10] },
+    { id: 'octatonicHW', group: 'special', name: '半全减音阶（八声）', degs: [0, 1, 3, 4, 6, 7, 9, 10] },
+    { id: 'octatonicWH', group: 'special', name: '全半减音阶（八声）', degs: [0, 2, 3, 5, 6, 8, 9, 11] },
+    { id: 'augmented', group: 'special', name: '增音阶（六声对称）', degs: [0, 3, 4, 7, 8, 11] },
+    { id: 'prometheus', group: 'special', name: '普罗米修斯（斯克里亚宾）', degs: [0, 2, 4, 6, 9, 10] },
+    { id: 'enigmatic', group: 'special', name: '谜之音阶（威尔第）', degs: [0, 1, 4, 6, 8, 10, 11] },
+    { id: 'neapolitanMinor', group: 'special', name: '那不勒斯小调', degs: [0, 1, 3, 5, 7, 8, 11] },
+    { id: 'neapolitanMajor', group: 'special', name: '那不勒斯大调', degs: [0, 1, 3, 5, 7, 9, 11] },
+    { id: 'tritone', group: 'special', name: '三全音音阶（彼得鲁什卡）', degs: [0, 1, 4, 6, 7, 10] },
+    { id: 'messiaen3', group: 'special', name: '梅西安第三调式（九声）', degs: [0, 2, 3, 4, 6, 7, 8, 10, 11] },
+    { id: 'chromatic', group: 'special', name: '十二平均半音阶', degs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }
+  ];
+  C.SCALES = {};
+  C.SCALE_LIST.forEach(function (item) { C.SCALES[item.id] = item.degs; });
+  function stableSteps(degs) {
+    var L = degs.length, base = [0];
+    for (var i = 1; i < L; i++) {
+      var s = degs[i];
+      if (s === 3 || s === 4 || s === 7) base.push(i);
+    }
+    if (base.length === 1) {
+      for (var j = 1; j < L; j++) {
+        if (degs[j] === 5) base.push(j);
+      }
+    }
+    var out = [];
+    for (var oct = 0; oct <= 2; oct++) {
+      for (var k = 0; k < base.length; k++) out.push(oct * L + base[k]);
+    }
+    return out;
+  }
   function scaleDeg(rootMidi, step) {
     var oct = Math.floor(step / 5), idx = ((step % 5) + 5) % 5;
     return rootMidi + oct * 12 + PENTA[idx];
@@ -339,6 +411,7 @@
     }
 
     var notes = [], t = 0;
+    var stable = stableSteps(degs);
     var pairCount = pairs.length;
     pairs.forEach(function (pair, pi) {
       var A = pair[0], B = pair[1];
@@ -365,7 +438,6 @@
           if (isLast) {
             /* 句尾就近落到稳定音级（主、三、五），但只在半个三度以内才动，
                否则「下行/叹息」这类本来就该落在低处的句子会被拽上去 */
-            var stable = [0, 2, 4, 5];
             var best = step, bd = 99;
             stable.forEach(function (d) {
               if (Math.abs(d - step) < bd) { bd = Math.abs(d - step); best = d; }
@@ -407,6 +479,7 @@
     var start = sorted[0].start, end = start;
     sorted.forEach(function (n) { end = Math.max(end, n.start + n.dur); });
     var voiced = sorted.filter(function (n) { return NSG.noteKind(n) === 'voiced'; });
+    var stable = stableSteps(degs);
     return voiced.map(function (n, i) {
       var x = end > start ? (n.start + n.dur / 2 - start) / (end - start) : 0.5;
       var y = EYE.value(eyeSet, x);
@@ -417,7 +490,7 @@
         Math.round(y * span + (isFunc(n.lyric || '', n.lang || lang) ? -off : off))));
       if (i === voiced.length - 1) {
         var best = step, distance = 99;
-        [0, 2, 4, 5].forEach(function (d) {
+        stable.forEach(function (d) {
           if (Math.abs(d - step) < distance) { distance = Math.abs(d - step); best = d; }
         });
         if (distance <= 1) step = best;
