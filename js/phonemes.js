@@ -363,7 +363,7 @@
   variant('x_es', 'x_vi', { dur: 95 });
   variant('y_es', 'jj', { dur: 65, f: [310, 2080, 2900, 3450, 4380] }); // /ʝ/ 近似
   variant('B_es', 'v', { pl: 'lab', dur: 55, na: { f: 1600, b: 1100, g: 0.07, v: true } }); // /β̞/
-  variant('dh_es', 'dh', { pl: 'alv', dur: 52, na: { f: 3200, b: 1800, g: 0.06, v: true } }); // /ð̞/
+  variant('dh_es', 'dh', { pl: 'alv', dur: 52, nonSibilant: true, na: { f: 3200, b: 1800, g: 0.06, v: true } }); // /ð̞/
   variant('G_es', 'x_vi', { dur: 55, na: { f: 1700, b: 1250, g: 0.07, v: true } }); // /ɣ˕/
 
   P.at_pt = V3([615, 1420, 2500], 0); // /ɐ/

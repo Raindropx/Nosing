@@ -2361,7 +2361,8 @@
     es: [
       [/ch/y, 'ch_en'], [/ll/y, 'y_es'], [/ñ/y, 'ny'], [/rr/y, 'rr_es'],
       [/gü(?=[eiéí])/y, 'gv w'], [/gu(?=[eiéí])/y, 'gv'], [/qu(?=[eiéí])/y, 'g'],
-      [/g(?=[eiéí])/y, 'x_es'], [/c(?=[eiéí])/y, 's'], [/c|q/y, 'g'],
+      [/g(?=[eiéí])/y, 'x_es'], [/xc(?=[eiéí])/y, 'g s'], [/sc(?=[eiéí])/y, 's'],
+      [/c(?=[eiéí])/y, 's'], [/c|q/y, 'g'],
       [/(?<![a-záéíóúüñ])x/y, 's'], [/x/y, 'g s'], [/z/y, 's'], [/j/y, 'x_es'],
       [/(?<=[nls])r/y, 'rr_es'], [/^r/y, 'rr_es'], [/y(?=[aeiouáéíóúü])/y, 'y_es'],
       [/y$/y, 'i'], [/h/y, ''], [/v/y, 'bv'],
@@ -2370,48 +2371,61 @@
     pt: [
       [/ch/y, 'sh'], [/nh/y, 'ny'], [/lh/y, 'ly_rom'], [/rr|^r|(?<=[nls])r/y, 'h'],
       [/r(?=[^aeiouáéíóúâêôãõà]|$)/y, 'h'], [/h/y, ''],
-      [/gu(?=[eiéêí])/y, 'gv'], [/gu(?=[aoáã])/y, 'gv w'],
+      [/gu(?=[eiéêí])/y, 'gv'], [/gu(?=[aoáãóôàâ])/y, 'gv w'],
       [/qu(?=[eiéêí])/y, 'g'], [/qu/y, 'g w'],
-      [/g(?=[eiéêí])|j/y, 'zh'], [/sc(?=[eiéêí])/y, 's'], [/c(?=[eiéêí])|ç/y, 's'], [/c|q/y, 'g'],
+      [/g(?=[eiéêí])|j/y, 'zh'], [/(?:sc|xc)(?=[eiéêí])|sç/y, 's'], [/c(?=[eiéêí])|ç/y, 's'], [/c|q/y, 'g'],
       [/ss/y, 's'], [/(?<=[aeiouáéíóúâêôãõà])s(?=[aeiouáéíóúâêôãõà])/y, 'z'],
       [/s(?=[bdgvlmnr])/y, 'z'], [/z$/y, 's'],
-      [/^(?:e|ê)x(?=[aeiouáéíóúâêôãõ])/y, 'i z'],
+      [/^ex(?=[aeiouáéíóúâêôãõ])/y, 'i z'], [/^êx(?=[aeiouáéíóúâêôãõ])/y, 'e_rom z'],
       [/^x|(?<=[aeiou]n|[aeo]i|ou)x/y, 'sh'],
       [/(?<=e)x(?=[ptcf])/y, 's'], [/x/y, 'g s'],
       [/ão|am(?=s?$)/y, 'a_nas_pt U_nas_pt'], [/ãe/y, 'a_nas_pt I_nas_pt'], [/õe/y, 'o_nas_pt I_nas_pt'],
       [/[eéê][mn](?=s?$)/y, 'e_nas_pt I_nas_pt'],
-      [/ã|[aâ][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'a_nas_pt'],
-      [/õ|[oô][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'o_nas_pt'],
+      [/ã|[aáâ][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'a_nas_pt'],
+      [/õ|[oóô][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'o_nas_pt'],
       [/[eéê][mn](?=[^aeiouáéíóúâêôãõàh])/y, 'e_nas_pt'],
-      [/i[mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'i_nas_pt'], [/u[mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'u_nas_pt'],
-      [/(?<=[cçs])i(?=[ao]s?$)/y, 'jj'],
+      [/[ií][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'i_nas_pt'], [/[uú][mn](?=[^aeiouáéíóúâêôãõàh]|$)/y, 'u_nas_pt'],
+      [/(?<=[áéíóúâêô].*[^aeiouáéíóúâêôãõà])i(?=[aeo]s?$)/y, 'jj'],
+      [/(?<=[aeoáéó]|(?<![qg])u)i(?=nh|[rlz]$)/y, '!i'],
+      [/(?<=[aeioáéíó])u(?=nh|[rlz]$)/y, '!u'],
       [/l(?=[^aeiouáéíóúâêôãõà]|$)/y, 'U_rom'],
       [/á|à/y, 'a_j'], [/â/y, 'at_pt'], [/é/y, 'E_rom'], [/ê/y, 'e_rom'],
       [/ó/y, 'O_rom'], [/ô/y, 'o_rom'], [/í/y, '!i'], [/ú/y, '!u']
     ],
     it: [
-      [/sch(?=[eiéèì])/y, 's g'], [/sci(?=[aouàòù]|e(?=[a-zàéèìíòóùú]))/y, 'sh'], [/sc(?=[eiéèì])/y, 'sh'],
+      [/sch(?=[eiéèì])/y, 's g'], [/sci(?=[aouàòùóéè]|e(?=[a-zàéèìíòóùú]))/y, 'sh'], [/sc(?=[eiéèì])/y, 'sh'],
       [/cch/y, 'g g'], [/ggh/y, 'gv gv'], [/ch/y, 'g'], [/gh/y, 'gv'],
-      [/cci(?=[aouàòù]|e(?=[a-zàéèìíòóùú]))|cc(?=[eiéèì])/y, 'ch_en ch_en'],
-      [/ggi(?=[aouàòù]|e(?=[a-zàéèìíòóùú]))|gg(?=[eiéèì])/y, 'jh_en jh_en'],
-      [/ci(?=[aouàòù]|e(?=[a-zàéèìíòóùú]))|c(?=['’]?[eiéèì])/y, 'ch_en'],
-      [/gi(?=[aouàòù]|e(?=[a-zàéèìíòóùú]))|g(?=['’]?[eiéèì])/y, 'jh_en'],
-      [/gli(?=[aouàòùeéè])/y, 'ly_rom'], [/gli(?=$)/y, 'ly_rom i'],
-      [/gn/y, 'ny'], [/qu/y, 'g w'], [/c|q/y, 'g'],
+      [/(?<=(?:lo|er|ur|al|ma|bu))gi(?=[ae]$)/y, 'jh_en !i'],
+      [/(?<=farma)ci(?=[ae]$)/y, 'ch_en !i'],
+      [/cci(?=[aouàòùóéè]|e(?=[a-zàéèìíòóùú]))|cc(?=[eiéèì])/y, 'ch_en ch_en'],
+      [/ggi(?=[aouàòùóéè]|e(?=[a-zàéèìíòóùú]))|gg(?=[eiéèì])/y, 'jh_en jh_en'],
+      [/ci(?=[aouàòùóéè]|e(?=[a-zàéèìíòóùú]))|c(?=['’]?[eiéèì])/y, 'ch_en'],
+      [/gi(?=[aouàòùóéè]|e(?=[a-zàéèìíòóùú]))|g(?=['’]?[eiéèì])/y, 'jh_en'],
+      [/gli(?=[aouàòùóeéè])/y, 'ly_rom'], [/gli(?=$)/y, 'ly_rom i'],
+      [/gn/y, 'ny'], [/qu/y, 'g w'], [/gu(?=[aeiouàéèìíòóùú])/y, 'gv w'], [/c|q/y, 'g'],
+      [/(?<=(?:real|organ|util|anal|armon|visual|simbol|caratter|memor|autor|sincron|improvv|final|legal|local|gener|minim|massim|ottim)i)zz/y, 'dz dz'],
       [/zz/y, 'ts ts'], [/z/y, 'ts'], [/ss/y, 's s'],
-      [/s(?=[bdgvlmnr])/y, 'z'], [/(?<=[aeiouàéèìóòù])s(?=[aeiouàéèìóòù])/y, 'z'],
+      [/s(?=[bdgvlmnr])/y, 'z'], [/(?<=[aeiouàéèìíóòùú])s(?=['’]?[aeiouàéèìíóòùú])/y, 'z'],
       [/rr/y, 'dx rr_es'], [/x/y, 'g s'], [/h|['’]/y, ''],
       [/à/y, 'a_j'], [/è/y, 'E_rom'], [/é/y, 'e_rom'], [/ò/y, 'O_rom'], [/ó/y, 'o_rom'],
       [/ì|í/y, '!i'], [/ù|ú/y, '!u']
     ],
     fr: [
       [/['’]|h/y, ''],
-      [/eaux?/y, 'o_rom'], [/au/y, 'o_rom'], [/ou(?=[aeioéèê])/y, 'w'], [/ou/y, 'u'],
+      [/^(?:in|ré|co)?ex(?=[aeiouyàâéèêëîïôûùh])/y, 'E_rom gv z'],
+      [/ccueil(?:l|(?=s?$))/y, 'g OE_fr jj'], [/cueil(?:l|(?=s?$))/y, 'g OE_fr jj'], [/gueil(?:l|(?=s?$))/y, 'gv OE_fr jj'],
+      [/eaux?/y, 'o_rom'], [/au/y, 'o_rom'],
+      [/ouill|ouil(?=s?$)/y, 'u jj'], [/ou(?=[aioéèê]|e(?!s?$))/y, 'w'], [/o[uù]/y, 'u'],
+      [/oyen(?![aeiouyàâéèêëîïôûùæœnmh])/y, 'w a_j jj E_nas_fr'],
       [/oi[nm](?![aeiouyàéèêîôûnmh])/y, 'w E_nas_fr'], [/oi/y, 'w a_j'],
       [/oy(?=[aeoéèê])/y, 'w a_j jj'],
-      [/uin(?![aeiouyàâéèêëîïôûùæœnmh])/y, 'H_fr E_nas_fr'], [/uy(?=[aeoéèê])/y, 'H_fr i jj'], [/ui/y, 'H_fr i'],
-      [/(?:œu|eu)(?=(?:[frlvn]|[bp]l)e?s?$)/y, 'OE_fr'], [/œu|eu/y, 'oe_fr'],
-      [/ien(?=$|[st]$)|(?:(?<=^b)|(?<=^[vt]))ien(?![aeiouyàâéèêëîïôûùæœnmh])/y, 'jj E_nas_fr'],
+      [/uill/y, 'H_fr i jj'], [/uin(?![aeiouyàâéèêëîïôûùæœnmh])/y, 'H_fr E_nas_fr'], [/uy(?=[aeoéèê])/y, 'H_fr i jj'], [/ui/y, 'H_fr i'],
+      [/(?:œu|oeu|eu)il(?:l|(?=s?$))/y, 'OE_fr jj'],
+      [/(?:œ|oe)il(?=s?$)/y, 'OE_fr jj'],
+      [/eû/y, 'oe_fr'],
+      [/(?:œu|oeu|eu)(?=(?:[frlvn]|[bpv]r|[bp]l)e?s?$|rt?s?$|l[a-z])/y, 'OE_fr'], [/œu|oeu|eu/y, 'oe_fr'],
+      [/(?:(?<=^b)|(?<=(?:^|re|de|sou|con|ob|main|appar|par|pro|sur)[vt]))ien(?![aeiouyàâéèêëîïôûùæœnmh])|(?<!^(?:cl|pat|or|ingréd|inconvén))ien(?=$|[st]$)/y, 'jj E_nas_fr'],
+      [/um$/y, 'O_rom m'],
       [/[ae][nm](?![aeiouyàâéèêëîïôûùæœnmh])/y, 'a_nas_fr'],
       [/o[nm](?![aeiouyàâéèêëîïôûùæœnmh])/y, 'o_nas_fr'],
       [/(?:ai|ei|i|y)[nm](?![aeiouyàâéèêëîïôûùæœnmh])/y, 'E_nas_fr'],
@@ -2420,29 +2434,39 @@
       [/ay(?=[aeoéèê])/y, 'E_rom jj'], [/ai|ei|aî/y, 'E_rom'],
       [/ers?$|ez$/y, 'e_rom'], [/et$/y, 'E_rom'],
       [/é/y, 'e_rom'], [/è|ê|ë|æ/y, 'E_rom'],
-      [/ô|o(?=[dstxzp]*$|s(?!s)[aeiouyàâéèêîôû])/y, 'o_rom'], [/o/y, 'O_rom'],
+      [/ô|o(?=[dstxzp]*$|s(?!s)[aeiouyàâéèêîôû]|tion)/y, 'o_rom'], [/o/y, 'O_rom'],
       [/î|ï/y, 'i'], [/û|ù/y, 'y'], [/à|â/y, 'a_j'],
+      [/^ill|(?<=^(?:v|m|tranqu))ill|(?<=^(?:b|tr))ill(?=ion)/y, 'i l'],
       [/(?<=[aeouyàâéèêëôûù])ill/y, 'jj'], [/ill/y, 'i jj'],
-      [/i(?=[aeoéèê])/y, 'jj'], [/y(?=[aeiouéèê])/y, 'jj'],
-      [/e(?=s?$)/y, ''], [/e(?=x|[bcdfgjklmnprstvz]{2}|[cflq]$)/y, 'E_rom'], [/e/y, '@'],
-      [/ph/y, 'f'], [/gn/y, 'ny'], [/ch|sh/y, 'sh'], [/th/y, 'd'],
+      [/(?<=[bcdfgkptv][lr])i(?=[aoéèêàâô]|e(?!s?$))/y, 'i jj'],
+      [/i(?=[aoéèêàâô]|e(?!s?$))/y, 'jj'], [/y(?=[aeiouéèê])/y, 'jj'],
+      [/e(?=s?$)/y, ''], [/e(?=mm[ae]nts?$)/y, 'a_j'],
+      [/e(?=x|ch[rln]|(?![bcdfgkptv][lr][aeiouyàâéèêëîïôûù])[bcdfgjklmnprstvz]{2}|[cflq]$)/y, 'E_rom'], [/e/y, '@'],
+      [/ph/y, 'f'], [/gn/y, 'ny'], [/ch(?=[rln])/y, 'g'], [/ch|sh/y, 'sh'], [/th/y, 'd'],
       [/qu(?=['’]?[aeiouyàéèê])/y, 'g'], [/gu(?=[eiéèêy])/y, 'gv'], [/qu|q/y, 'g'],
       [/(?<=[aeio]n)[cg]s?$|gts?$/y, ''],
-      [/ge(?=[aoàâô])/y, 'zh'], [/g(?=[eiéèêy])|j/y, 'zh'],
-      [/c(?=['’]?[eiéèêy])|ç/y, 's'], [/c/y, 'g'],
-      [/(?<!s)ti(?=on)/y, 's jj'], [/ss/y, 's'],
-      [/(?<=[aeiouyàâéèêîôû])s(?=[aeiouyàâéèêîôû])/y, 'z'],
+      [/ge(?=[aoàâô]|è$)/y, 'zh'], [/g(?=[eiéèêy])|j/y, 'zh'],
+      [/xc(?=[eiéèêy])/y, 'g s'], [/sc(?=[eiéèêy])/y, 's'], [/cc(?![eiéèêy])/y, 'g'], [/c(?=['’]?[eiéèêy])|ç/y, 's'], [/c/y, 'g'],
+      [/(?<!s)ti(?=on|ence|el|al|eu[xs]|euse)/y, 's jj'], [/ss/y, 's'],
+      [/(?<=[aeiouyàâéèêëîïôûùæœ])s(?=[aeiouyàâéèêëîïôûùæœ])/y, 'z'],
       [/[dstxzp]+$/y, ''], [/x/y, 'g s'], [/rr?/y, 'r_fr']
     ],
     ro: [
+      [/^ex(?=[aeiouăâî])/y, 'e_rom gv z'],
       [/ch(?=[ei])/y, 'g'], [/gh(?=[ei])/y, 'gv'],
       [/ci(?=[aouăâî])|ce(?=[ao])|c(?=[ei])/y, 'ch_en'],
       [/gi(?=[aouăâî])|ge(?=[ao])|g(?=[ei])/y, 'jh_en'],
       [/c|q/y, 'g'], [/j/y, 'zh'], [/h/y, 'h'], [/ș/y, 'sh'], [/ț/y, 'ts'], [/x/y, 'g s'],
       [/ă/y, '@'], [/â|î/y, 'I_ro'], [/ea/y, 'e_glide_ro a_j'], [/oa/y, 'o_glide_ro a_j'],
-      [/ii$/y, '!i I_rom']
+      [/ii$/y, '!i I_rom'],
+      [/(?<=[aeiouăâî])u(?=[aă]$)/y, 'w'],
+      [/(?<=[bcdfgpstvz][rl])i(?=[aeo])/y, '!i'],
+      [/(?<=[^aeiouăâî])i(?=[aeu]$)/y, '!i']
     ]
   };
+
+  var FR_NONVERB_ENT = /^(?:vent|cent|dent|lent|parent|talent|serpent|torrent|couvent|souvent|ciment|accent|innocent|excellent|absent|présent|content|mécontent|récent|décent|indécent|évident|prudent|imprudent|différent|indifférent|cohérent|incohérent|adhérent|transparent|apparent|violent|silent|opulent|turbulent|insolent|indolent|client|patient|orient|ingrédient|inconvénient|président|résident|accident|incident|confident|argent|sergent|agent|urgent|intelligent|négligent|diligent|divergent|convergent|contingent|exigent|indulgent|tangent|émergent|confluent|affluent|influent|permanent|continent|pertinent|imminent|éminent|compétent|incompétent|intermittent|pénitent|adolescent|fluorescent|incandescent|(?:re|de|sou|con|ob|main|appar|par|pro|sur|inter|pré)?[vt]ient)$/;
+  var FR_VERB_ENT = /(?:(?:iss|ou|ill|nn|ll|tt|ss)ent|(?:[iuv]|ch|nd|rd|rt|mb|mp|bl|fl|gl|pl|tr|vr|cr|dr|gr|sc|nc|ut|èt|èr|èv|èm|èn|èl|ès)ent|^(?:dorment|ferment|forment|calment|charment|allument|fument|expriment|animent|volent|parlent|coulent|roulent|brûlent|sautent|portent|montent|comptent|racontent|tournent|retournent|marchent|cherchent|cachent|touchent|couchent|savent|lavent|lèvent|sauvent|servent|vivent|suivent|écrivent|lisent|disent|voient|croient|boivent|doivent|meurent|courent|ouvrent|partent|sortent|sentent|mentent))$/;
 
   var ROMANCE_EXCEPTIONS = {
     es: {
@@ -2453,27 +2477,68 @@
       muito: 'm u_nas_pt I_nas_pt d u', muita: 'm u_nas_pt I_nas_pt d at_pt',
       mais: 'm a_j I_rom s', quem: 'g e_nas_pt I_nas_pt', bem: 'bv e_nas_pt I_nas_pt',
       um: 'u_nas_pt', uma: 'u_nas_pt m at_pt', os: 'u s', o: 'u', e: 'i',
+      lo: 'l u', los: 'l u s', la: 'l at_pt', las: 'l at_pt s',
       de: 'jh_en i', do: 'dv u', dos: 'dv u s', no: 'n u', nos: 'n u s',
       que: 'g i', se: 's i', te: 'ch_en i', me: 'm i', lhe: 'ly_rom i', lhes: 'ly_rom i s',
       hoje: 'o_rom zh i', noite: 'n o_rom I_rom ch_en i', sol: 's O_rom U_rom',
       manhã: 'm a_j ny a_nas_pt', amanhã: 'a_j m a_j ny a_nas_pt',
-      próximo: 'b dx O_rom s i m u', exemplo: 'i z e_nas_pt b l u',
+      próximo: 'b dx O_rom s i m u', próxima: 'b dx O_rom s i m at_pt',
+      próximos: 'b dx O_rom s i m u s', próximas: 'b dx O_rom s i m at_pt s',
+      máximo: 'm a_j s i m u', máxima: 'm a_j s i m at_pt',
+      trouxe: 'd dx o_rom U_rom s i', trouxeram: 'd dx o_rom U_rom s E_rom dx a_nas_pt U_nas_pt',
+      auxílio: 'a_j U_rom s i l jj u',
+      lixo: 'l i sh u', roxo: 'h o_rom sh u', roxa: 'h o_rom sh at_pt',
+      bruxa: 'bv dx u sh at_pt', puxar: 'b u sh a_j h', puxa: 'b u sh at_pt',
+      mexer: 'm e_rom sh e_rom h', mexe: 'm E_rom sh i', mexeu: 'm e_rom sh e_rom U_rom',
+      abacaxi: 'a_j bv a_j g a_j sh i', luxo: 'l u sh u', coxa: 'g o_rom sh at_pt',
+      exemplo: 'i z e_nas_pt b l u',
       exame: 'i z a_nas_pt m i', coração: 'g o_rom dx a_j s a_nas_pt U_nas_pt',
       água: 'a_j gv w at_pt', quando: 'g w a_nas_pt dv u', quatro: 'g w a_j d dx u',
       tranquilo: 'd dx a_nas_pt g w i l u', cinquenta: 's i_nas_pt g w e_nas_pt d at_pt',
-      frequente: 'f dx e_rom g w e_nas_pt ch_en i'
+      frequente: 'f dx e_rom g w e_nas_pt ch_en i',
+      aguentar: 'a_j gv w e_nas_pt d a_j h', aguenta: 'a_j gv w e_nas_pt d at_pt',
+      linguiça: 'l i_nas_pt gv w i s at_pt', pinguim: 'b i_nas_pt gv w i_nas_pt',
+      sequência: 's e_rom g w e_nas_pt s jj at_pt', consequência: 'g o_nas_pt s e_rom g w e_nas_pt s jj at_pt'
     },
     it: {
       gli: 'ly_rom i', zio: 'ts !i o_rom',
-      zia: 'ts !i a_j', zaino: 'dz a_j I_rom n o_rom', zero: 'dz E_rom dx o_rom',
-      mezzo: 'm E_rom dz dz o_rom', azzurro: 'a_j dz dz u dx rr_es o_rom',
+      zia: 'ts !i a_j', zii: 'ts !i i', zaino: 'dz a_j I_rom n o_rom', zero: 'dz E_rom dx o_rom',
+      zona: 'dz O_rom n a_j', zone: 'dz O_rom n e_rom', zoo: 'dz O_rom o_rom',
+      zelo: 'dz E_rom l o_rom', zebra: 'dz E_rom bv dx a_j', zanzara: 'dz a_j n dz a_j dx a_j',
+      mezzo: 'm E_rom dz dz o_rom', mezza: 'm E_rom dz dz a_j',
+      mezzi: 'm E_rom dz dz i', mezze: 'm E_rom dz dz e_rom',
+      azzurro: 'a_j dz dz u dx rr_es o_rom', azzurra: 'a_j dz dz u dx rr_es a_j',
+      azzurri: 'a_j dz dz u dx rr_es i', azzurre: 'a_j dz dz u dx rr_es e_rom',
+      brezza: 'bv dx e_rom dz dz a_j', orizzonte: 'o_rom dx i dz dz o_rom n d e_rom',
+      pranzo: 'b dx a_j n dz o_rom', romanzo: 'dx o_rom m a_j n dz o_rom', bronzo: 'bv dx o_rom n dz o_rom',
       casa: 'g a_j z a_j', cosa: 'g O_rom z a_j', rosa: 'dx O_rom z a_j',
       bello: 'bv E_rom l l o_rom', bella: 'bv E_rom l l a_j', amore: 'a_j m o_rom dx e_rom',
       cuore: 'g w O_rom dx e_rom', buono: 'bv w O_rom n o_rom', nuovo: 'n w O_rom v o_rom',
       bene: 'bv E_rom n e_rom', notte: 'n O_rom d d e_rom', sole: 's o_rom l e_rom',
-      io: '!i o_rom', mio: 'm !i o_rom', mia: 'm !i a_j', suo: 's !u o_rom', sua: 's !u a_j',
-      dio: 'dv !i o_rom', più: 'b jj u', ciao: 'ch_en a_j U_rom',
-      poesia: 'b o_rom e_rom z !i a_j', pesce: 'b e_rom sh sh e_rom'
+      io: '!i o_rom', mio: 'm !i o_rom', mia: 'm !i a_j', mie: 'm !i e_rom',
+      tuo: 'd !u o_rom', tua: 'd !u a_j', tue: 'd !u e_rom',
+      suo: 's !u o_rom', sua: 's !u a_j', sue: 's !u e_rom',
+      due: 'dv !u e_rom', via: 'v !i a_j', sia: 's !i a_j', dia: 'dv !i a_j', stia: 's d !i a_j',
+      scia: 'sh !i a_j', spia: 's b !i a_j',
+      dio: 'dv !i o_rom', addio: 'a_j dv dv !i o_rom', oblio: 'o_rom bv l !i o_rom',
+      paura: 'b a_j !u dx a_j',
+      più: 'b jj u', ciao: 'ch_en a_j U_rom',
+      poesia: 'b o_rom e_rom z !i a_j', fantasia: 'f a_j n d a_j z !i a_j',
+      melodia: 'm e_rom l o_rom dv !i a_j', armonia: 'a_j dx m o_rom n !i a_j',
+      sinfonia: 's i n f o_rom n !i a_j', allegria: 'a_j l l e_rom gv dx !i a_j',
+      gelosia: 'jh_en e_rom l o_rom z !i a_j', cortesia: 'g o_rom dx d e_rom z !i a_j',
+      compagnia: 'g o_rom m b a_j ny !i a_j', malattia: 'm a_j l a_j d d !i a_j',
+      follia: 'f o_rom l l !i a_j', polizia: 'b o_rom l i ts !i a_j',
+      ferrovia: 'f e_rom dx rr_es o_rom v !i a_j', teoria: 'd e_rom o_rom dx !i a_j',
+      ironia: 'i dx o_rom n !i a_j', economia: 'e_rom g o_rom n o_rom m !i a_j',
+      autonomia: 'a_j U_rom d o_rom n o_rom m !i a_j', democrazia: 'dv e_rom m o_rom g dx a_j ts !i a_j',
+      filosofia: 'f i l o_rom z o_rom f !i a_j', terapia: 'd e_rom dx a_j b !i a_j',
+      utopia: 'u d o_rom b !i a_j', agonia: 'a_j gv o_rom n !i a_j',
+      galleria: 'gv a_j l l e_rom dx !i a_j', libreria: 'l i bv dx e_rom dx !i a_j',
+      pizzeria: 'b i ts ts e_rom dx !i a_j', batteria: 'bv a_j d d e_rom dx !i a_j',
+      specie: 's b E_rom ch_en e_rom', superficie: 's u b e_rom dx f i ch_en e_rom',
+      camicie: 'g a_j m i ch_en e_rom', valigie: 'v a_j l i jh_en e_rom', ciliegie: 'ch_en i l jj E_rom jh_en e_rom',
+      pesce: 'b e_rom sh sh e_rom'
     },
     fr: {
       le: 'l @', je: 'zh @', me: 'm @', te: 'd @', se: 's @', de: 'dv @', ce: 's @', ne: 'n @',
@@ -2483,9 +2548,12 @@
       ils: 'i l', elles: 'E_rom l', nous: 'n u', vous: 'v u', sont: 's o_nas_fr',
       ont: 'o_nas_fr', dans: 'dv a_nas_fr', avec: 'a_j v E_rom g', donc: 'dv o_nas_fr g',
       deux: 'dv oe_fr', neuf: 'n OE_fr f', sœur: 's OE_fr r_fr', cœur: 'g OE_fr r_fr',
+      chœur: 'g OE_fr r_fr', choeur: 'g OE_fr r_fr', orchestre: 'O_rom r_fr g E_rom s d r_fr',
+      écho: 'e_rom g o_rom', chaos: 'g a_j o_rom',
       oeil: 'OE_fr jj', œil: 'OE_fr jj', ville: 'v i l', mille: 'm i l', tranquille: 'd r_fr a_nas_fr g i l',
       mer: 'm E_rom r_fr', cher: 'sh E_rom r_fr', fer: 'f E_rom r_fr', hiver: 'i v E_rom r_fr',
-      outil: 'u d i', fusil: 'f y z i', rose: 'r_fr o_rom z',
+      enfer: 'a_nas_fr f E_rom r_fr', amer: 'a_j m E_rom r_fr', super: 's y b E_rom r_fr',
+      outil: 'u d i', fusil: 'f y z i', rose: 'r_fr o_rom z', parfum: 'b a_j r_fr f OE_nas_fr',
       bonheur: 'bv O_rom n OE_fr r_fr', gentil: 'zh a_nas_fr d i', soleil: 's O_rom l E_rom jj',
       femme: 'f a_j m', monsieur: 'm @ s jj oe_fr', messieurs: 'm e_rom s jj oe_fr',
       parler: 'b a_j r_fr l e_rom', parlent: 'b a_j r_fr l', aiment: 'E_rom m',
@@ -2501,6 +2569,17 @@
       vers: 'v E_rom r_fr', travers: 'd r_fr a_j v E_rom r_fr', univers: 'y n i v E_rom r_fr',
       envers: 'a_nas_fr v E_rom r_fr', divers: 'dv i v E_rom r_fr', "l'hiver": 'l i v E_rom r_fr',
       font: 'f o_nas_fr', avaient: 'a_j v E_rom', étaient: 'e_rom d E_rom',
+      eu: 'y', eus: 'y', eut: 'y', eurent: 'y r_fr',
+      faisons: 'f @ z o_nas_fr', faisant: 'f @ z a_nas_fr', faisais: 'f @ z E_rom', faisait: 'f @ z E_rom', faisaient: 'f @ z E_rom',
+      dessus: 'dv @ s y', dessous: 'dv @ s u', ressentir: 'r_fr @ s a_nas_fr d i r_fr',
+      ressembler: 'r_fr @ s a_nas_fr bv l e_rom', ressource: 'r_fr @ s u r_fr s',
+      ennui: 'a_nas_fr n H_fr i', ennuyer: 'a_nas_fr n H_fr i jj e_rom', emmener: 'a_nas_fr m n e_rom',
+      patient: 'b a_j s jj a_nas_fr', examen: 'E_rom gv z a_j m E_nas_fr',
+      deuxième: 'dv oe_fr z jj E_rom m', sixième: 's i z jj E_rom m', dixième: 'dv i z jj E_rom m',
+      soixante: 's w a_j s a_nas_fr d', longtemps: 'l o_nas_fr d a_nas_fr',
+      oignon: 'O_rom ny o_nas_fr', août: 'u',
+      hélas: 'e_rom l a_j s', mars: 'm a_j r_fr s', ours: 'u r_fr s', bus: 'bv y s',
+      sens: 's a_nas_fr s', maïs: 'm a_j i s', tennis: 'd E_rom n i s', oasis: 'O_rom a_j z i s',
       six: 's i s', dix: 'dv i s', huit: 'H_fr i d', sept: 's E_rom d',
       oui: 'w i', pays: 'b e_rom i', demain: 'dv @ m E_nas_fr',
       "aujourd'hui": 'o_rom zh u r_fr dv H_fr i', fils: 'f i s', automne: 'o_rom d O_rom n'
@@ -2512,6 +2591,14 @@
       erau: 'jj e_rom dx a_j U_rom', erați: 'jj e_rom dx a_j ts J_ro',
       iubi: 'jj u bv !i', veni: 'v e_rom n !i', trăi: 'd dx @ !i', muri: 'm u dx !i',
       vorbi: 'v o_rom dx bv !i', citi: 'ch_en i d !i', fi: 'f !i',
+      găsi: 'gv @ s !i', dori: 'dv o_rom dx !i', privi: 'b dx i v !i', zâmbi: 'z I_ro m bv !i',
+      străluci: 's d dx @ l u ch_en !i', mulțumi: 'm u l ts u m !i', aminti: 'a_j m i n d !i',
+      întâlni: 'I_ro n d I_ro l n !i', părăsi: 'b @ dx @ s !i', trezi: 'd dx e_rom z !i',
+      sosi: 's o_rom s !i', primi: 'b dx i m !i', lovi: 'l o_rom v !i', numi: 'n u m !i',
+      împlini: 'I_ro m b l i n !i', pluti: 'b l u d !i', înflori: 'I_ro n f l o_rom dx !i',
+      răsări: 'dx @ s @ dx !i', opri: 'o_rom b dx !i', porni: 'b o_rom dx n !i',
+      gândi: 'gv I_ro n dv !i', păși: 'b @ sh !i',
+      real: 'dx e_rom a_j l', ideal: 'i dv e_rom a_j l', teatru: 'd e_rom a_j d dx u',
       românia: 'dx o_rom m I_ro n !i a_j', maria: 'm a_j dx !i a_j',
       noștri: 'n o_rom sh d dx !i', voștri: 'v o_rom sh d dx !i'
     }
@@ -2524,8 +2611,12 @@
     if (lang === 'fr' && /[^s]s$/.test(word) && Object.prototype.hasOwnProperty.call(exceptions, word.slice(0, -1))) {
       return exceptions[word.slice(0, -1)].split(' ');
     }
-    // -ais/-ait/-aient and the plural of words ending in mute -e.
-    if (lang === 'fr') word = word.replace(/ai(?:s|t|ent)$/g, 'è').replace(/es$/, 'e');
+    // -ais/-ait/-aient, 3rd-person plural verb -ent, and the plural of words ending in mute -e.
+    if (lang === 'fr') {
+      word = word.replace(/ai(?:s|t|ent)$/g, 'è');
+      if (!FR_NONVERB_ENT.test(word) && FR_VERB_ENT.test(word)) word = word.replace(/ent$/, 'e');
+      word = word.replace(/es$/, 'e');
+    }
     var rules = ROMANCE_RULES[lang], phones = [];
     for (var i = 0; i < word.length;) {
       var match = null, reading;
@@ -2554,19 +2645,24 @@
       });
     }
     if (lang === 'pt') {
-      // Unstressed final a/e/o and palatalized t/d before [i].
+      // Unstressed final a/e/o and palatalized t/d before [i] / [j].
       if (phones.filter(romanceVowel).length > 1) {
         var final = phones.length - (phones[phones.length - 1] === 's' ? 2 : 1);
-        var reduced = { a: 'at_pt', e: 'i', o: 'u' }[word.replace(/s$/, '').slice(-1)];
+        var reduced = { a: 'at_pt', e: '!i', o: '!u' }[word.replace(/s$/, '').slice(-1)];
         if (reduced && romanceVowel(phones[final])) phones[final] = reduced;
       }
       phones = phones.map(function (id, index) {
-        return /^(i|!i|i_nas_pt)$/.test(phones[index + 1]) ?
+        return /^(i|!i|i_nas_pt|jj)$/.test(phones[index + 1]) ?
           (id === 'd' ? 'ch_en' : id === 'dv' ? 'jh_en' : id) : id;
       });
     }
-    if (lang === 'ro' && /[^aeiouăâî]i$/.test(word) && phones[phones.length - 1] === 'i' &&
-        phones.filter(romanceVowel).length > 1) {
+    if (lang === 'it' || lang === 'ro') {
+      phones = phones.map(function (id, index) {
+        return id === 'n' && /^(g|gv)$/.test(phones[index + 1]) ? 'ng' : id;
+      });
+    }
+    if (lang === 'ro' && /[^aeiouăâî]i$/.test(word) && !/[bcdfgpstvzșț][rl]i$/.test(word) &&
+        phones[phones.length - 1] === 'i' && phones.filter(romanceVowel).length > 1) {
       // ce/ci and ge/gi are already palatal, while a final i otherwise gives a short release.
       if (/(?:c|g)i$/.test(word)) phones.pop();
       else phones[phones.length - 1] = 'J_ro';
@@ -2592,7 +2688,7 @@
         var afterVowel = i > start && prev !== high && romanceVowel(prev);
         // In Brazilian Portuguese, most oral diphthongs have a vowel followed by a glide.
         // In Romanian, e̯a/o̯a already have separate symbols. Allow initial yod and final glides.
-        if (beforeVowel && (lang === 'es' || lang === 'it' || (lang === 'ro' && high === 'i'))) {
+        if (beforeVowel && (lang === 'es' || (lang === 'it' && !(high === 'u' && next === 'i')) || (lang === 'ro' && high === 'i'))) {
           phones[i] = high === 'i' ? 'jj' : 'w';
         } else if (afterVowel && (lang !== 'it' || i + 1 === end)) {
           phones[i] = high === 'i' ? 'I_rom' : 'U_rom';
@@ -2610,9 +2706,9 @@
         if (NSG.PHONES[first].glide) break;
         var onset = phones.slice(cut - 1, endOnset).join(' ');
         if (cut === endOnset ||
-            /^(?:b|bv|B_es|d|dv|dh|g|gv|G_es|f|v) (?:l|dx|rr_es|r_fr)(?: (?:jj|w|H_fr|[eo]_glide_ro))?$/.test(onset) ||
+            /^(?:b|bv|B_es|d|dv|dh|dh_es|g|gv|G_es|f|v) (?:l|dx|rr_es|r_fr)(?: (?:jj|w|H_fr|[eo]_glide_ro))?$/.test(onset) ||
             /^(?:\S+ )?(?:jj|w|H_fr|[eo]_glide_ro)$/.test(onset) ||
-            (lang !== 'es' && /^(?:s|z) (?:b|bv|d|dv|g|gv|f|v|m|n|l)(?: (?:l|dx|rr_es|r_fr|jj|w))?$/.test(onset))) {
+            (lang === 'it' && /^(?:s|z) (?:b|bv|d|dv|g|gv|f|v|m|n|l)(?: (?:l|dx|rr_es|r_fr|jj|w))?$/.test(onset))) {
           cut--;
         } else break;
       }

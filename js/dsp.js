@@ -841,12 +841,12 @@
     if (id === 'ny') return 'ny';
     if (/^(ng|N_j|ngm_vi)$/.test(id)) return 'ng';
     if (/^(l|l_zh|l_ru|l_uk)$/.test(id)) return 'l';
-    if (id === 'ly_ru') return 'ly';
+    if (/^(ly_ru|ly_rom)$/.test(id)) return 'ly';
     if (/^(r|rj)$/.test(id)) return 'r';
     if (/^(dx|r_pl|r_ru|r_uk|r_fi)$/.test(id)) return 'dx';
     if (id === 'rr_es') return 'rr_es';
     if (id === 'w') return 'w';
-    if (id === 'jj') return 'jj';
+    if (/^(jj|y_es)$/.test(id)) return 'jj';
     if (/^(f|fj|fy_ru)$/.test(id)) return 'f';
     if (/^(v|vy_ru|v_fi)$/.test(id)) return 'v';
     if (id === 'th') return 'th';
@@ -860,8 +860,9 @@
     if (id === 'zx_pl') return 'zx';
     if (/^(h|h_ko|hh_uk|x_ax)$/.test(id)) return 'h';
     if (/^(ch_de|xy_ru)$/.test(id)) return 'ch_de';
-    if (/^(x_de|x_pl|x_ru|x_uk|x_vi|gh_vi|h_ax)$/.test(id)) return 'x';
+    if (/^(x_de|x_pl|x_ru|x_uk|x_vi|x_es|gh_vi|h_ax)$/.test(id)) return 'x';
     if (id === 'r_de') return 'r_de';
+    if (id === 'r_fr') return 'r_fr';
     return '';
   }
   function isGeminatePair(id1, id2) {
@@ -1117,10 +1118,10 @@
       function segmentDur(index) {
         var d0 = baseSegmentDur(index), role = geminateRole[index], phone = NSG.phoneOf(phones[index]);
         if (role === 'first') {
-          // Finnish geminates extend the hold before the single release; stops extend closure (~2.3x),
+          // Finnish and Italian geminates extend the hold before the single release; stops extend closure,
           // and the Finnish trill keeps trilling across both halves.
-          if (phone.t === 'S' || phone.t === 'A') return d0 * stopClosureRatio(index) * (noteLang === 'fi' ? 1.8 : 0.50);
-          return d0 * (noteLang === 'fi' ? 1 : 0.45);
+          if (phone.t === 'S' || phone.t === 'A') return d0 * stopClosureRatio(index) * (noteLang === 'fi' ? 1.8 : noteLang === 'it' ? 1.65 : 0.50);
+          return d0 * (noteLang === 'fi' ? 1 : noteLang === 'it' ? 0.95 : 0.45);
         }
         if (role === 'second') {
           if (phone.t === 'S' || phone.t === 'A') return d0 * (1 - 0.50 * stopClosureRatio(index));
@@ -1733,7 +1734,8 @@
         } else if (ph.t === 'F') {
           var labiodental = ((isEnglish || isRomance || isEsperanto) && /^(f|v|fy_ru|vy_ru)$/.test(phones[c2])) ||
             (noteLang === 'hak' && phones[c2] === 'v');
-          var enVoicedFric = (noteLang === 'en' || isEsperanto) && /^(dh|z|zh)$/.test(phones[c2]);
+          var enVoicedFric = ((noteLang === 'en' || isEsperanto) && /^(dh|z|zh)$/.test(phones[c2])) ||
+            (isRomance && /^(z|zh)$/.test(phones[c2]));
           var germanVelar = /^(x_de|x_pl|x_ru|x_uk)$/.test(phones[c2]);
           var spanishVelar = phones[c2] === 'x_es';
           var germanR = (noteLang === 'de' && phones[c2] === 'r_de') || (noteLang === 'fr' && phones[c2] === 'r_fr');
@@ -1808,7 +1810,7 @@
               fric: 0, nasal: 0, voiceTau: voicedAffricate ? 0.006 : undefined,
               fc: ph.na ? ph.na.f : 4000, fbw: ph.na ? ph.na.b : 1200 });
           }
-          var englishAffricate = (isEnglish || isEsperanto) && /^(ch_en|jh_en)$/.test(phones[c2]);
+          var englishAffricate = (isEnglish || isRomance || isEsperanto) && /^(ch_en|jh_en)$/.test(phones[c2]);
           // 普通话 c / ch：前段保留摩擦，后段转为后接元音塑形的送气；
           // 普通话 zh：加强闭塞并略收摩擦，与送气 ch 及擦音 sh 拉开。
           // tsh / ts_r 也被其他语言使用，限定语言及声母位置，不修改共享音素。
