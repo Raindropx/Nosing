@@ -975,7 +975,7 @@
     hifiWaveguide: 1, hifiHighPolish: 1,
     dirty: true, playing: false, ctx: null, src: null,
     playStart: 0, playFromBeat: 0,
-    rawSrc: false, bgId: 'a1', theme: 'aero', uiTransparency: 15, harmHi: null,
+    rawSrc: false, forceSnap: false, bgId: 'a1', theme: 'aero', uiTransparency: 15, harmHi: null,
     themeSchemes: {
       '9x': 'standard',
       xp: 'classic-blue',
@@ -1856,6 +1856,9 @@
     roll = new NSG.PianoRoll($('#roll'), $('#rollScroll'));
     roll.timbre = state.timbre;
     roll.theme = state.theme;
+    roll.forceSnap = !!state.forceSnap;
+    var forceSnapChkInit = $('#forceSnapChk');
+    if (forceSnapChkInit) forceSnapChkInit.checked = !!roll.forceSnap;
     roll.onContextMenu = onRollContextMenu;
     roll.onSelectionChange = syncInspector;
     roll.onTuningInput = syncInspector;
@@ -2211,6 +2214,21 @@
       b.addEventListener('click', function () { setTool(b.dataset.tool); });
     });
     $('#snapSel').addEventListener('change', function () { roll.snap = parseFloat(this.value); roll.draw(); });
+    var forceSnapChk = $('#forceSnapChk');
+    if (forceSnapChk) {
+      forceSnapChk.addEventListener('change', function () {
+        state.forceSnap = !!this.checked;
+        roll.forceSnap = state.forceSnap;
+        try {
+          if (state.forceSnap) localStorage.setItem('nsg.forceSnap', '1');
+          else localStorage.removeItem('nsg.forceSnap');
+        } catch (e) { }
+        setStatus(t(state.forceSnap ? 'ui.forceSnapOnStatus' : 'ui.forceSnapOffStatus', null,
+          state.forceSnap
+            ? '强制吸附网格已开启 · 拖动音符起点与结尾将严格对齐网格线（按住 Alt 拖动可临时关闭）'
+            : '强制吸附网格已关闭 · 拖动音符将保持原有相对偏移（按住 Alt 拖动可临时开启）'));
+      });
+    }
     bindRollControls();
     $('#tempo').addEventListener('change', function () {
       var v = Math.max(20, Math.min(400, parseFloat(this.value) || 120));
@@ -2489,6 +2507,23 @@
         dir: direction < 0 ? t('ui.dirLeft', null, '前移') : t('ui.dirRight', null, '后移'),
         n: result.n
       }, (result.selected ? '选中音符' : '当前轨道') + '已' + (direction < 0 ? '前移' : '后移') + ' 1 小节 · ' + result.n + ' 个音符 · 可撤销'));
+      renderAndAnalyze(60);
+    }
+    return result;
+  }
+  function quantizeToGridUI() {
+    var result = roll.quantizeToGrid();
+    if (!result.n) setStatus(t('ui.noNotesToAdjust', null, '当前轨道没有可调整的音符'));
+    else if (!result.changed) {
+      setStatus(t('ui.quantizeAlreadyAligned', {
+        scope: result.selected ? t('ui.scopeSelected', null, '选中音符') : t('ui.scopeTrack', null, '当前轨道')
+      }, (result.selected ? '选中音符' : '当前轨道') + '已对齐到当前网格'));
+    } else {
+      state.dirty = true;
+      setStatus(t('ui.quantizeDone', {
+        scope: result.selected ? t('ui.scopeSelected', null, '选中音符') : t('ui.scopeTrack', null, '当前轨道'),
+        n: result.changed
+      }, (result.selected ? '选中音符' : '当前轨道') + '已吸附到网格 · 调整 ' + result.changed + ' 个音符 · 可撤销'));
       renderAndAnalyze(60);
     }
     return result;
@@ -5031,6 +5066,7 @@
       [t('help.k.mclick', null, '中键'), t('help.d.mclick', null, '点击 PIT 内部控制点直接删除；曲线首尾点不可删除')],
       [t('help.k.cclick', null, '<kbd>Ctrl</kbd>+点击'), t('help.d.cclick', null, '逐个加选 / 取消选中音符')],
       [t('help.k.sclick', null, '<kbd>Shift</kbd>+点击'), t('help.d.sclick', null, '先点首音符，再 Shift+点尾音符，选中整个范围；PIT 模式下切换 S 曲线 / 直线；右键控制点选择后段形状或删除')],
+      [t('help.k.altDrag', null, '<kbd>Alt</kbd>+拖动'), t('help.d.altDrag', null, '临时切换强制吸附网格（拖动音符起点或结尾严格对齐当前网格线）')],
       [t('help.sec.view', null, '视图')],
       [t('help.k.fit', null, '<kbd>F</kbd>'), t('help.d.fit', null, '适配全曲')],
       [t('help.k.vis', null, '<kbd>I</kbd> · <kbd>O</kbd> · <kbd>U</kbd>'), t('help.d.vis', null, '显示 / 隐藏 PIT 曲线 · 控制点 · 颤音按钮')],
@@ -5356,7 +5392,9 @@
   function buildRollContextItems(e, p, hitNote, area, pitHit) {
     var selNotes = roll.selected(), nSel = selNotes.length, hasNotes = roll.notes.length > 0;
     var primary = hitNote || selNotes[0] || null;
-    var clickBeat = Math.max(0, Math.round(roll.xBeat(p ? p.x : roll.kbW) / (roll.snap || 0.25)) * (roll.snap || 0.25));
+    var clickBeat = roll._snapGrid
+      ? roll._snapGrid(roll.xBeat(p ? p.x : roll.kbW))
+      : Math.max(0, Math.round(roll.xBeat(p ? p.x : roll.kbW) / (roll.snap || 0.25)) * (roll.snap || 0.25));
 
     if (area === 'pit' && pitHit) {
       var firstPoint = pitHit.index === 0, lastPoint = pitHit.index === pitHit.points.length - 1;
@@ -5457,6 +5495,7 @@
         { label: t('ctx.octDown', null, '降八度') + scopeSuffix, shortcut: 'Shift+↓', disabled: !hasNotes, onClick: function () { transposeOctaveUI(-1); } },
         { label: t('ctx.barLeft', null, '前移一个小节') + scopeSuffix, shortcut: 'Ctrl+←', disabled: !hasNotes, onClick: function () { shiftBarUI(-1); } },
         { label: t('ctx.barRight', null, '后移一个小节') + scopeSuffix, shortcut: 'Ctrl+→', disabled: !hasNotes, onClick: function () { shiftBarUI(1); } },
+        { label: t('ctx.quantizeToGrid', null, '吸附到网格') + scopeSuffix, disabled: !hasNotes, onClick: quantizeToGridUI },
         '-',
         { label: t('ctx.cut', null, '剪切'), shortcut: 'Ctrl+X', disabled: !nSel, onClick: cutNotes },
         { label: t('ctx.copy', null, '复制'), shortcut: 'Ctrl+C', disabled: !nSel, onClick: copyNotes },
@@ -7306,6 +7345,7 @@
       savedCustomBg = localStorage.getItem('nsg.customBg');
       savedTheme = localStorage.getItem('nsg.theme') || 'aero';
       savedTransparency = localStorage.getItem('nsg.uiTransparency');
+      state.forceSnap = localStorage.getItem('nsg.forceSnap') === '1';
       if (localStorage.getItem('nsg.legacySound') === '1' && NSG.setLegacySound) NSG.setLegacySound(true);
       var savedSchemesRaw = localStorage.getItem('nsg.themeSchemes');
       if (savedSchemesRaw) {

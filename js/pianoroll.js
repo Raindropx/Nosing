@@ -21,6 +21,10 @@
     return used;
   }
 
+  function roundBeat(v) {
+    return Math.round(v * 1e6) / 1e6;
+  }
+
   function PianoRoll(canvas, scrollbar) {
     this.cv = canvas;
     this.viewCtx = canvas.getContext('2d');
@@ -36,6 +40,7 @@
     this.onContextMenu = null;
     this._rightClickAction = null;
     this.snap = 0.25;
+    this.forceSnap = false;
     this.pxBeat = 88;
     this.rowH = 20;
     this.lowPitch = 40;
@@ -163,6 +168,14 @@
   };
   PianoRoll.prototype.xBeat = function (x) { return (x - this.kbW) / this.pxBeat + this.scrollBeat; };
   PianoRoll.prototype.beatX = function (b) { return this.kbW + (b - this.scrollBeat) * this.pxBeat; };
+  PianoRoll.prototype._snapStep = function () {
+    var snap = (Number.isFinite(this.snap) && this.snap > 1e-4) ? this.snap : 0.25;
+    return Math.abs(snap - 1 / 3) < 1e-3 ? 1 / 3 : snap;
+  };
+  PianoRoll.prototype._snapGrid = function (beat) {
+    var step = this._snapStep();
+    return Math.max(0, roundBeat(Math.round(beat / step) * step));
+  };
 
   PianoRoll.prototype.setZoomX = function (pxBeat) {
     if (!Number.isFinite(pxBeat)) return;
@@ -523,12 +536,17 @@
     }
     // 网格
     // 同一种线合成一条路径一次描完，缩小时线条上百根也不卡
+    var step = this._snapStep();
     var b0 = Math.floor(this.scrollBeat), b1 = this.xBeat(w);
     var gridPaths = [[], [], []];
-    for (var b = b0; b <= b1; b += this.snap) {
+    for (var k = Math.floor(b0 / step); ; k++) {
+      var b = k * step;
+      if (b > b1 + 1e-9) break;
       var x = Math.round(this.beatX(b));
       if (x < kbW - 0.5) continue;
-      gridPaths[Math.abs(b % 4) < 1e-6 ? 0 : Math.abs(b % 1) < 1e-6 ? 1 : 2].push(x + 0.5);
+      var isBar = Math.abs(b / 4 - Math.round(b / 4)) < 1e-6;
+      var isBeat = Math.abs(b - Math.round(b)) < 1e-6;
+      gridPaths[isBar ? 0 : isBeat ? 1 : 2].push(x + 0.5);
     }
     [[T.gridBar, 1.4], [T.gridBeat, 1], [T.gridSub, 1]].forEach(function (style, k) {
       if (!gridPaths[k].length) return;
@@ -1671,7 +1689,7 @@
         return;
       }
       var beat = self.xBeat(p.x), pitch = self.yPitch(p.y);
-      var snapB = Math.round(beat / self.snap) * self.snap;
+      var snapB = self._snapGrid(beat);
       var inVel = p.y > self.h - self.velLane;
       if (!inVel && self.tool === 'pit') {
         if (e.button === 0) {
@@ -1754,9 +1772,13 @@
       if (hit) {
         self._selectNote(hit.note, false, false);
         var moving = self.notes.filter(function (n) { return !!self.sel[n.id]; });
+        var anchorIdx = moving.indexOf(hit.note);
+        if (anchorIdx < 0) anchorIdx = 0;
         self.drag = {
           mode: hit.edge ? 'resize' : 'move',
-          x0: p.x, y0: p.y, beat0: beat, list: moving,
+          x0: p.x, y0: p.y, beat0: beat, moved: false, movedX: false,
+          anchorIdx: anchorIdx,
+          list: moving,
           orig: moving.map(function (n) { return { start: n.start, dur: n.dur, pitch: n.pitch }; })
         };
         if (self.pit.length) self.drag.pitEdit = {
@@ -1768,15 +1790,16 @@
         return;
       }
       if (self.tool === 'pen') {
+        var step = self._snapStep();
         var nn = {
           id: noteId(noteIds(self.notes)),
-          start: Math.max(0, snapB), dur: Math.max(self.snap, 1), pitch: Math.max(24, Math.min(96, pitch)),
+          start: Math.max(0, snapB), dur: Math.max(step, 1), pitch: Math.max(24, Math.min(96, pitch)),
           lyric: self.defaultLyric || 'a', vel: 96, vib: 0.5
         };
         self.notes.push(nn);
         self.sel = {}; self.sel[nn.id] = 1;
         self._selectionAnchor = nn.id;
-        self.drag = { mode: 'new', x0: p.x, y0: p.y, beat0: beat, list: [nn], orig: [{ start: nn.start, dur: nn.dur, pitch: nn.pitch }] };
+        self.drag = { mode: 'new', x0: p.x, y0: p.y, beat0: beat, moved: false, movedX: false, list: [nn], orig: [{ start: nn.start, dur: nn.dur, pitch: nn.pitch }] };
         self._emit();
         return;
       }
@@ -1861,6 +1884,13 @@
         self._applyVel(d.list, p);
         return;
       }
+      if (!d.moved) {
+        if (Math.hypot(p.x - d.x0, p.y - d.y0) < 3) return;
+        d.moved = true;
+      }
+      if (!d.movedX && Math.abs(p.x - d.x0) >= 3) d.movedX = true;
+      var step = self._snapStep();
+      var forceSnap = !!(self.forceSnap !== !!e.altKey);
       var dBeat = (p.x - d.x0) / self.pxBeat;
       var dPitch = Math.round((d.y0 - p.y) / self.rowH);
       if (d.mode === 'move') {
@@ -1870,7 +1900,19 @@
           minStart = Math.min(minStart, o.start);
           minPitch = Math.min(minPitch, o.pitch); maxPitch = Math.max(maxPitch, o.pitch);
         });
-        dBeat = Math.max(-minStart, Math.round(dBeat / self.snap) * self.snap);
+        if (!d.movedX) {
+          dBeat = 0;
+        } else if (forceSnap) {
+          var anchorOrig = d.orig[d.anchorIdx || 0] || d.orig[0];
+          var snappedAnchor = self._snapGrid(anchorOrig.start + dBeat);
+          dBeat = snappedAnchor - anchorOrig.start;
+          if (minStart + dBeat < 0) {
+            var extraSteps = Math.ceil((-minStart - dBeat - 1e-9) / step);
+            dBeat += Math.max(0, extraSteps) * step;
+          }
+        } else {
+          dBeat = Math.max(-minStart, Math.round(dBeat / step) * step);
+        }
         // Imported notes outside the editor range must not jump on a horizontal move.
         dPitch = Math.max(Math.min(24, minPitch) - minPitch,
           Math.min(Math.max(100, maxPitch) - maxPitch, dPitch));
@@ -1878,13 +1920,25 @@
       d.list.forEach(function (n, i) {
         var o = d.orig[i];
         if (d.mode === 'resize') {
-          n.dur = Math.max(self.snap, Math.round((o.dur + dBeat) / self.snap) * self.snap);
+          if (forceSnap) {
+            var rawEnd = o.start + o.dur + dBeat;
+            var minGap = Math.min(step * 0.25, 0.03125);
+            var minEnd = roundBeat(Math.ceil((o.start + minGap - 1e-9) / step) * step);
+            var snappedEnd = Math.max(minEnd, self._snapGrid(rawEnd));
+            n.dur = Math.max(minGap, roundBeat(snappedEnd - o.start));
+          } else {
+            n.dur = Math.max(step, roundBeat(Math.round((o.dur + dBeat) / step) * step));
+          }
         } else if (d.mode === 'move') {
-          n.start = o.start + dBeat;
+          n.start = Math.max(0, roundBeat(o.start + dBeat));
           n.pitch = o.pitch + dPitch;
         } else if (d.mode === 'new') {
-          var dur = Math.max(self.snap, Math.round((Math.abs(dBeat) || self.snap) / self.snap) * self.snap);
-          n.dur = dBeat >= 0 ? Math.max(self.snap, Math.round(dBeat / self.snap) * self.snap) : self.snap;
+          if (forceSnap) {
+            var curEnd = self._snapGrid(self.xBeat(p.x));
+            n.dur = Math.max(step, roundBeat(curEnd - o.start));
+          } else {
+            n.dur = dBeat >= 0 ? Math.max(step, roundBeat(Math.round(dBeat / step) * step)) : step;
+          }
         }
       });
       if (d.pitEdit) self.pit = NSG.TUNING.moveNotePit(d.pitEdit.notes, d.pitEdit.pit, self.notes, d.pitEdit.bindings);
@@ -2158,6 +2212,27 @@
     var dir = direction < 0 ? -1 : direction > 0 ? 1 : 0;
     return this.shiftBeats(dir * 4);
   };
+  PianoRoll.prototype.quantizeToGrid = function () {
+    var self = this;
+    var picked = this.selected(), list = picked.length ? picked : this.notes;
+    if (!list.length) return { n: 0, changed: 0, selected: !!picked.length };
+    var step = this._snapStep();
+    var changed = 0;
+    list.forEach(function (n) {
+      if (!Number.isFinite(n.start) || !Number.isFinite(n.dur)) return;
+      var newStart = self._snapGrid(n.start);
+      var rawEnd = n.start + n.dur;
+      var newEnd = Math.max(roundBeat(newStart + step), self._snapGrid(rawEnd));
+      var newDur = roundBeat(newEnd - newStart);
+      if (Math.abs(newStart - n.start) > 1e-6 || Math.abs(newDur - n.dur) > 1e-6) {
+        n.start = newStart;
+        n.dur = newDur;
+        changed++;
+      }
+    });
+    if (changed) this._emit();
+    return { n: list.length, changed: changed, selected: !!picked.length };
+  };
 
   PianoRoll.prototype.applyNoteLyric = function (target, val) {
     if (!target || val === null || val === undefined) return false;
@@ -2218,8 +2293,10 @@
     if (!this.clip.length) return 0;
     var base = Math.min.apply(null, this.clip.map(function (c) { return c.start; }));
     var target = typeof atBeat === 'number' && isFinite(atBeat) && atBeat >= 0
-      ? Math.max(0, Math.round(atBeat / this.snap) * this.snap)
-      : Math.max(0, this.playPos >= 0 ? this.playPos : 0);
+      ? this._snapGrid(atBeat)
+      : (this.forceSnap
+        ? this._snapGrid(Math.max(0, this.playPos >= 0 ? this.playPos : 0))
+        : Math.max(0, this.playPos >= 0 ? this.playPos : 0));
     var self = this, used = noteIds(this.notes), bindings = NSG.TUNING.capturePitBindings(this.notes, this.pit);
     this.sel = {};
     this.clip.forEach(function (c) {
