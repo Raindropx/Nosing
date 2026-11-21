@@ -2036,7 +2036,7 @@
     if (langBtn) {
       var meta = NSG && NSG.I18N && typeof NSG.I18N.getLanguageMeta === 'function' ? NSG.I18N.getLanguageMeta() : null;
       langBtn.textContent = (meta && meta.buttonLabel) || t('lang.button', null, 'language');
-      langBtn.title = t('lang.buttonTitle', null, 'Switch UI Language (English / 中文)');
+      langBtn.title = t('lang.buttonTitle', null, 'Switch UI Language (English / 中文 / 日本語)');
       if (langBtn.setAttribute) langBtn.setAttribute('aria-label', t('lang.buttonAria', null, '切换界面语言 / Switch Language'));
     }
     var mq = $('#marquee');

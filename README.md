@@ -13,7 +13,7 @@ Nosing (小市唱) is an offline singing synthesizer. You draw the notes, type i
 2. Load the built-in demo or import a project of your own. In the piano roll, pick a note and change its lyric to “ah”.
 3. Press play. For a more heartfelt “ah”, make the note longer.
 
-You can enter lyrics in several languages, add independent vocal layers, and turn on automatic accompaniment. The interface speaks English and Simplified Chinese. Vocals render at 16 kHz by default, or 48 kHz in HiFi mode.
+You can enter lyrics in several languages, add independent vocal layers, and turn on automatic accompaniment. The interface speaks English, Simplified Chinese, and Japanese. Vocals render at 16 kHz by default, or 48 kHz in HiFi mode.
 
 You can export the current vocal layer as a WAV, all vocal layers as a ZIP of WAVs, the accompaniment, the mix, or MIDI.
 
