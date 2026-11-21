@@ -3695,7 +3695,8 @@
       var explicitLang = n.noteLang || (n.langSource === 'note' ? n.lang : '');
       var resolvedLang = explicitLang || selected || n.lang || defaultLang || 'zh';
       copy.lang = resolvedLang;
-      if ((explicitLang || selected) && (n.phonesLang || explicitLang || n.lang || defaultLang) !== resolvedLang) delete copy.phones;
+      var storedPhonesLang = n.phonesLang || (!n.noteLang && n.langSource === 'note' ? n.lang : '') || n.lang || defaultLang;
+      if ((explicitLang || selected) && storedPhonesLang !== resolvedLang) delete copy.phones;
       copy._phonesCustom = !!(copy.phones && /^(manual|imported)$/.test(n.phonesSource || ''));
       copy._storedPhones = copy.phones && !n.phonesSource ? copy.phones.slice() : null;
       var hasHint = /\[[^\]]*\]/.test(copy.lyric || '');
@@ -4159,4 +4160,20 @@
     nan: '闽南语', hak: '客家话（四县腔）', 'nan-x-teochew': '潮州话（府城音）',
     ko: '朝鲜语', vi: '越南语', fil: '菲律宾语（他加禄语）', id: '印尼语',
     ms: '马来语', th: '泰语', eo: '世界语', tok: '道本语', asaxi: 'Asaxi', xdi8: '希顶语', tlh: '克林贡语' };
+
+  var LANG_SHORT_CODES = {
+    'zh-x-sichuan': 'SC',
+    'nan-x-teochew': 'TEO'
+  };
+  NSG.langShortCode = function (code) {
+    var s = String(code || 'zh').trim();
+    if (!s) return 'ZH';
+    var lower = s.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(LANG_SHORT_CODES, lower)) {
+      return LANG_SHORT_CODES[lower];
+    }
+    var xm = /-x-([a-z0-9]+)/i.exec(s);
+    if (xm && xm[1]) return xm[1].toUpperCase().slice(0, 5);
+    return s.toUpperCase().slice(0, 5);
+  };
 })(typeof window !== 'undefined' ? window : global);

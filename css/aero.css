@@ -1660,6 +1660,30 @@ body #status.processing::before {
   margin: 4px 6px;
   background: linear-gradient(90deg, transparent, rgba(35, 102, 160, .28), transparent);
 }
+.ctx-sub-wrap {
+  position: relative;
+}
+.ctx-menu.ctx-submenu {
+  position: absolute;
+  top: -5px;
+  left: 100%;
+  z-index: 2510;
+  min-width: 210px;
+  max-width: 356px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+.ctx-menu.ctx-submenu.cols-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 1px 3px;
+  min-width: 304px;
+  max-width: 364px;
+}
+.ctx-menu.ctx-submenu.cols-2 .ctx-sep,
+.ctx-menu.ctx-submenu.cols-2 .ctx-item.full-row {
+  grid-column: 1 / -1;
+}
 
 /* 批量输入歌词框 */
 .batch-lyric-preview {

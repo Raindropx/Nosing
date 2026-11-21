@@ -449,6 +449,184 @@
     return ROLL_THEMES[id] || ROLL_THEMES.aero;
   };
 
+  function parseRollColor(str) {
+    if (!str || typeof str !== 'string') return null;
+    var s = str.trim();
+    var mHex6 = /^#([0-9a-f]{6})$/i.exec(s);
+    if (mHex6) {
+      var n6 = parseInt(mHex6[1], 16);
+      return { r: (n6 >> 16) & 255, g: (n6 >> 8) & 255, b: n6 & 255, a: 1, rgba: false };
+    }
+    var mHex3 = /^#([0-9a-f]{3})$/i.exec(s);
+    if (mHex3) {
+      var h3 = mHex3[1];
+      return {
+        r: parseInt(h3[0] + h3[0], 16),
+        g: parseInt(h3[1] + h3[1], 16),
+        b: parseInt(h3[2] + h3[2], 16),
+        a: 1,
+        rgba: false
+      };
+    }
+    var mRgb = /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/i.exec(s);
+    if (mRgb) {
+      return {
+        r: Math.max(0, Math.min(255, +mRgb[1])),
+        g: Math.max(0, Math.min(255, +mRgb[2])),
+        b: Math.max(0, Math.min(255, +mRgb[3])),
+        a: mRgb[4] !== undefined ? Math.max(0, Math.min(1, +mRgb[4])) : 1,
+        rgba: mRgb[4] !== undefined || /^rgba/i.test(s)
+      };
+    }
+    return null;
+  }
+
+  function rollRgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+      var d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+      else if (max === g) h = ((b - r) / d + 2) * 60;
+      else h = ((r - g) / d + 4) * 60;
+    }
+    return [h, s, l];
+  }
+
+  function rollHslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s = s < 0 ? 0 : s > 1 ? 1 : s;
+    l = l < 0 ? 0 : l > 1 ? 1 : l;
+    if (s === 0) {
+      var v = Math.round(l * 255);
+      return [v, v, v];
+    }
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    var p = 2 * l - q;
+    var hk = h / 360;
+    function conv(t) {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    }
+    return [
+      Math.round(conv(hk + 1 / 3) * 255),
+      Math.round(conv(hk) * 255),
+      Math.round(conv(hk - 1 / 3) * 255)
+    ];
+  }
+
+  function formatRollColor(r, g, b, a, rgba) {
+    if (rgba) return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+    function hx(x) {
+      var s = Math.max(0, Math.min(255, Math.round(x))).toString(16);
+      return s.length < 2 ? '0' + s : s;
+    }
+    return '#' + hx(r) + hx(g) + hx(b);
+  }
+
+  function shiftRollColor(str, deltaHue, satBoost) {
+    var c = parseRollColor(str);
+    if (!c) return str;
+    var hsl = rollRgbToHsl(c.r, c.g, c.b);
+    if (hsl[1] < 0.025) return str;
+    var nh = (hsl[0] + deltaHue + 360) % 360;
+    var ns = hsl[1];
+    if (satBoost && ns < 0.45) ns = Math.min(0.92, ns + satBoost);
+    else if (satBoost) ns = Math.min(1, ns * 1.05);
+    var rgb = rollHslToRgb(nh, ns, hsl[2]);
+    return formatRollColor(rgb[0], rgb[1], rgb[2], c.a, c.rgba);
+  }
+
+  function rollHueDist(a, b) {
+    return Math.abs(((a - b) % 360 + 540) % 360 - 180);
+  }
+
+  function rollColorHue(str, fallbackHue) {
+    var c = parseRollColor(str);
+    if (!c) return fallbackHue;
+    var hsl = rollRgbToHsl(c.r, c.g, c.b);
+    return hsl[1] >= 0.025 ? hsl[0] : fallbackHue;
+  }
+
+  /* 异种语言副音符配色：基于当前主题/配色的音符主色做适度邻近色相偏转（约 34°），
+     自动避开选中态与颤音曲线色相，无需逐套主题手写副音符颜色，且保持主题视觉统一。 */
+  PianoRoll.prototype._altNotePalette = function (T) {
+    var baseT = T || this._themePalette();
+    if (baseT._altNoteCache) return baseT._altNoteCache;
+    var hNote = rollColorHue(baseT.noteGrad && (baseT.noteGrad[1] || baseT.noteGrad[0]), -1);
+    if (hNote < 0) hNote = rollColorHue(baseT.noteStroke, 200);
+    var hSel = rollColorHue(baseT.noteSelGrad && (baseT.noteSelGrad[1] || baseT.noteSelGrad[0]), -1);
+    if (hSel < 0) hSel = rollColorHue(baseT.noteSelStroke, (hNote + 150) % 360);
+    var hVib = rollColorHue(baseT.vibLine || baseT.vibHandle, (hNote + 120) % 360);
+
+    var step = 34;
+    var candPlus = (hNote + step) % 360;
+    var candMinus = (hNote - step + 360) % 360;
+    var scorePlus = rollHueDist(candPlus, hSel) * 1.5 + rollHueDist(candPlus, hVib) * 0.6 + 0.5;
+    var scoreMinus = rollHueDist(candMinus, hSel) * 1.5 + rollHueDist(candMinus, hVib) * 0.6;
+    var deltaNote = scorePlus >= scoreMinus ? step : -step;
+    var hAlt = (hNote + deltaNote + 360) % 360;
+
+    var selStep = 26;
+    var selPlus = (hSel + selStep) % 360;
+    var selMinus = (hSel - selStep + 360) % 360;
+    var selScorePlus = Math.min(rollHueDist(selPlus, hNote), rollHueDist(selPlus, hAlt));
+    var selScoreMinus = Math.min(rollHueDist(selMinus, hNote), rollHueDist(selMinus, hAlt));
+    var deltaSel = selScorePlus >= selScoreMinus ? selStep : -selStep;
+
+    function mapArr(arr, d, sb) {
+      return Array.isArray(arr) ? arr.map(function (c) { return shiftRollColor(c, d, sb); }) : arr;
+    }
+
+    var noteGrad = mapArr(baseT.noteGrad, deltaNote, 0.08);
+    var noteSelGrad = mapArr(baseT.noteSelGrad, deltaSel, 0.05);
+    var noteStroke = shiftRollColor(baseT.noteStroke, deltaNote, 0.08);
+    var noteSelStroke = shiftRollColor(baseT.noteSelStroke, deltaSel, 0.05);
+    var noteText = shiftRollColor(baseT.noteText, deltaNote, 0.04);
+    var noteSelText = shiftRollColor(baseT.noteSelText, deltaSel, 0.04);
+
+    var alt = {
+      noteGrad: noteGrad,
+      noteSelGrad: noteSelGrad,
+      noteStroke: noteStroke,
+      noteSelStroke: noteSelStroke,
+      noteEdge: shiftRollColor(baseT.noteEdge, deltaNote, 0.06),
+      noteSelEdge: shiftRollColor(baseT.noteSelEdge, deltaSel, 0.05),
+      noteBevelLo: baseT.noteBevelLo ? shiftRollColor(baseT.noteBevelLo, deltaNote, 0.06) : undefined,
+      noteSelBevelLo: baseT.noteSelBevelLo ? shiftRollColor(baseT.noteSelBevelLo, deltaSel, 0.05) : undefined,
+      noteNeonBar: baseT.noteNeonBar ? shiftRollColor(baseT.noteNeonBar, deltaNote, 0.08) : undefined,
+      noteSelNeonBar: baseT.noteSelNeonBar ? shiftRollColor(baseT.noteSelNeonBar, deltaSel, 0.06) : undefined,
+      noteText: noteText,
+      noteSelText: noteSelText,
+      wordJoin: shiftRollColor(baseT.wordJoin, deltaNote, 0.08),
+      wordJoinSel: shiftRollColor(baseT.wordJoinSel, deltaSel, 0.05),
+      badgeBg: (noteGrad && (noteGrad[2] || noteGrad[1])) || noteStroke,
+      badgeStroke: noteStroke,
+      badgeText: noteText,
+      badgeSelBg: (noteSelGrad && (noteSelGrad[2] || noteSelGrad[1])) || noteSelStroke,
+      badgeSelStroke: noteSelStroke,
+      badgeSelText: noteSelText
+    };
+    baseT._altNoteCache = alt;
+    return alt;
+  };
+
+  PianoRoll.prototype.trackLanguage = function () {
+    return this.phonemizer || this.lang || 'zh';
+  };
+
+  PianoRoll.prototype.noteLanguage = function (n) {
+    if (!n) return this.trackLanguage();
+    var explicitLang = n.noteLang || (n.langSource === 'note' ? n.lang : '');
+    return explicitLang || this.phonemizer || n.lang || this.lang || 'zh';
+  };
+
   PianoRoll.prototype._syncScrollbar = function () {
     if (!this.scrollbar) return;
     var width = Math.max(1, this.w - this.kbW, this.scrollbar.clientWidth || 0), end = 16;
@@ -477,7 +655,8 @@
 
   PianoRoll.prototype._sceneView = function () {
     return this.scrollBeat + ':' + this.lowPitch + ':' + this.pxBeat + ':' + this.rowH + ':' + this.w + ':' + this.h + ':' +
-      (this.theme || NSG.theme || 'aero') + ':' + (NSG.themeScheme || '') + ':' + (this._ghostRev || 0) + ':' + (this.activeTrackVisible !== false ? '1' : '0');
+      (this.theme || NSG.theme || 'aero') + ':' + (NSG.themeScheme || '') + ':' + (this._ghostRev || 0) + ':' +
+      (this.activeTrackVisible !== false ? '1' : '0') + ':' + this.trackLanguage();
   };
 
   /* 只移动播放头：视图没变就贴底图 + 画播放头，不重算音符与 PIT 曲线 */
@@ -614,17 +793,33 @@
     var resolved = {};
     this._frameNotes.forEach(function (n) { resolved[n.id] = n; });
     var noteStyle = T.noteStyle || themeId || 'aero';
+    var altT = this._altNotePalette(T);
+    var trackLang = this.trackLanguage();
+    var prevNoteLang = trackLang;
+    var noteLangMap = Object.create(null);
+    var firstForeignLangMap = Object.create(null);
+    drawList.forEach(function (n) {
+      var r = resolved[n.id];
+      var nLang = (r && r.lang) || self.noteLanguage(n);
+      noteLangMap[n.id] = nLang;
+      if (nLang !== trackLang && nLang !== prevNoteLang) {
+        firstForeignLangMap[n.id] = nLang;
+      }
+      prevNoteLang = nLang;
+    });
     drawList.forEach(function (n) {
       var x = self.beatX(n.start), y = self.rowY(n.pitch);
       if (x > w || x + Math.max(6, n.dur * self.pxBeat) < kbW) return;   // 视口外的音符不画
       var isSlur = !!(resolved[n.id] || n).slur;
       var wd = Math.max(6, n.dur * self.pxBeat);
       var selected = !!self.sel[n.id];
+      var isForeignLang = noteLangMap[n.id] !== trackLang;
+      var NP = isForeignLang ? altT : T;
       var nx = noteStyle === '9x' || noteStyle === 'pixel' ? Math.round(x) + 0.5 : x + 0.5;
       var ny = Math.round(y) + 1;
       var nw = noteStyle === '9x' || noteStyle === 'pixel' ? Math.max(5, Math.round(wd) - 1) : wd - 1;
       var nh = Math.max(4, self.rowH - 2);
-      var grd = fillStops(c.createLinearGradient(0, y, 0, y + self.rowH), selected ? T.noteSelGrad : T.noteGrad);
+      var grd = fillStops(c.createLinearGradient(0, y, 0, y + self.rowH), selected ? NP.noteSelGrad : NP.noteGrad);
       c.fillStyle = grd;
       if (T.noteRadius > 0) {
         roundRect(c, nx, ny, nw, nh, T.noteRadius);
@@ -632,7 +827,7 @@
         c.beginPath(); c.rect(nx, ny, nw, nh);
       }
       c.fill();
-      c.strokeStyle = selected ? T.noteSelStroke : T.noteStroke;
+      c.strokeStyle = selected ? NP.noteSelStroke : NP.noteStroke;
       c.lineWidth = 1;
       c.stroke();
       if (noteStyle === 'aero' || T.noteGloss) {
@@ -641,43 +836,43 @@
         c.fillRect(nx + 1, ny + 1, Math.max(0, nw - 2), Math.max(2, self.rowH * 0.45 - 1.5));
         c.fillStyle = 'rgba(255,255,255,0.92)';
         c.fillRect(nx + 2, ny + 1, Math.max(0, nw - 4), 1.5);
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.fillRect(nx + 2, ny + nh - 2, Math.max(0, nw - 4), 1);
       } else if (noteStyle === '9x') {
         // 9X 立体凸起斜角：左上亮边 + 右下暗边
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.fillRect(nx + 0.5, ny + 0.5, Math.max(0, nw - 1), 1);
         c.fillRect(nx + 0.5, ny + 0.5, 1, Math.max(0, nh - 1));
-        c.fillStyle = selected ? (T.noteSelBevelLo || T.noteSelStroke) : (T.noteBevelLo || T.noteStroke);
+        c.fillStyle = selected ? (NP.noteSelBevelLo || NP.noteSelStroke) : (NP.noteBevelLo || NP.noteStroke);
         c.fillRect(nx + 0.5, ny + nh - 1.5, Math.max(0, nw - 1), 1);
         c.fillRect(nx + nw - 1.5, ny + 0.5, 1, Math.max(0, nh - 1));
       } else if (noteStyle === 'pixel') {
         // 8-bit 像素台阶高光与阴影（留出斜角像素）
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.fillRect(nx + 1, ny + 1, Math.max(0, nw - 3), 1);
         c.fillRect(nx + 1, ny + 1, 1, Math.max(0, nh - 3));
-        c.fillStyle = selected ? (T.noteSelBevelLo || T.noteSelStroke) : (T.noteBevelLo || T.noteStroke);
+        c.fillStyle = selected ? (NP.noteSelBevelLo || NP.noteSelStroke) : (NP.noteBevelLo || NP.noteStroke);
         c.fillRect(nx + 2, ny + nh - 2, Math.max(0, nw - 3), 1);
         c.fillRect(nx + nw - 2, ny + 2, 1, Math.max(0, nh - 3));
       } else if (noteStyle === 'cyberpunk') {
         // 赛博朋克霓虹顶边灯条 + 内底边
-        c.fillStyle = selected ? (T.noteSelNeonBar || T.noteSelEdge) : (T.noteNeonBar || T.noteEdge);
+        c.fillStyle = selected ? (NP.noteSelNeonBar || NP.noteSelEdge) : (NP.noteNeonBar || NP.noteEdge);
         c.fillRect(nx + 1.5, ny + 1, Math.max(0, nw - 3), 1.5);
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.globalAlpha = 0.35;
         c.fillRect(nx + 2, ny + nh - 2, Math.max(0, nw - 4), 1);
         c.globalAlpha = 1;
       } else if (noteStyle === 'xp') {
         // XP 光泽塑料顶沿高光 + 底沿反光
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.fillRect(nx + 1, ny + 1, Math.max(0, nw - 2), 1);
-        c.fillStyle = selected ? T.noteSelEdge : T.noteEdge;
+        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
         c.globalAlpha = 0.45;
         c.fillRect(nx + 2, ny + nh - 2, Math.max(0, nw - 4), 1);
         c.globalAlpha = 1;
       }
       if (wd > 16) {
-        c.fillStyle = selected ? T.noteSelText : T.noteText;
+        c.fillStyle = selected ? NP.noteSelText : NP.noteText;
         c.font = Math.min(12, self.rowH - 4) + 'px Tahoma, "Microsoft YaHei", sans-serif';
         c.save();
         c.beginPath(); c.rect(x + 3, y + 1, wd - 5, self.rowH - 2); c.clip();
@@ -695,7 +890,7 @@
       /* 英语拆词：底部一道虚线，表示与上一个音同属一个词 */
       if (n.wordJoin && !isSlur) {
         c.save();
-        c.strokeStyle = selected ? T.wordJoinSel : T.wordJoin; c.lineWidth = 1;
+        c.strokeStyle = selected ? NP.wordJoinSel : NP.wordJoin; c.lineWidth = 1;
         c.setLineDash([2, 2]);
         c.beginPath(); c.moveTo(x + 2, y + self.rowH - 2.5); c.lineTo(x + wd - 2, y + self.rowH - 2.5); c.stroke();
         c.restore();
@@ -709,8 +904,8 @@
       c.fillRect(this.drag.x0, this.drag.y0, this.drag.x1 - this.drag.x0, this.drag.y1 - this.drag.y0);
       c.strokeRect(this.drag.x0, this.drag.y0, this.drag.x1 - this.drag.x0, this.drag.y1 - this.drag.y0);
     }
-    // 音素作为最上层叠加绘制，不被音符、调教曲线或选框盖住。
-    if (this.activeTrackVisible !== false) this._drawPhones(drawList, resolved);
+    // 音素与异种语言标记作为最上层叠加绘制，不被音符、调教曲线或选框盖住。
+    if (this.activeTrackVisible !== false) this._drawPhones(drawList, resolved, firstForeignLangMap, altT);
     c.restore();
 
     // 参数窗：逐音参数与连续曲线共用时间轴。
@@ -866,7 +1061,7 @@
       var key = pickedNow.length + ':' + Object.keys(this.sel).join(',');
       if (firstSel) {
         var fv = firstSel.vibrato;
-        key += '|' + (firstSel.lyric || '') + '|' + firstSel.pitch + '|' + firstSel.dur + '|' +
+        key += '|' + (firstSel.lyric || '') + '|' + (firstSel.noteLang || '') + '|' + firstSel.pitch + '|' + firstSel.dur + '|' +
           firstSel.vel + '|' + firstSel.consonantSpeed + '|' + firstSel.consonantLength + '|' +
           (fv ? fv.enabled + ',' + fv.length + ',' + fv.depth + ',' + fv.rate + ',' + fv.phase + ',' + fv.fadeIn + ',' + fv.fadeOut : '') + '|' +
           (firstSel.pitchPoints ? firstSel.pitchPoints.length : 0);
@@ -1100,35 +1295,74 @@
     });
     return this._cachedPhoneNotes;
   };
-  PianoRoll.prototype._drawPhones = function (drawList, resolved) {
+  PianoRoll.prototype._drawPhones = function (drawList, resolved, firstForeignLangMap, altT) {
     var self = this, c = this.ctx, T = this._themePalette();
+    var alt = altT || this._altNotePalette(T);
     var pColors = (NSG.phoneThemeColors && NSG.phoneThemeColors(this.theme || NSG.theme || 'aero')) ||
       { pairs: NSG.PHONE_COLORS, fallback: T.phoneDefault };
     this._phoneLabels = [];
-    if (!this.showPhones || !NSG.pronunciationInfo) return;
-    var frameNotes = this._frameNotes || this._phonemizedNotes();
-    if (!this._cachedPronInfo) {
-      var infoMap = {}, previous = null;
-      frameNotes.forEach(function (n) {
-        var item = NSG.pronunciationInfo(n, previous);
-        infoMap[n.id] = item;
-        previous = { phones: item.phones };
-      });
-      this._cachedPronInfo = infoMap;
-      this._cachedPronGroups = NSG.pronunciationGroups ? NSG.pronunciationGroups(this.notes, frameNotes) : null;
+    this._langBadges = [];
+    var canShowPhones = !!(this.showPhones && NSG.pronunciationInfo);
+    var info = null, phoneGroups = null;
+    if (canShowPhones) {
+      var frameNotes = this._frameNotes || this._phonemizedNotes();
+      if (!this._cachedPronInfo) {
+        var infoMap = {}, previous = null;
+        frameNotes.forEach(function (n) {
+          var item = NSG.pronunciationInfo(n, previous);
+          infoMap[n.id] = item;
+          previous = { phones: item.phones };
+        });
+        this._cachedPronInfo = infoMap;
+        this._cachedPronGroups = NSG.pronunciationGroups ? NSG.pronunciationGroups(this.notes, frameNotes) : null;
+      }
+      info = this._cachedPronInfo;
+      phoneGroups = this._cachedPronGroups;
     }
-    var info = this._cachedPronInfo, phoneGroups = this._cachedPronGroups;
     var gridBot = this.gridBottom();
+    var badgeRadius = Math.min(3, T.noteRadius || 0);
     c.save();
-    c.font = '10px Consolas, "Microsoft YaHei", monospace';
     var cachedStarWidth = -1;
     drawList.forEach(function (n) {
+      var rawX = self.beatX(n.start);
+      if (rawX > self.w) return;
+      var rowTop = self.rowY(n.pitch);
+      var y = rowTop - 12;
+      var fLang = firstForeignLangMap && firstForeignLangMap[n.id];
+      var badgeOffset = 0;
+      if (fLang && rowTop < gridBot && rowTop + self.rowH > self.rulerH) {
+        var tag = NSG.langShortCode ? NSG.langShortCode(fLang) : String(fLang).toUpperCase().slice(0, 5);
+        var badgeFont = (tag.length >= 4 ? 'bold 8px ' : 'bold 8.5px ') + 'Consolas, Tahoma, "Microsoft YaHei", sans-serif';
+        c.font = badgeFont;
+        var tw = c.measureText(tag).width;
+        var bw = Math.max(14, Math.ceil(tw) + 6), bh = 11;
+        var bx = Math.round(rawX) + 2;
+        var by = y >= self.rulerH ? Math.round(y) : Math.max(self.rulerH + 1, Math.round(rowTop) + 1);
+        if (bx + bw >= self.kbW && by + bh <= gridBot) {
+          var sel = !!self.sel[n.id];
+          c.fillStyle = sel ? alt.badgeSelBg : alt.badgeBg;
+          c.strokeStyle = sel ? alt.badgeSelStroke : alt.badgeStroke;
+          c.lineWidth = 1;
+          if (badgeRadius > 0) {
+            roundRect(c, bx + 0.5, by + 0.5, bw - 1, bh - 1, badgeRadius);
+          } else {
+            c.beginPath(); c.rect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+          }
+          c.fill();
+          c.stroke();
+          c.fillStyle = sel ? alt.badgeSelText : alt.badgeText;
+          c.fillText(tag, bx + (bw - tw) / 2, by + 8.5);
+          self._langBadges.push({ note: n, lang: fLang, tag: tag, x: bx, y: by, width: bw, height: bh });
+        }
+        if (y >= self.rulerH) badgeOffset = bw + 2;
+      }
+      if (!canShowPhones || !info) return;
       var item = info[n.id];
       if (!item) return;
-      var x = self.beatX(n.start) + 3;
-      if (x > self.w) return;
-      var y = self.rowY(n.pitch) - 12;
       if (y < self.rulerH || y + 12 > gridBot) return;
+      var x = rawX + 3 + badgeOffset;
+      if (x > self.w) return;
+      c.font = '10px Consolas, "Microsoft YaHei", monospace';
       var body = item.error ? tr('roll.canvas.invalidPhone', '? 音素无效') : (item.slur ? '‿ ' : '') + item.phones.join(' ');
       var text = (item.custom ? '*' : '') + body;
       if (x + Math.max(12, text.length * 12 + 8) < self.kbW) return;
@@ -1163,7 +1397,7 @@
     var apply = function (value) {
       if (value == null) return;
       var text = String(value).trim().replace(/^\*\s*/, ''), phones = null;
-      var lang = self.phonemizer || self.lang || target.lang || 'zh';
+      var lang = self.noteLanguage ? self.noteLanguage(target) : (self.phonemizer || self.lang || target.lang || 'zh');
       if (text) {
         if (/^\[.*\]$/.test(text)) {
           var hint = text.slice(1, -1);
@@ -2335,6 +2569,42 @@
     });
     this._emit();
     return { n: picked.length, on: !all };
+  };
+
+  PianoRoll.prototype.setNoteLanguage = function (lang, targetNotes) {
+    var list = (targetNotes && targetNotes.length) ? targetNotes : this.selected();
+    if (!list.length) return { n: 0, changed: 0, lang: lang || '' };
+    var nextLang = (lang && typeof lang === 'string') ? lang.trim() : '';
+    var trackLang = this.trackLanguage();
+    var changed = 0;
+    var self = this;
+    list.forEach(function (n) {
+      if (!n) return;
+      var curExplicit = n.noteLang || (n.langSource === 'note' ? n.lang : '');
+      var curEff = self.noteLanguage(n);
+      if (nextLang) {
+        if (curExplicit === nextLang && n.langSource === 'note') return;
+        if ((n.phones || n.slurPhones) && !n.phonesLang) {
+          n.phonesLang = curEff;
+        }
+        n.noteLang = nextLang;
+        n.langSource = 'note';
+        changed++;
+      } else {
+        var hadOverride = !!(n.noteLang || n.langSource === 'note' || (!self.phonemizer && n.lang && n.lang !== trackLang));
+        if (!hadOverride) return;
+        if ((n.phones || n.slurPhones) && !n.phonesLang) {
+          n.phonesLang = curEff;
+        }
+        delete n.noteLang;
+        if (n.langSource === 'note') delete n.langSource;
+        if (!self.phonemizer && n.lang && n.lang !== trackLang) delete n.lang;
+        changed++;
+      }
+    });
+    if (changed) this._emit();
+    else this.draw();
+    return { n: list.length, changed: changed, lang: nextLang };
   };
 
   PianoRoll.prototype.selectAll = function () {

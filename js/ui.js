@@ -1161,6 +1161,7 @@
   };
 
   function langShortCode(code) {
+    if (NSG && typeof NSG.langShortCode === 'function') return NSG.langShortCode(code);
     var s = String(code || 'zh').trim();
     if (!s) return 'ZH';
     var lower = s.toLowerCase();
@@ -5341,6 +5342,108 @@
       });
   }
 
+  var NOTE_LANG_LIST = [
+    'zh', 'yue', 'ja', 'en', 'de', 'pl', 'ru', 'uk', 'fi', 'es', 'pt', 'it', 'fr', 'ro',
+    'nan', 'hak', 'nan-x-teochew', 'zh-x-sichuan', 'ko', 'vi', 'fil', 'id', 'ms', 'th',
+    'tok', 'eo', 'asaxi', 'xdi8', 'tlh'
+  ];
+
+  function setSelectedNotesLanguage(lang, targetNotes) {
+    if (!roll || typeof roll.setNoteLanguage !== 'function') return { n: 0, changed: 0 };
+    var nextLang = (lang && typeof lang === 'string') ? lang.trim() : '';
+    var dictPromise = nextLang && NSG && typeof NSG.loadDict === 'function' ? NSG.loadDict(nextLang) : null;
+    var res = roll.setNoteLanguage(nextLang, targetNotes);
+    if (!res.n) return res;
+    state.dirty = true;
+    updateStat();
+    syncInspector();
+    renderAndAnalyze(60);
+    if (dictPromise && typeof dictPromise.then === 'function') {
+      dictPromise.then(function () {
+        if (roll) {
+          roll._cachedPhoneSig = '';
+          roll.draw();
+        }
+        state.dirty = true;
+        renderAndAnalyze(40);
+      }, function () {});
+    }
+    var trkLang = roll.trackLanguage ? roll.trackLanguage() : (roll.phonemizer || roll.lang || state.score.lang || 'zh');
+    if (nextLang) {
+      setStatus(t('ui.noteLangSet', { n: res.n, lang: tLangName(nextLang) }, '已将 ' + res.n + ' 个音符的语言设为 ' + tLangName(nextLang) + ' · 可撤销'));
+    } else {
+      setStatus(t('ui.noteLangReset', { n: res.n, lang: tLangName(trkLang) }, '已恢复 ' + res.n + ' 个音符跟随音层语言（' + tLangName(trkLang) + '）· 可撤销'));
+    }
+    return res;
+  }
+
+  function buildNoteLanguageMenuItem(targetNotes) {
+    var list = (targetNotes || []).filter(Boolean);
+    var trkLang = (roll && roll.trackLanguage) ? roll.trackLanguage() : ((roll && (roll.phonemizer || roll.lang)) || state.score.lang || 'zh');
+    var trkLangLabel = tLangName(trkLang);
+    if (!list.length) {
+      return {
+        label: t('ctx.noteLang', null, '音符语言'),
+        shortcut: '▸',
+        disabled: true
+      };
+    }
+    var allFollow = true;
+    var firstExplicit = null, sameExplicit = true;
+    var firstEff = null, sameEff = true;
+    list.forEach(function (n, idx) {
+      var exp = n.noteLang || (n.langSource === 'note' ? n.lang : '');
+      var eff = (roll && roll.noteLanguage) ? roll.noteLanguage(n) : (exp || trkLang);
+      var hasOverride = !!(exp || (!(roll && roll.phonemizer) && n.lang && n.lang !== trkLang));
+      if (hasOverride) allFollow = false;
+      if (idx === 0) {
+        firstExplicit = exp;
+        firstEff = eff;
+      } else {
+        if (exp !== firstExplicit) sameExplicit = false;
+        if (eff !== firstEff) sameEff = false;
+      }
+    });
+
+    var statusText = allFollow
+      ? t('ctx.noteLangFollowShort', { lang: trkLangLabel }, '跟随音层（' + trkLangLabel + '）')
+      : sameEff ? tLangName(firstEff) : t('ctx.noteLangMixed', null, '多种语种');
+    var badgeKey = allFollow ? langShortCode(trkLang) : (sameEff ? langShortCode(firstEff) : '');
+    var langCodes = NOTE_LANG_LIST.slice();
+    if (NSG && NSG.langName) {
+      Object.keys(NSG.langName).forEach(function (k) {
+        if (langCodes.indexOf(k) < 0) langCodes.push(k);
+      });
+    }
+
+    var children = [
+      {
+        label: (allFollow ? '✓ ' : '') + t('ctx.noteLangFollow', { lang: trkLangLabel }, '跟随音层默认（' + trkLangLabel + '）'),
+        shortcut: langShortCode(trkLang),
+        active: allFollow,
+        fullRow: true,
+        onClick: function () { setSelectedNotesLanguage('', list); }
+      },
+      '-'
+    ];
+    langCodes.forEach(function (code) {
+      var isCur = !allFollow && sameExplicit && firstExplicit === code;
+      children.push({
+        label: (isCur ? '✓ ' : '') + tLangName(code),
+        shortcut: langShortCode(code),
+        active: isCur,
+        onClick: function () { setSelectedNotesLanguage(code, list); }
+      });
+    });
+
+    return {
+      label: t('ctx.noteLangWithCur', { lang: statusText }, '音符语言：' + statusText),
+      shortcut: (badgeKey ? badgeKey + ' ' : '') + '▸',
+      submenuCols: 2,
+      children: children
+    };
+  }
+
   function closeContextMenu() {
     var menu = $('#ctxMenu');
     if (!menu || menu.hidden) return;
@@ -5359,17 +5462,35 @@
       menu.appendChild(head);
     }
     var actionButtons = [];
-    (items || []).forEach(function (item) {
+    var openSubmenus = [];
+    function hideAllSubmenus(except) {
+      openSubmenus.forEach(function (entry) {
+        if (entry.sub !== except) {
+          entry.sub.hidden = true;
+          entry.btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+    function appendMenuEntry(container, item, isSub) {
       if (!item || item === '-' || item.sep) {
         var sep = document.createElement('div');
         sep.className = 'ctx-sep';
         sep.setAttribute('role', 'separator');
-        menu.appendChild(sep);
+        container.appendChild(sep);
         return;
       }
+      var hasChildren = Array.isArray(item.children) && item.children.length > 0 && !item.disabled;
+      var wrap = hasChildren ? document.createElement('div') : container;
+      if (hasChildren) wrap.className = 'ctx-sub-wrap';
+
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'ctx-item' + (item.danger ? ' danger' : '') + (item.active ? ' on' : '') + (item.disabled ? ' disabled' : '');
+      btn.className = 'ctx-item' +
+        (item.danger ? ' danger' : '') +
+        (item.active ? ' on' : '') +
+        (item.disabled ? ' disabled' : '') +
+        (hasChildren ? ' has-sub' : '') +
+        (item.fullRow ? ' full-row' : '');
       btn.setAttribute('role', 'menuitem');
       btn.disabled = !!item.disabled;
       var labelSpan = document.createElement('span');
@@ -5382,15 +5503,80 @@
         btn.appendChild(keySpan);
       }
       btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (item.disabled) return;
-        closeContextMenu();
-        if (typeof item.onClick === 'function') item.onClick();
-      });
-      menu.appendChild(btn);
-      if (!item.disabled) actionButtons.push(btn);
-    });
+
+      if (hasChildren) {
+        btn.setAttribute('aria-haspopup', 'menu');
+        btn.setAttribute('aria-expanded', 'false');
+        var sub = document.createElement('div');
+        sub.className = 'ctx-menu ctx-submenu' + (item.submenuCols === 2 ? ' cols-2' : '');
+        sub.setAttribute('role', 'menu');
+        sub.hidden = true;
+        item.children.forEach(function (child) { appendMenuEntry(sub, child, true); });
+        openSubmenus.push({ btn: btn, sub: sub });
+
+        var showSub = function () {
+          hideAllSubmenus(sub);
+          sub.style.left = '100%';
+          sub.style.right = 'auto';
+          sub.style.top = '-5px';
+          sub.hidden = false;
+          btn.setAttribute('aria-expanded', 'true');
+          if (sub.getBoundingClientRect && menu.getBoundingClientRect && btn.getBoundingClientRect) {
+            var vw2 = window.innerWidth || 1024, vh2 = window.innerHeight || 768;
+            var mRect = menu.getBoundingClientRect();
+            var bRect = btn.getBoundingClientRect();
+            var sRect = sub.getBoundingClientRect();
+            if (mRect.right + sRect.width + 8 > vw2 && mRect.left - sRect.width - 4 >= 4) {
+              sub.style.left = 'auto';
+              sub.style.right = '100%';
+            }
+            if (bRect.top + sRect.height + 8 > vh2) {
+              var offsetTop = Math.max(6 - bRect.top, vh2 - 8 - sRect.height - bRect.top);
+              sub.style.top = Math.round(offsetTop) + 'px';
+            }
+          }
+        };
+        wrap.addEventListener('mouseenter', showSub);
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (sub.hidden) showSub(); else { sub.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+        });
+        btn.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            showSub();
+            var firstSubBtn = sub.querySelector('.ctx-item:not(:disabled)');
+            if (firstSubBtn && firstSubBtn.focus) firstSubBtn.focus();
+          }
+        });
+        sub.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            e.stopPropagation();
+            sub.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+            if (btn.focus) btn.focus();
+          }
+        });
+        wrap.appendChild(btn);
+        wrap.appendChild(sub);
+        container.appendChild(wrap);
+      } else {
+        if (!isSub) {
+          btn.addEventListener('mouseenter', function () { hideAllSubmenus(null); });
+        }
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (item.disabled) return;
+          closeContextMenu();
+          if (typeof item.onClick === 'function') item.onClick();
+        });
+        container.appendChild(btn);
+      }
+      if (!item.disabled && !isSub) actionButtons.push(btn);
+    }
+    (items || []).forEach(function (item) { appendMenuEntry(menu, item, false); });
     menu.hidden = false;
     var vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
     var rect = menu.getBoundingClientRect ? menu.getBoundingClientRect() : { width: 240, height: 300 };
@@ -5443,11 +5629,13 @@
     if (area === 'phoneme') {
       var sp = roll.selectedPhone ? roll.selectedPhone() : null;
       var spNote = (sp && roll.notes.filter(function (n) { return n.id === sp.noteId; })[0]) || primary;
+      var phoneLangTargets = nSel ? selNotes : (spNote ? [spNote] : []);
       return {
         title: sp ? t('ctx.phoneTitle', { phone: sp.phone }, '音素 · ' + sp.phone) : t('ctx.phonePanelTitle', null, '音素编辑面板'),
         items: [
           { label: t('ctx.phoneRename', null, '更换当前音素名称'), disabled: !sp || sp.readOnly || !roll.onEditPhone, onClick: function () { roll.onEditPhone(sp); } },
           { label: t('ctx.phoneEditNote', null, '编辑所属音符整组音素…'), disabled: !spNote, onClick: function () { roll.editPhones({ note: spNote, info: notePhoneInfo(spNote) }); } },
+          buildNoteLanguageMenuItem(phoneLangTargets),
           { label: t('ctx.phoneResetTiming', null, '恢复自动音素时序'), disabled: !sp || !roll.updatePhone, onClick: function () { roll.updatePhone('reset'); } },
           '-',
           { label: t('ctx.batchLyrics', null, '批量填词 / 修改歌词…'), disabled: !hasNotes, onClick: function () { openBatchLyric(); } }
@@ -5495,6 +5683,7 @@
     }
 
     var scopeSuffix = nSel ? t('ctx.rollScopeSel', { n: nSel }, '（已选 ' + nSel + ' 音）') : t('ctx.rollScopeAll', null, '（全轨）');
+    var langTargets = nSel ? selNotes : (primary ? [primary] : []);
     var title = nSel > 1 ? t('ctx.rollMultiTitle', { n: nSel }, '已选中 ' + nSel + ' 个音符')
       : primary ? t('ctx.rollNoteTitle', { note: noteName(primary.pitch), lyric: primary.lyric || '' }, '音符 ' + noteName(primary.pitch) + ' · 「' + (primary.lyric || '') + '」')
       : t('ctx.rollToolTitle', { tool: toolDisplayName(roll.tool) }, '钢琴窗 · 工具：' + (TOOL_NAMES[roll.tool] || roll.tool));
@@ -5504,6 +5693,7 @@
         { label: t('ctx.batchLyrics', null, '批量填词 / 修改歌词…'), disabled: !hasNotes, onClick: function () { openBatchLyric(); } },
         { label: t('ctx.editCurLyric', null, '修改当前音符歌词…'), shortcut: t('ctx.dblClickKey', null, '双击'), disabled: !primary, onClick: function () { editSingleNoteLyric(primary); } },
         { label: t('ctx.editPhones', null, '编辑音素…'), disabled: !primary, onClick: function () { roll.editPhones({ note: primary, info: notePhoneInfo(primary) }); } },
+        buildNoteLanguageMenuItem(langTargets),
         { label: (primary && primary.slur) ? t('ctx.unslur', null, '取消延音') : t('ctx.slur', null, '设为延音 (-)'), shortcut: 'S', disabled: !nSel, onClick: toggleSlur },
         '-',
         { label: t('ctx.octUp', null, '升八度') + scopeSuffix, shortcut: 'Shift+↑', disabled: !hasNotes, onClick: function () { transposeOctaveUI(1); } },

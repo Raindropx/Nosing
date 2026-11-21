@@ -664,7 +664,14 @@
     'common.custom': '自定义',
 
     'desktop.openDataDir': '打开数据文件夹（NSGDAT）',
-    'desktop.savePickError': '无法打开另存为对话框'
+    'desktop.savePickError': '无法打开另存为对话框',
+    'ctx.noteLang': '音符语言',
+    'ctx.noteLangWithCur': '音符语言：{lang}',
+    'ctx.noteLangFollowShort': '跟随音层（{lang}）',
+    'ctx.noteLangFollow': '跟随音层默认（{lang}）',
+    'ctx.noteLangMixed': '多种语种',
+    'ui.noteLangSet': '已将 {n} 个音符的语言设为 {lang} · 可撤销',
+    'ui.noteLangReset': '已恢复 {n} 个音符跟随音层语言（{lang}）· 可撤销'
   });
 
   /* ========================================================================
@@ -1780,6 +1787,13 @@
     'ctx.editCurLyric': 'Edit Note Lyric…',
     'ctx.dblClickKey': 'Double-click',
     'ctx.editPhones': 'Edit Phonemes…',
+    'ctx.noteLang': 'Note Language',
+    'ctx.noteLangWithCur': 'Note Language: {lang}',
+    'ctx.noteLangFollowShort': 'Follow Layer ({lang})',
+    'ctx.noteLangFollow': 'Follow Layer Default ({lang})',
+    'ctx.noteLangMixed': 'Mixed',
+    'ui.noteLangSet': 'Set language of {n} note(s) to {lang} · Undoable',
+    'ui.noteLangReset': 'Restored {n} note(s) to follow layer language ({lang}) · Undoable',
     'ctx.unslur': 'Remove Slur',
     'ctx.slur': 'Set Slur (-)',
     'ctx.octUp': 'Octave Up',
@@ -3166,6 +3180,13 @@
     'ctx.editCurLyric': '当音符歌詞編集…',
     'ctx.dblClickKey': '二連打',
     'ctx.editPhones': '音素編集…',
+    'ctx.noteLang': '音符言語',
+    'ctx.noteLangWithCur': '音符言語：{lang}',
+    'ctx.noteLangFollowShort': '音層追従（{lang}）',
+    'ctx.noteLangFollow': '音層既定に追従（{lang}）',
+    'ctx.noteLangMixed': '複数言語',
+    'ui.noteLangSet': '{n} 音符の言語を {lang} に設定 · 撤回可',
+    'ui.noteLangReset': '{n} 音符を音層言語（{lang}）追従に復元 · 撤回可',
     'ctx.unslur': '延音解除',
     'ctx.slur': '延音設定 (-)',
     'ctx.octUp': '1八度上昇',
