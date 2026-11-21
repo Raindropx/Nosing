@@ -126,7 +126,7 @@
     var eyes = (set && set.eyes) || [];
     if (!eyes.length) return 0.5;
     x = Math.max(0, Math.min(1, x));
-    for (var i = 0; i < eyes.length; i++) {
+    for (var i = eyes.length - 1; i >= 0; i--) {
       var e = EYE.eye(eyes[i]);
       if (x >= e['开始'] - 1e-9 && x <= e['结束'] + 1e-9) return EYE.at(e, x);
     }

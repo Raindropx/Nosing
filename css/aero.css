@@ -441,7 +441,8 @@ body.is-playing .bub, body.page-hidden .bub, body.modal-open .bub { animation-pl
 .row label { width: 68px; flex: none; color: #1b4d69; text-shadow: 0 1px 0 rgba(255,255,255,.75); }
 .row input[type=range] { flex: 1; min-width: 0; }
 .row .val {
-  width: 44px; text-align: right; font-family: Consolas, monospace; color: #08537d;
+  width: 44px; flex: none; overflow: hidden; white-space: nowrap;
+  text-align: right; font-family: Consolas, monospace; color: #08537d;
   font-size: 10.5px; font-variant-numeric: tabular-nums;
   padding: 1px 4px; border-radius: 5px;
   background: linear-gradient(180deg, rgba(225,243,253,.72), rgba(255,255,255,.88));

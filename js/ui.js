@@ -6235,17 +6235,22 @@
 
   function eyeParamsHtml() {
     var e = NSG.COMPOSE.EYE.eye(state.eyeSet.eyes[state.eyeSel] || {});
-    function row(id, label, min, max, step, val, fmt) {
+    var span = Math.max(1e-6, e['结束'] - e['开始']);
+    var pad = Math.min(0.02, span * 0.25);
+    var pxMin = fmt2(Math.min(e['峰的时间'], e['开始'] + pad));
+    var pxMax = fmt2(Math.max(e['峰的时间'], e['结束'] - pad));
+    function row(id, label, min, max, step, val) {
+      var fv = fmt2(val);
       return '<div class="row eyerow"><label>' + label + '</label>' +
-        '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + val + '">' +
-        '<span class="val" id="' + id + 'v">' + (fmt ? fmt(val) : val) + '</span></div>';
+        '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + fv + '">' +
+        '<span class="val" id="' + id + 'v">' + fv + '</span></div>';
     }
-    return row('eyePx', t('compose.eyePx', null, '峰位置'), 0.02, 0.98, 0.01, e['峰的时间'])
-      + row('eyePy', t('compose.eyePy', null, '峰高度'), 0, 1, 0.01, fmt2(e['峰值']))
+    return row('eyePx', t('compose.eyePx', null, '峰位置'), pxMin, pxMax, 0.01, e['峰的时间'])
+      + row('eyePy', t('compose.eyePy', null, '峰高度'), 0, 1, 0.01, e['峰值'])
       + row('eyeKl', t('compose.eyeKl', null, '左尖锐'), 0.4, 3, 0.05, e['左尖锐'])
       + row('eyeKr', t('compose.eyeKr', null, '右尖锐'), 0.4, 3, 0.05, e['右尖锐'])
-      + row('eyeY0', t('compose.eyeY0', null, '起点基值'), 0, 1, 0.01, fmt2(e['开始基值']))
-      + row('eyeY1', t('compose.eyeY1', null, '终点基值'), 0, 1, 0.01, fmt2(e['结束基值']));
+      + row('eyeY0', t('compose.eyeY0', null, '起点基值'), 0, 1, 0.01, e['开始基值'])
+      + row('eyeY1', t('compose.eyeY1', null, '终点基值'), 0, 1, 0.01, e['结束基值']);
   }
   function fmt2(v) { return (+v).toFixed(2); }
 
@@ -6387,21 +6392,46 @@
 
     function bindEyeParams() {
       var e = state.eyeSet.eyes[state.eyeSel];
-      function bind(id, key, isInt) {
+      function bind(id, key) {
         var el = $('#' + id, m.el);
         if (!el) return;
         el.addEventListener('input', function () {
           var v = parseFloat(this.value);
           e[key] = v;
-          $('#' + id + 'v', m.el).textContent = isInt ? v.toFixed(2) : v.toFixed(2);
+          $('#' + id + 'v', m.el).textContent = v.toFixed(2);
           state.eyeSet.name = '自定义';
           $$('.eyepreset', m.el).forEach(function (b) { b.classList.remove('on'); });
-          redraw();
+          refreshOut();
         });
       }
       bind('eyePx', '峰的时间'); bind('eyePy', '峰值');
       bind('eyeKl', '左尖锐'); bind('eyeKr', '右尖锐');
       bind('eyeY0', '开始基值'); bind('eyeY1', '结束基值');
+    }
+
+    function updateEyeParamInputs() {
+      var e = NSG.COMPOSE.EYE.eye(state.eyeSet.eyes[state.eyeSel] || {});
+      var span = Math.max(1e-6, e['结束'] - e['开始']);
+      var pad = Math.min(0.02, span * 0.25);
+      var pxEl = $('#eyePx', m.el);
+      if (pxEl) {
+        pxEl.min = fmt2(Math.min(e['峰的时间'], e['开始'] + pad));
+        pxEl.max = fmt2(Math.max(e['峰的时间'], e['结束'] - pad));
+      }
+      [
+        ['eyePx', e['峰的时间']],
+        ['eyePy', e['峰值']],
+        ['eyeKl', e['左尖锐']],
+        ['eyeKr', e['右尖锐']],
+        ['eyeY0', e['开始基值']],
+        ['eyeY1', e['结束基值']]
+      ].forEach(function (pair) {
+        var fv = fmt2(pair[1]);
+        var input = $('#' + pair[0], m.el);
+        var valEl = $('#' + pair[0] + 'v', m.el);
+        if (input) input.value = fv;
+        if (valEl) valEl.textContent = fv;
+      });
     }
 
     var lastRes = null;
@@ -6423,13 +6453,23 @@
         y: (ev.clientY - r.top) * EYE_CV.H / r.height
       };
     }
-    function hitTest(p) {
+    function hitTestOne(i, p) {
       var eyes = state.eyeSet.eyes;
-      for (var i = 0; i < eyes.length; i++) {
-        var E = NSG.COMPOSE.EYE.eye(eyes[i]);
-        if (Math.abs(p.x - eyePlotX(E['峰的时间'])) < 12 && Math.abs(p.y - eyePlotY(E['峰值'])) < 12) return { i: i, part: 'peak' };
-        if (Math.abs(p.x - eyePlotX(E['开始'])) < 10 && Math.abs(p.y - eyePlotY(E['开始基值'])) < 10) return { i: i, part: 'start' };
-        if (Math.abs(p.x - eyePlotX(E['结束'])) < 10 && Math.abs(p.y - eyePlotY(E['结束基值'])) < 10) return { i: i, part: 'end' };
+      if (i < 0 || i >= eyes.length) return null;
+      var E = NSG.COMPOSE.EYE.eye(eyes[i]);
+      if (Math.abs(p.x - eyePlotX(E['峰的时间'])) < 12 && Math.abs(p.y - eyePlotY(E['峰值'])) < 12) return { i: i, part: 'peak' };
+      if (Math.abs(p.x - eyePlotX(E['开始'])) < 10 && Math.abs(p.y - eyePlotY(E['开始基值'])) < 10) return { i: i, part: 'start' };
+      if (Math.abs(p.x - eyePlotX(E['结束'])) < 10 && Math.abs(p.y - eyePlotY(E['结束基值'])) < 10) return { i: i, part: 'end' };
+      return null;
+    }
+    function hitTest(p) {
+      var h = hitTestOne(state.eyeSel, p);
+      if (h) return h;
+      var eyes = state.eyeSet.eyes;
+      for (var i = eyes.length - 1; i >= 0; i--) {
+        if (i === state.eyeSel) continue;
+        h = hitTestOne(i, p);
+        if (h) return h;
       }
       return null;
     }
@@ -6444,7 +6484,7 @@
         /* 点进哪只眼睛就选哪只 */
         var x = Math.max(0, Math.min(1, eyeInvX(p.x)));
         var eyes = state.eyeSet.eyes;
-        for (var i = 0; i < eyes.length; i++) {
+        for (var i = eyes.length - 1; i >= 0; i--) {
           var E = NSG.COMPOSE.EYE.eye(eyes[i]);
           if (x >= E['开始'] && x <= E['结束']) { state.eyeSel = i; break; }
         }
@@ -6457,22 +6497,48 @@
     function onEyeMove(ev) {
       if (!drag) return;
       var p = canvasPos(ev);
-      var e = state.eyeSet.eyes[drag.i];
+      var eyes = state.eyeSet.eyes;
+      var e = eyes[drag.i];
       if (!e) return;
       var x = Math.max(0, Math.min(1, eyeInvX(p.x)));
       var y = Math.max(0, Math.min(1, eyeInvY(p.y)));
       if (drag.part === 'peak') {
-        e['峰的时间'] = Math.max(e['开始'] + 0.02, Math.min(e['结束'] - 0.02, x));
-        e['峰值'] = y;
+        var pad = Math.min(0.02, Math.max(0.005, (e['结束'] - e['开始']) * 0.25));
+        e['峰的时间'] = +(Math.max(e['开始'] + pad, Math.min(e['结束'] - pad, x))).toFixed(2);
+        e['峰值'] = +y.toFixed(2);
       } else if (drag.part === 'start') {
-        e['开始'] = Math.min(e['峰的时间'] - 0.02, x);
-        e['开始基值'] = y;
+        var minStart = drag.i > 0 ? eyes[drag.i - 1]['开始'] + 0.04 : 0;
+        var padS = Math.min(0.02, Math.max(0.005, (e['结束'] - minStart) * 0.2));
+        e['开始'] = +(Math.max(minStart, Math.min(e['峰的时间'] - padS, x))).toFixed(2);
+        e['开始基值'] = +y.toFixed(2);
+        if (drag.i > 0 && eyes[drag.i - 1]['结束'] > e['开始']) {
+          var prev = eyes[drag.i - 1];
+          var oldSpanP = Math.max(1e-6, prev['结束'] - prev['开始']);
+          var uPrev = Math.max(0.1, Math.min(0.9, (prev['峰的时间'] - prev['开始']) / oldSpanP));
+          prev['结束'] = e['开始'];
+          var newSpanP = Math.max(1e-6, prev['结束'] - prev['开始']);
+          var padPrev = Math.min(0.02, newSpanP * 0.25);
+          prev['峰的时间'] = +(Math.max(prev['开始'] + padPrev, Math.min(prev['结束'] - padPrev, prev['开始'] + uPrev * newSpanP))).toFixed(2);
+        }
       } else {
-        e['结束'] = Math.max(e['峰的时间'] + 0.02, x);
-        e['结束基值'] = y;
+        var maxEnd = drag.i < eyes.length - 1 ? eyes[drag.i + 1]['结束'] - 0.04 : 1;
+        var padE = Math.min(0.02, Math.max(0.005, (maxEnd - e['开始']) * 0.2));
+        e['结束'] = +(Math.max(e['峰的时间'] + padE, Math.min(maxEnd, x))).toFixed(2);
+        e['结束基值'] = +y.toFixed(2);
+        if (drag.i < eyes.length - 1 && eyes[drag.i + 1]['开始'] < e['结束']) {
+          var next = eyes[drag.i + 1];
+          var oldSpanN = Math.max(1e-6, next['结束'] - next['开始']);
+          var uNext = Math.max(0.1, Math.min(0.9, (next['峰的时间'] - next['开始']) / oldSpanN));
+          next['开始'] = e['结束'];
+          var newSpanN = Math.max(1e-6, next['结束'] - next['开始']);
+          var padNext = Math.min(0.02, newSpanN * 0.25);
+          next['峰的时间'] = +(Math.max(next['开始'] + padNext, Math.min(next['结束'] - padNext, next['开始'] + uNext * newSpanN))).toFixed(2);
+        }
       }
       state.eyeSet.name = '自定义';
-      redraw();
+      $$('.eyepreset', m.el).forEach(function (b) { b.classList.remove('on'); });
+      updateEyeParamInputs();
+      refreshOut();
     }
     function onEyeUp() {
       if (!drag) return;
@@ -6495,14 +6561,41 @@
     m.close = function () { cleanupEyeListeners(); origModalClose(); };
 
     $('#eyeAdd', m.el).onclick = function () {
-      var cur = state.eyeSet.eyes[state.eyeSel] || NSG.COMPOSE.EYE.eye({});
+      var eyes = state.eyeSet.eyes;
+      var cur = eyes[state.eyeSel] || NSG.COMPOSE.EYE.eye({});
       var E = NSG.COMPOSE.EYE.eye(cur);
+      var n = eyes.length;
+      var split = n > 0 ? n / (n + 1) : 0.5;
+      var maxEnd = 0;
+      eyes.forEach(function (e) {
+        var E0 = NSG.COMPOSE.EYE.eye(e);
+        if (E0['结束'] > maxEnd) maxEnd = E0['结束'];
+      });
+      if (maxEnd > split && maxEnd > 1e-6) {
+        var scale = split / maxEnd;
+        eyes.forEach(function (e) {
+          var E0 = NSG.COMPOSE.EYE.eye(e);
+          var a = E0['开始'], b = E0['结束'];
+          var span = Math.max(1e-6, b - a);
+          var u = Math.max(0.05, Math.min(0.95, (E0['峰的时间'] - a) / span));
+          var na = +(a * scale).toFixed(2);
+          var nb = +(b * scale).toFixed(2);
+          var nSpan = Math.max(1e-6, nb - na);
+          var pad = Math.min(0.02, nSpan * 0.25);
+          e['开始'] = na;
+          e['结束'] = nb;
+          e['峰的时间'] = +(Math.max(na + pad, Math.min(nb - pad, na + u * nSpan))).toFixed(2);
+        });
+      }
+      var newStart = +(maxEnd > split ? split : (maxEnd > 0.08 ? maxEnd : split)).toFixed(2);
+      var newEnd = 1;
+      var newPeak = +(newStart + (newEnd - newStart) * 0.5).toFixed(2);
       var add = NSG.COMPOSE.EYE.eye({
-        '开始': 0.55, '结束': 1, '峰的时间': 0.78, '峰值': Math.min(1, E['峰值'] + 0.1),
+        '开始': newStart, '结束': newEnd, '峰的时间': newPeak, '峰值': +(Math.min(1, E['峰值'] + 0.1)).toFixed(2),
         '左尖锐': E['左尖锐'], '右尖锐': E['右尖锐'], '开始基值': 0.15, '结束基值': 0.2
       });
-      state.eyeSet.eyes.push(add);
-      state.eyeSel = state.eyeSet.eyes.length - 1;
+      eyes.push(add);
+      state.eyeSel = eyes.length - 1;
       state.eyeSet.name = '自定义';
       syncEyeUI(); refreshOut();
     };
@@ -6516,11 +6609,13 @@
     $('#eyeMirror', m.el).onclick = function () {
       state.eyeSet.eyes.forEach(function (e) {
         var E = NSG.COMPOSE.EYE.eye(e);
-        var na = 1 - E['结束'], nb = 1 - E['开始'];
-        e['开始'] = na; e['结束'] = nb; e['峰的时间'] = 1 - E['峰的时间'];
+        var na = +(1 - E['结束']).toFixed(2), nb = +(1 - E['开始']).toFixed(2);
+        e['开始'] = na; e['结束'] = nb; e['峰的时间'] = +(1 - E['峰的时间']).toFixed(2);
         var t = e['左尖锐']; e['左尖锐'] = e['右尖锐']; e['右尖锐'] = t;
         var y = e['开始基值']; e['开始基值'] = e['结束基值']; e['结束基值'] = y;
       });
+      state.eyeSet.eyes.reverse();
+      state.eyeSel = Math.max(0, state.eyeSet.eyes.length - 1 - state.eyeSel);
       state.eyeSet.name = '自定义';
       syncEyeUI(); refreshOut();
     };
