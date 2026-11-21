@@ -213,8 +213,11 @@
     v: ['y'], ve: ['y_ue', 'E'], van: ['y_medial', 'E', 'n'], vn: ['y', 'n'],
     '1': ['1'], '1r': ['1r']
   };
-  function zhSyllable(py) {
-    py = py.replace(/[1-5]$/, '').toLowerCase().replace(/ü/g, 'v').replace(/u:/g, 'v');
+  function normalizeZhSyllable(py) {
+    return py.replace(/[1-5]$/, '').toLowerCase().replace(/ü/g, 'v').replace(/u:/g, 'v');
+  }
+  function zhSyllable(py, strict) {
+    py = normalizeZhSyllable(py);
     if (/^(m|n|ng)$/.test(py)) return [py];
     var ini = '', fin = py;
     for (var i = 0; i < ZH_INIT.length; i++) {
@@ -253,10 +256,34 @@
     }
     // 唇音后的 o 实读 uo：波 [puɔ]、莫 [muɔ]。没有圆唇过渡的单 o 在长音里与 ou 的主元音难分。
     if (fin === 'o' && (ini === 'b' || ini === 'p' || ini === 'm' || ini === 'f')) return out.concat(['u_labial', 'o_lab']);
-    var f = ZH_FIN[fin];
-    if (!f) f = ['@'];
+    var f = Object.hasOwn(ZH_FIN, fin) ? ZH_FIN[fin] : null;
+    if (!f) return strict ? null : out.concat('@');
     return out.concat(f);
   }
+
+  // DV vowel aliases can name either a final or its zero-initial pinyin spelling.
+  var DV_ZH_FINALS = {
+    yi: 'i', ya: 'ia', ye: 'ie', yao: 'iao', you: 'iu', yan: 'ian', yin: 'in',
+    yang: 'iang', ying: 'ing', yong: 'iong', yu: 'v', yue: 've', yuan: 'van', yun: 'vn',
+    wu: 'u', wa: 'ua', wo: 'uo', wai: 'uai', wei: 'ui', wan: 'uan', wen: 'un',
+    wang: 'uang', weng: 'ueng', iou: 'iu', uei: 'ui', uen: 'un', ue: 've', i0: '1', ir: '1r'
+  };
+  NSG.deepVocalMandarinPhones = function (text, savedReading) {
+    text = text.trim();
+    var direct = text.match(/^V([a-zA-ZüÜêÊ:]+[0-5]?)$/);
+    var swap = text.match(/^([^<>\\]+?)\s*\\?<\s*([a-züê:]+[0-5]?)\s*>$/i);
+    if (!direct && !swap) return null;
+    var spelling = normalizeZhSyllable(direct ? direct[1] : swap[2].replace(/^V(?=.)/, ''));
+    var final = Object.hasOwn(DV_ZH_FINALS, spelling) ? DV_ZH_FINALS[spelling] : spelling;
+    if (!Object.hasOwn(ZH_FIN, final)) return null;
+    var vowel = ZH_FIN[final];
+    if (direct) return vowel.slice();
+    var base = swap[1].trim();
+    if (/^[\u3400-\u9fff]$/.test(base) && savedReading) base = savedReading.trim();
+    var phones = zhSyllable(base, true);
+    var vowelStart = phones?.findIndex(id => NSG.phoneOf(id).t === 'V') ?? -1;
+    return vowelStart < 0 ? null : phones.slice(0, vowelStart).concat(vowel);
+  };
 
   /* ---------------- 粤语 ---------------- */
   var YUE_INIT = ['gw', 'kw', 'ng', 'b', 'p', 'm', 'f', 'd', 't', 'n', 'l', 'g', 'k', 'h', 'w', 'z', 'c', 's', 'j'];

@@ -172,6 +172,7 @@
   }
 
   function readSharpkey(bytes, format, helpers) {
+    const resolveVowel = format === 'DeepVocal' ? NSG.deepVocalMandarinPhones : undefined;
     const file = new Reader(bytes, format);
     check(utf8.decode(file.block(8)) === 'SHARPKEY', format);
     file.u32(); // Version; optional record fields are declared by the feature tags.
@@ -231,17 +232,33 @@
         for (const feature of ['ext3', 'ext5', 'ext6', 'ext7']) if (features.has(feature)) s.section();
         return { entries, samples };
       });
-      const lang = trackLanguage(parts.flatMap(part => part.entries), helpers) || 'zh';
+      const entries = parts.flatMap(part => part.entries);
+      // A vowel alias may look like text in another language (for example Vê).
+      const languageEntries = resolveVowel ? entries.filter(n => !resolveVowel(n.lyric, n.reading)) : entries;
+      const lang = trackLanguage(languageEntries, helpers) || 'zh';
+      let hasVowelOverrides = false;
       const notes = parts.flatMap(part => {
         const clip = part.entries.map(n => {
           const note = noteAt(n.tick, n.length, n.key, n.lyric || n.reading, lang, format, helpers);
-          if (note && lang === 'zh') helpers.nnReading(note, note.lyric, n.reading);
+          if (note && lang === 'zh' && !note.slur) {
+            const phones = resolveVowel?.(n.reading) || resolveVowel?.(note.lyric, n.reading);
+            if (phones) {
+              note.phones = phones;
+              note.phonesSource = 'imported';
+              note.phonesLang = lang;
+              hasVowelOverrides = true;
+            } else {
+              helpers.nnReading(note, note.lyric, n.reading);
+            }
+          }
           return note;
         }).filter(Boolean);
         applyPitch(clip, part.samples);
         return groupPart(clip, helpers);
       });
-      return { name, lang, muted, notes };
+      const track = { name, lang, muted, notes };
+      if (hasVowelOverrides) track.phonemizer = lang;
+      return track;
     }).filter(Boolean);
     return { tracks, events, audio, meter: hasMeterChanges(meters, 1) };
   }
@@ -673,7 +690,7 @@
     // Pitch fitting indexes its source notes by ID before the editor assigns its own IDs.
     for (const track of result.tracks) track.notes.forEach((note, i) => { note.id = i + 1; });
     const tempos = tempoMap(result.events);
-    let warn = '原声库、手工音素、独立颤音与效果未转换';
+    let warn = kind === 'dv' ? '原声库、音素时值调整、独立颤音与效果未转换' : '原声库、手工音素、独立颤音与效果未转换';
     if (result.audio) warn += '；伴奏与音频轨未导入';
     if (result.nonVocal) warn += '；非人声轨道未导入';
     if (result.mix) warn += '；轨道音量与独奏设置未导入';

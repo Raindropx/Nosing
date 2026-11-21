@@ -2250,6 +2250,7 @@
         .replace(/；轨道音量与独奏设置未导入/g, '; track volume and solo settings were not imported')
         .replace(/；旧版伴奏未导入/g, '; legacy accompaniment was not imported')
         .replace(/原声库、手工音素、独立颤音与效果未转换/g, 'Voicebanks, manual phonemes, separate vibrato and effects were not converted')
+        .replace(/原声库、音素时值调整、独立颤音与效果未转换/g, 'Voicebanks, phoneme timing adjustments, separate vibrato and effects were not converted')
         .replace(/；伴奏与音频轨未导入/g, '; accompaniment and audio tracks were not imported')
         .replace(/；说话轨未导入/g, '; speech tracks were not imported')
         .replace(/；同位置的不同轨道速度以首条为准/g, '; the first track sets the tempo when tracks disagree at the same position')
