@@ -3,7 +3,7 @@
 self.window = self;
 self.global = self;
 importScripts('phonemes.js', 'timbre.js', 'g2p.js', 'tempo.js', 'tuning.js', 'instruments.js',
-  'fft-wasm.js', 'dsp.js', 'analyze.js', 'compose.js', 'fzstd.js', 'fflate.js', 'io.js', 'render-service.js');
+  'fft-wasm.js', 'dsp.js', 'analyze.js', 'compose.js', 'fzstd.js', 'fflate.js', 'project-imports.js', 'io.js', 'render-service.js');
 var DICT_LANGS = { zh: 1, yue: 1, ja: 1, en: 1, de: 1, nan: 1, hak: 1, 'nan-x-teochew': 1, th: 1 };
 var loadedScripts = Object.create(null);
 var wasmReady = NSG.WASM.init('../assets/dsp/fft.wasm');

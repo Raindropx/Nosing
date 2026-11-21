@@ -4730,7 +4730,10 @@
     var importedTempos = (res.tempos && res.tempos.length)
       ? NSG.TEMPO.list({ tempo: res.tempos[0].bpm, tempos: res.tempos })
       : NSG.TEMPO.list({ tempo: res.tempo || state.score.tempo || 120 });
-    var notice = unmuteVpr ? t('imp.vprUnmuted', null, '所选 VPR 人声轨全部静音，已自动取消静音') : '';
+    var notice = [
+      unmuteVpr ? t('imp.vprUnmuted', null, '所选 VPR 人声轨全部静音，已自动取消静音') : '',
+      res.warn ? tMsg(res.warn) : ''
+    ].filter(Boolean).join(' · ');
     setStatus(t('imp.appendedStatus', { tracks: nonEmpty.length, notes: addedNotes }, '已附加 ' + nonEmpty.length + ' 条音层（' + addedNotes + ' 个音符），请确认 BPM') + (notice ? ' · ' + notice : ''));
     promptImportedBpm(currentTempos, importedTempos, f.name, notice);
   }
@@ -4923,7 +4926,7 @@
       try {
         var bytes = new Uint8Array(rd.result);
         var kind = NSG.IO.sniff(bytes, f.name);
-        if (kind === 'unknown') { setStatus(t('imp.unknownFormat', null, '无法识别文件格式')); alert(t('imp.unknownFormatAlert', null, '认不出这个文件格式（支持 MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG）')); return; }
+        if (kind === 'unknown') { setStatus(t('imp.unknownFormat', null, '无法识别文件格式')); alert(t('imp.unknownFormatAlert', null, '认不出这个文件格式。支持 MIDI、VSQ、VSQX、VPR、SVP、UST、USTX、TLP、TLPX、NN、ACEP、VCP、VSP、DSC、ufdata、NSG、CCS、CCST、TSSLN、DV、SK、MTP、VSPX 和 VOG。')); return; }
         setStatus(t('imp.reading', null, '正在读取工程…'));
         var res = (await getRenderer().compute('read', { name: f.name, bytes: bytes })).imported;
         if (!currentImport(context)) return;

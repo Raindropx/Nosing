@@ -249,7 +249,7 @@
   Client.prototype._portableWorker = function () {
     var modules = root.NSG_WORKER_MODULES;
     var names = ['phonemes', 'timbre', 'g2p', 'tempo', 'tuning', 'instruments', 'fft-wasm',
-      'dsp', 'analyze', 'compose', 'fzstd', 'fflate', 'io', 'render-service'];
+      'dsp', 'analyze', 'compose', 'fzstd', 'fflate', 'project-imports', 'io', 'render-service'];
     var parts = ['self.window = self; self.global = self;\n'];
     names.forEach(function (name) {
       if (!modules || !modules[name]) throw Error('后台模块未就绪：' + name);

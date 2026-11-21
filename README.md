@@ -15,6 +15,8 @@ Nosing (小市唱) is an offline singing synthesizer. You draw the notes, type i
 
 You can enter lyrics in several languages, add independent vocal layers, and turn on automatic accompaniment. The interface speaks English and Simplified Chinese. Vocals render at 16 kHz by default, or 48 kHz in HiFi mode.
 
+You can import vocal scores from CeVIO (`.ccs`, `.ccst`), VoiSona (`.tssln`), DeepVocal (`.dv`), Sharpkey (`.sk`), MUTA (`.mtp`), VocalSharp (`.vspx`), and Vogen (`.vog`). Open the selected tracks as a new project or append them to the current one. Nosing synthesizes the imported notes with its own voices. Backing audio, time signatures, and the original voicebanks are not carried over.
+
 You can export the current vocal layer as a WAV, all vocal layers as a ZIP of WAVs, the accompaniment, the mix, or MIDI.
 
 ## Frequently asked questions

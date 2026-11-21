@@ -335,7 +335,7 @@
 
     'menu.start': '开始',
     'menu.newProject': '新建',
-    'menu.fileImport': '导入工程文件…（MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG）',
+    'menu.fileImport': '导入工程文件…（MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG）',
     'menu.demo': '载入示例乐谱',
     'menu.export': '导出',
     'menu.expVocal': '导出本层人声',
@@ -692,7 +692,7 @@
 
     'menu.start': 'Start',
     'menu.newProject': 'New Project',
-    'menu.fileImport': 'Import Project… (MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG)',
+    'menu.fileImport': 'Import Project… (MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG / CCS / CCST / TSSLN / DV / SK / MTP / VSPX / VOG)',
     'menu.demo': 'Load Demo Score',
     'menu.export': 'Export',
     'menu.expVocal': 'Export Current Vocal Layer',
@@ -1582,7 +1582,7 @@
     'imp.normalizing': 'Normalizing imported pitch curves…',
     'imp.staleProject': 'Project changed during import; result discarded. Please re-import.',
     'imp.unknownFormat': 'Unrecognized file format',
-    'imp.unknownFormatAlert': 'Unrecognized file format (supported: MIDI / VSQ / VSQX / VPR / SVP / UST / USTX / TLP / TLPX / NN / ACEP / VCP / VSP / DSC / ufdata / NSG)',
+    'imp.unknownFormatAlert': 'Unrecognized file format. Supported formats include MIDI, VSQ, VSQX, VPR, SVP, UST, USTX, TLP, TLPX, NN, ACEP, VCP, VSP, DSC, ufdata, NSG, CCS, CCST, TSSLN, DV, SK, MTP, VSPX and VOG.',
     'imp.failed': 'Import failed: {msg}',
     'imp.readError': 'Failed to read file',
     'imp.readErrorDetail': 'Failed to read file: {msg}',
@@ -2236,6 +2236,8 @@
     if ((m = s.match(/^DSC 不是合法 JSON：(.*)$/))) return 'Invalid DSC JSON: ' + m[1];
     if ((m = s.match(/^未知计算类型：(.*)$/))) return 'Unknown computation type: ' + m[1];
     if ((m = s.match(/^后台模块未就绪：(.*)$/))) return 'Worker module not ready: ' + m[1];
+    if ((m = s.match(/^(\S+) 工程结构无效或数据不完整$/))) return 'Invalid or incomplete ' + m[1] + ' project';
+    if ((m = s.match(/^(\S+) 工程中没有可导入的人声音符$/))) return 'No vocal notes found in the ' + m[1] + ' project';
     if (s.indexOf('；') >= 0 || s.indexOf('未导入') >= 0 || s.indexOf('未转换') >= 0) {
       return s
         .replace(/VPR 声库、效果、手工音素、独立颤音、自动演唱及混音自动化暂不转换；未绘制音高处按本地音符重新合成/g, ENGINE_MSG_EXACT['VPR 声库、效果、手工音素、独立颤音、自动演唱及混音自动化暂不转换；未绘制音高处按本地音符重新合成'])
@@ -2246,6 +2248,10 @@
         .replace(/(\d+) 个外部音频片段未导入/g, '$1 external audio clip(s) not imported')
         .replace(/；非人声轨道未导入/g, '; non-vocal tracks were not imported')
         .replace(/；旧版伴奏未导入/g, '; legacy accompaniment was not imported')
+        .replace(/原声库、手工音素、独立颤音与效果未转换/g, 'Voicebanks, manual phonemes, separate vibrato and effects were not converted')
+        .replace(/；伴奏与音频轨未导入/g, '; accompaniment and audio tracks were not imported')
+        .replace(/；说话轨未导入/g, '; speech tracks were not imported')
+        .replace(/；同位置的不同轨道速度以首条为准/g, '; the first track sets the tempo when tracks disagree at the same position')
         .replace(/；拍号及拍号变化暂不转换/g, '; time signatures and meter changes were not converted')
         .replace(/；/g, '; ');
     }

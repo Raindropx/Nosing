@@ -6,6 +6,7 @@
 | --- | --- |
 | `js/fflate.js` | Arjun Barrett 的 fflate v0.8.2，MIT。完整许可保留在文件头。 [上游许可](https://github.com/101arrowz/fflate/blob/v0.8.2/LICENSE) |
 | `js/fzstd.js` | Arjun Barrett 的 fzstd v0.1.1，MIT。完整许可保留在文件头。 [上游许可](https://github.com/101arrowz/fzstd/blob/v0.1.1/LICENSE) |
+| `js/project-imports.js` 的格式结构与坐标换算 | 参考 SoulMelody/LibreSVIP，MIT。DeepVocal 的速度坐标另参考 UtaFormatix3 的格式实现。 [LibreSVIP 源码](https://github.com/SoulMelody/LibreSVIP/tree/498291b2cb3b731b5bffdc8fe811d7451cb9c3bd/libresvip/plugins) · [LibreSVIP 许可](assets/licenses/libresvip-mit.txt) · [UtaFormatix3 格式实现](https://github.com/sdercolin/utaformatix3/blob/master/core/src/main/kotlin/core/io/Dv.kt) |
 | `js/g2p.js` 的 Asaxi 正字法映射 | 参考 wik-wav/asaxi-diffsinger，CC0 1.0。 [上游许可](https://github.com/wik-wav/asaxi-diffsinger/blob/main/LICENSE) |
 
 ## 离线字典

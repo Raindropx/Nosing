@@ -1,7 +1,8 @@
 /* ==========================================================================
    NSG · 文件读写
    导入：MIDI / VSQ(VOCALOID2, 实为 SMF) / VSQX(V3、V4) / VPR(V5、V6) / SVP / UST / USTX / NN /
-         TuneLab(TLP / TLPX) / VSP(VOCALINA) / VCP(CANTOR 2) / DSC / ufdata(UtaFormatix) / NSG 工程
+         TuneLab(TLP / TLPX) / VSP(VOCALINA) / VCP(CANTOR 2) / DSC / ufdata(UtaFormatix) / NSG
+         及 project-imports.js 中的 CeVIO / VoiSona / DeepVocal / Sharpkey / MUTA / VocalSharp / Vogen
    导出：WAV / ZIP / MIDI / ufdata / NSG 工程
    格式一律按「内容嗅探」判定，不看扩展名 —— 有的 .vsq 其实是 SMF、
    别人的 .vsq 可能是 XML，扩展名靠不住。
@@ -484,10 +485,19 @@
     if (IO.isACEPBinary(b)) return done('acep');
     if (IO.isVCPBinary(b)) return done('vcp');
     if (IO.isVSPBinary(b)) return done('vsp');
+    var signature = latin1(b.subarray(0, 17));
+    if (signature.startsWith('SHARPKEY')) return done(/\.sk$/.test(nm) ? 'sk' : 'dv');
+    if (signature.startsWith('TSSolution\0')) return done('tssln');
     if (b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b) {
-      try { if (vprZipEntry(b)) return done('vpr'); } catch (ignored) { }
+      if (/\.vog$/.test(nm)) return done('vog');
+      try {
+        if (zipProjectEntry(b, 'Project/sequence.json', 'VPR')) return done('vpr');
+        if (zipProjectEntry(b, 'chart.json', 'Vogen')) return done('vog');
+      } catch (ignored) { }
       return done(/\.vpr$/.test(nm) ? 'vpr' : 'unknown');
     }
+    var projectExt = nm.match(/\.(ccs|ccst|tssln|dv|sk|mtp|vspx|vog)$/);
+    if (projectExt) return done(projectExt[1]);
     // TLPX is a bare CBOR map, without a file magic; inspect its root fields.
     if (b.length && (b[0] >> 5 === 5 || b[0] >> 5 === 6)) {
       try {
@@ -510,6 +520,9 @@
     if (/^\s*\[#(?:VERSION|SETTING|\d+)\]/i.test(head)) return done('ust');
     // 袅袅：数字头（速度、拍号、小节数、版本等），下一行是音符数。
     if (/^\s*\d+(?:\.\d+)?(?:[ \t]+\d+){9}[ \t]*\r?\n\d+[ \t]*(?:\r?\n|$)/.test(head)) return done('nn');
+    var xmlHead = head.replace(/^\s*<\?xml[^?]*\?>\s*/, '').trimStart();
+    if (/^<(?:Scenario|Definition)(?:[\s>])/.test(xmlHead)) return done('ccs');
+    if (/^<VSPX(?:[\s>])/.test(xmlHead)) return done('vspx');
     if (/^\s*<\?xml|^\s*<vsq/m.test(head)) return done('vsqx');
     var h = head.replace(/^\uFEFF/, '').replace(/^\s+/, '');
     if (h.charAt(0) === '{') {
@@ -2083,61 +2096,63 @@
      ZIP metadata is read before inflating only Project/sequence.json. Embedded
      audio is never decompressed. Central sizes also support data descriptors.
      Field reference: sdercolin/utaformatix3 core/io/Vpr.kt. */
-  function vprZipEntry(b) {
+  function zipProjectEntry(b, entryName, format, names) {
     var v = new DataView(b.buffer, b.byteOffset, b.byteLength), eocd = -1;
     function need(off, len) {
-      if (off < 0 || off + len > b.length) throw new Error('VPR ZIP 数据不完整');
+      if (off < 0 || off + len > b.length) throw new Error(format + ' ZIP 数据不完整');
     }
     for (var i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) {
       if (v.getUint32(i, true) === 0x06054b50 && i + 22 + v.getUint16(i + 20, true) === b.length) { eocd = i; break; }
     }
-    if (eocd < 0) throw new Error('VPR ZIP 目录缺失或文件已截断');
+    if (eocd < 0) throw new Error(format + ' ZIP 目录缺失或文件已截断');
     if (v.getUint16(eocd + 4, true) || v.getUint16(eocd + 6, true) ||
-        v.getUint16(eocd + 8, true) !== v.getUint16(eocd + 10, true)) throw new Error('不支持分卷 VPR ZIP');
+        v.getUint16(eocd + 8, true) !== v.getUint16(eocd + 10, true)) throw new Error('不支持分卷 ' + format + ' ZIP');
     var count = v.getUint16(eocd + 10, true), size = v.getUint32(eocd + 12, true), off = v.getUint32(eocd + 16, true);
-    if (count === 65535 || size === 0xffffffff || off === 0xffffffff) throw new Error('暂不支持 ZIP64 VPR');
+    if (count === 65535 || size === 0xffffffff || off === 0xffffffff) throw new Error('暂不支持 ZIP64 ' + format);
     var dirStart = off, dirEnd = off + size, entry = null;
-    if (dirEnd > eocd) throw new Error('VPR ZIP 目录越界');
+    if (dirEnd > eocd) throw new Error(format + ' ZIP 目录越界');
     for (var i = 0; i < count; i++) {
       need(off, 46);
-      if (v.getUint32(off, true) !== 0x02014b50) throw new Error('VPR ZIP 目录无效');
+      if (v.getUint32(off, true) !== 0x02014b50) throw new Error(format + ' ZIP 目录无效');
       var nameLen = v.getUint16(off + 28, true), extraLen = v.getUint16(off + 30, true), commentLen = v.getUint16(off + 32, true);
       var next = off + 46 + nameLen + extraLen + commentLen;
-      if (next > dirEnd) throw new Error('VPR ZIP 目录长度无效');
+      if (next > dirEnd) throw new Error(format + ' ZIP 目录长度无效');
       var name = new TextDecoder('utf-8').decode(b.subarray(off + 46, off + 46 + nameLen));
-      if (name.replace(/\\/g, '/') === 'Project/sequence.json') {
-        if (entry) throw new Error('VPR ZIP 包含重复工程数据');
+      var path = name.replace(/\\/g, '/');
+      if (names) names.push(path);
+      if (path === entryName) {
+        if (entry) throw new Error(format + ' ZIP 包含重复工程数据');
         entry = { flags: v.getUint16(off + 8, true), method: v.getUint16(off + 10, true),
           crc: v.getUint32(off + 16, true), packed: v.getUint32(off + 20, true),
           size: v.getUint32(off + 24, true), offset: v.getUint32(off + 42, true), name: name, dir: dirStart };
-        if (v.getUint16(off + 34, true)) throw new Error('不支持分卷 VPR ZIP');
+        if (v.getUint16(off + 34, true)) throw new Error('不支持分卷 ' + format + ' ZIP');
       }
       off = next;
     }
-    if (off !== dirEnd) throw new Error('VPR ZIP 目录长度不匹配');
+    if (off !== dirEnd) throw new Error(format + ' ZIP 目录长度不匹配');
     return entry;
   }
   var CRC32_TABLE = null;
-  function vprJSON(bytes) {
-    var entry = vprZipEntry(bytes);
-    if (!entry) throw new Error('VPR 中缺少 Project/sequence.json');
-    if (entry.flags & 1) throw new Error('暂不支持加密 VPR');
-    if (entry.method !== 0 && entry.method !== 8) throw new Error('不支持此 VPR ZIP 压缩方式');
-    if (!entry.size || entry.size > 64 * 1024 * 1024) throw new Error('VPR 工程 JSON 大小无效或超过 64 MB');
+  function zipProjectText(bytes, entryName, format) {
+    var names = [], entry = zipProjectEntry(bytes, entryName, format, names);
+    if (!entry) throw new Error(format + ' 中缺少 ' + entryName);
+    if (entry.flags & 1) throw new Error('暂不支持加密 ' + format);
+    if (entry.method !== 0 && entry.method !== 8) throw new Error('不支持此 ' + format + ' ZIP 压缩方式');
+    if (!entry.size || entry.size > 64 * 1024 * 1024) throw new Error(format + ' 工程 JSON 大小无效或超过 64 MB');
     var v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), off = entry.offset;
-    if (off + 30 > entry.dir || v.getUint32(off, true) !== 0x04034b50) throw new Error('VPR ZIP 文件头无效');
+    if (off + 30 > entry.dir || v.getUint32(off, true) !== 0x04034b50) throw new Error(format + ' ZIP 文件头无效');
     var nameLen = v.getUint16(off + 26, true), begin = off + 30 + nameLen + v.getUint16(off + 28, true);
     if (begin + entry.packed > entry.dir || v.getUint16(off + 8, true) !== entry.method ||
         v.getUint16(off + 6, true) !== entry.flags ||
-        new TextDecoder().decode(bytes.subarray(off + 30, off + 30 + nameLen)) !== entry.name) throw new Error('VPR ZIP 文件头或长度不匹配');
+        new TextDecoder().decode(bytes.subarray(off + 30, off + 30 + nameLen)) !== entry.name) throw new Error(format + ' ZIP 文件头或长度不匹配');
     var raw = bytes.subarray(begin, begin + entry.packed);
     if (entry.method === 8) {
       var flate = root.fflate;
       if (!flate && typeof require === 'function') flate = require('./fflate.js');
-      if (!flate) throw new Error('VPR 解压模块未加载');
+      if (!flate) throw new Error(format + ' 解压模块未加载');
       raw = flate.inflateSync(raw, { out: new Uint8Array(entry.size) });
     }
-    if (raw.length !== entry.size) throw new Error('VPR JSON 解压长度不匹配');
+    if (raw.length !== entry.size) throw new Error(format + ' JSON 解压长度不匹配');
     if (!CRC32_TABLE) {
       CRC32_TABLE = new Uint32Array(256);
       for (var ti = 0; ti < 256; ti++) {
@@ -2148,8 +2163,8 @@
     }
     var crc = -1;
     for (var i = 0; i < raw.length; i++) crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ raw[i]) & 0xff];
-    if (((crc ^ -1) >>> 0) !== entry.crc) throw new Error('VPR JSON 校验失败，文件可能已损坏');
-    return new TextDecoder('utf-8', { fatal: true }).decode(raw);
+    if (((crc ^ -1) >>> 0) !== entry.crc) throw new Error(format + ' JSON 校验失败，文件可能已损坏');
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(raw), names: names };
   }
   function vprEvents(events) {
     var points = (Array.isArray(events) ? events : []).filter(function (p) {
@@ -2184,7 +2199,7 @@
   IO.readVPR = function (src) {
     var j;
     try {
-      var text = typeof src === 'string' ? src : vprJSON(toU8(src));
+      var text = typeof src === 'string' ? src : zipProjectText(toU8(src), 'Project/sequence.json', 'VPR').text;
       j = JSON.parse(text.replace(/^\uFEFF/, ''));
     } catch (e) { throw new Error('无法读取 VPR 工程：' + e.message); }
     if (!isVPRProject(j)) throw new Error('VPR 工程缺少版本、主轨道或轨道数据');
@@ -4201,6 +4216,15 @@
       case 'nn': { var dn = dec(); res = IO.readNN(dn.text); res.enc = dn.enc; break; }
       case 'vcp': { res = IO.readVCP(bytes); break; }
       case 'vsp': { res = IO.readVSP(bytes); break; }
+      case 'ccs': case 'ccst': case 'tssln': case 'dv': case 'sk': case 'mtp': case 'vspx': case 'vog': {
+        if (!NSG.readExternalProject && typeof require === 'function') require('./project-imports.js');
+        res = NSG.readExternalProject(kind, bytes, {
+          decodeText: IO.decodeText, setLyric: setLyric, importLang: importLang, guessLyricLanguage: guessLyricLanguage,
+          groupLyrics: groupLyrics, nnReading: nnReading, assignTrackMix: assignTrackMix, dbToLinear: dbToLinear,
+          withImportTracks: withImportTracks, zipProjectText: zipProjectText
+        });
+        break;
+      }
       case 'tlp': { var dtl = dec(); res = IO.readTuneLab(dtl.text, false, info.json); res.enc = dtl.enc; break; }
       case 'tlpx': { res = IO.readTuneLab(bytes, true, info.cbor); break; }
       case 'acep': {
