@@ -315,7 +315,7 @@
       },
       renderUnder: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
-          var it = items[i], g = it.geo, alpha = it.active ? 1 : (1 - it.exitAge / 0.75);
+          var it = items[i], g = it.geo, alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
           var prog = it.active ? clamp(it.rel, 0, 1) : 1;
           var sweepW = g.w * prog;
@@ -442,10 +442,12 @@
         }
       },
       renderUnder: function (fx, c, roll, T, A, items) {
+        var relMotion = !!(roll && roll.relativeMotion);
+        var maxTrail = relMotion ? 180 : 72;
         // 呼吸音符柔光边框
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? 1 : (1 - it.exitAge / 0.9);
+          var alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
           var pulse = 0.72 + 0.28 * Math.sin(fx.elapsed * 9 + it.st.seed * 6);
           c.save();
@@ -466,7 +468,7 @@
             var px = roll.beatX(roll.playPos);
             if (!fx.trail.length || Math.hypot(px - fx.trail[fx.trail.length - 1].x, py - fx.trail[fx.trail.length - 1].y) > 1.5) {
               fx.trail.push({ x: px, y: py, w: clamp(3 + slope * 0.65, 3, 14), t: fx.elapsed });
-              if (fx.trail.length > 72) fx.trail.shift();
+              if (fx.trail.length > maxTrail) fx.trail.shift();
             }
             if (Math.random() < 0.38) {
               fx.spawn({
@@ -483,8 +485,10 @@
         }
       },
       renderOver: function (fx, c, roll, T, A) {
+        var relMotion = !!(roll && roll.relativeMotion);
+        var trailLife = relMotion ? 3.2 : 1.25;
         // 清理过旧尾迹
-        while (fx.trail.length && fx.elapsed - fx.trail[0].t > 1.25) fx.trail.shift();
+        while (fx.trail.length && (fx.elapsed - fx.trail[0].t > trailLife || (relMotion && fx.trail.length > 2 && fx.trail[0].x < roll.kbW - 40 && fx.trail[1].x < roll.kbW - 40))) fx.trail.shift();
         if (fx.trail.length < 2) return;
         c.save();
         c.lineCap = 'round';
@@ -492,7 +496,7 @@
         for (var i = 1; i < fx.trail.length; i++) {
           var p0 = fx.trail[i - 1], p1 = fx.trail[i];
           if (Math.abs(p1.x - p0.x) > 80) continue; // 跳过寻道跳跃
-          var age = clamp(1 - (fx.elapsed - p1.t) / 1.25, 0, 1);
+          var age = clamp(1 - (fx.elapsed - p1.t) / trailLife, 0, 1);
           var ratio = i / fx.trail.length;
           c.globalAlpha = age * ratio * (A.isDark ? 0.55 : 0.42);
           c.strokeStyle = A.cyan;
@@ -529,7 +533,7 @@
         var gridH = roll.gridBottom();
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? 1 : (1 - it.exitAge / 0.55);
+          var alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
           var velFactor = clamp((it.n.vel || 96) / 110, 0.35, 1.2);
           var px = roll.beatX(roll.playPos);
@@ -619,7 +623,7 @@
         var goldCol = A.isDark ? '#ffd978' : '#b87d14';
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? 1 : (1 - it.exitAge / 1.0);
+          var alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
           var prog = it.active ? clamp(it.rel, 0, 1) : 1;
 
@@ -666,7 +670,8 @@
         var inkCol = A.isDark ? '#fff5dc' : '#1c2630';
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? clamp(it.age * 4, 0, 1) : clamp(1 - it.exitAge / 0.8, 0, 1);
+          var txtFade = it.relMotion ? 1.5 : 0.8;
+          var alpha = it.active ? clamp(it.age * 4, 0, 1) : clamp(1 - it.exitAge / txtFade, 0, 1);
           if (alpha <= 0) continue;
           var rise = it.active ? Math.min(10, it.age * 14) : 10 + it.exitAge * 16;
           var tx = clamp(g.x + g.w * 0.5, roll.kbW + 24, roll.w - 24);
@@ -715,8 +720,8 @@
       renderOver: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo, st = it.st;
-          var t = it.active ? it.age : Math.max(0, 0.7 - it.exitAge);
-          var panic = it.active ? clamp(it.age * 5, 0, 1) : clamp(1 - it.exitAge / 0.7, 0, 1);
+          var panic = it.active ? clamp(it.age * 5, 0, 1) : it.exitAlpha;
+          var t = it.active ? it.age : (0.7 * it.exitAlpha + (it.relMotion ? Math.min(0.6, it.exitAge * 0.4) : 0));
           var runPhase = fx.elapsed * 26 + st.seed * 10;
           var hopY = -Math.abs(Math.sin(runPhase * 0.5)) * (14 + roll.rowH * 0.65) * panic;
           var fleeX = Math.sin(runPhase * 0.32) * 20 * panic + (st.dir || 1) * Math.min(28, t * 34) * panic;
@@ -761,7 +766,7 @@
           drawMiniEye(c, eyeR * 1.25, -g.h * 0.1, eyeR, eyeR * 1.15, px - cx, 0, '#ffffff', '#ffffff', '#111111', '#111111', 1.1);
 
           // 狂飙汗滴
-          if (it.active) {
+          if (it.active || (it.relMotion && it.exitAlpha > 0.5)) {
             c.fillStyle = '#4ad8ff';
             var dropY = ((fx.elapsed * 28) % 10);
             c.beginPath();
@@ -855,7 +860,7 @@
       renderOver: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? 1 : (1 - it.exitAge / 0.75);
+          var alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
           // 旋转金芒底盘
           var cx = g.x + g.w / 2, cy = g.y + g.h / 2;
@@ -868,7 +873,7 @@
           c.restore();
 
           // 被卡拉OK弹球砸扁再弹起的音符
-          var squash = it.active ? (1 - 0.55 * Math.exp(-it.age * 9) * Math.cos(it.age * 24)) : 1;
+          var squash = it.active ? (1 - 0.55 * Math.exp(-it.age * 9) * Math.cos(it.age * 24)) : (it.relMotion ? (1 - 0.24 * it.exitAlpha) : 1);
           var sx = 1 / Math.max(0.55, squash);
           c.save();
           c.translate(cx, g.y + g.h);
@@ -960,9 +965,15 @@
           var it = items[i], g = it.geo;
           if (it.active) activeOne = it;
           var lift = it.active ? clamp(it.rel * 1.15, 0.1, 1) : 0;
-          var dropBounce = !it.active ? Math.abs(Math.sin(it.exitAge * 14)) * Math.exp(-it.exitAge * 5) * 18 : 0;
+          if (it.active) it.st.lastLift = lift;
+          var fallT = (!it.active && it.relMotion) ? clamp(1 - it.exitAge / 0.28, 0, 1) : 0;
+          var residualLift = fallT * fallT * (it.st.lastLift || 0.7);
+          var landAge = (!it.active && it.relMotion) ? Math.max(0, it.exitAge - 0.28) : it.exitAge;
+          var dropBounce = !it.active ? Math.abs(Math.sin(landAge * 14)) * Math.exp(-landAge * 5) * 18 * (fallT > 0 ? 0 : 1) : 0;
           var ufoY = Math.max(roll.rulerH + 20, g.y - 54);
-          var noteLiftY = it.active ? (g.y - (g.y - ufoY - 14) * lift * 0.72) : (g.y - dropBounce);
+          var noteLiftY = it.active
+            ? (g.y - (g.y - ufoY - 14) * lift * 0.72)
+            : (g.y - (g.y - ufoY - 14) * residualLift * 0.72 - dropBounce);
 
           // 绿色外星牵引光束锥
           if (it.active) {
@@ -1002,7 +1013,13 @@
             c.rotate(Math.sin(fx.elapsed * 8 + it.st.seed * 5) * 0.28 * lift);
             c.scale(1 - lift * 0.22, 1 + lift * 0.45);
           } else {
-            var sq = 1 - 0.28 * Math.exp(-it.exitAge * 7) * Math.cos(it.exitAge * 22);
+            var daze = it.relMotion ? it.exitAlpha : 0;
+            if (daze > 0) {
+              var tiltDir = it.st.seed < 0.5 ? -1 : 1;
+              c.rotate(tiltDir * 0.16 * daze * (1 - fallT) + Math.sin(fx.elapsed * 8 + it.st.seed * 5) * 0.24 * fallT);
+            }
+            var sq = 1 - 0.28 * Math.exp(-landAge * 7) * Math.cos(landAge * 22) - 0.18 * daze * (1 - fallT);
+            sq = Math.max(0.58, sq);
             c.scale(1 / sq, sq);
           }
           drawStyledNote(c, roll, it.n, -g.w / 2, -g.h / 2, g.w, g.h, T);
@@ -1079,17 +1096,20 @@
         for (var i = 0; i < items.length; i++) {
           if (items[i].active) { activeIt = items[i]; break; }
         }
+        var relMotion = !!(roll && roll.relativeMotion);
+        var maxSnake = relMotion ? 64 : 42;
+        var snakeLife = relMotion ? 3.2 : 1.8;
         if (activeIt && px >= roll.kbW && px <= roll.w) {
           var py = samplePitchY(roll, activeIt.n, clamp(activeIt.rel, 0, 1), activeIt.nInfo);
           if (!fx.trail.length || Math.hypot(px - fx.trail[fx.trail.length - 1].x, py - fx.trail[fx.trail.length - 1].y) > 2.5) {
             fx.trail.push({ x: px, y: py, t: fx.elapsed });
-            if (fx.trail.length > 42) fx.trail.shift();
+            if (fx.trail.length > maxSnake) fx.trail.shift();
           }
           if (Math.random() < 0.22) {
             fx.spawn({ kind: 'spark', x: px, y: py, vx: -25 - Math.random() * 45, vy: (Math.random() - 0.5) * 40, r: 2.2, color: A.noteSelStroke, life: 0.4 });
           }
         }
-        while (fx.trail.length && fx.elapsed - fx.trail[0].t > 1.8) fx.trail.shift();
+        while (fx.trail.length && (fx.elapsed - fx.trail[0].t > snakeLife || (relMotion && fx.trail.length > 2 && fx.trail[0].x < roll.kbW - 40 && fx.trail[1].x < roll.kbW - 40))) fx.trail.shift();
         if (fx.trail.length < 2) return;
 
         // 画一条色彩鲜明、圆滚滚扭动的 PIT 贪吃蛇身体
@@ -1156,7 +1176,7 @@
       renderUnder: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? 1 : (1 - it.exitAge / 0.65);
+          var alpha = it.active ? 1 : it.exitAlpha;
           if (alpha <= 0) continue;
 
           // 背后若隐若现的诡异巨大半透明“凝视之眼”（小惊吓！）
@@ -1333,10 +1353,10 @@
       renderOver: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var env = it.active ? clamp(it.age * 6, 0, 1) : clamp(1 - it.exitAge / 0.95, 0, 1);
+          var env = it.active ? clamp(it.age * 6, 0, 1) : it.exitAlpha;
           if (env <= 0) continue;
           var t = fx.elapsed * 16 + it.st.seed * 8;
-          var damp = it.active ? 1 : Math.exp(-it.exitAge * 3.2);
+          var damp = it.active ? 1 : (it.relMotion ? (0.18 + 0.82 * Math.exp(-it.exitAge * 1.4)) * it.exitAlpha : Math.exp(-it.exitAge * 3.2));
           var sy = 1 + (0.65 * env + Math.sin(t) * 0.42 * damp);
           var sx = 1 / Math.sqrt(Math.max(0.45, sy));
           var cx = g.x + g.w / 2, cy = g.y + g.h / 2;
@@ -1451,7 +1471,25 @@
       renderUnder: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          if (!it.active) continue;
+          if (!it.active) {
+            var koAlpha = it.exitAlpha;
+            if (koAlpha > 0) {
+              c.save();
+              c.globalAlpha = koAlpha * 0.58;
+              c.fillStyle = A.isDark ? '#090612' : '#2a2234';
+              roundRect(c, g.x, g.y, g.w, g.h, T.noteRadius || 0);
+              c.fill();
+              c.globalAlpha = koAlpha * 0.85;
+              c.strokeStyle = '#ff4d6d';
+              c.lineWidth = 1.8;
+              c.beginPath();
+              c.moveTo(g.x + 2, g.y + g.h - 2);
+              c.lineTo(g.x + g.w - 2, g.y + 2);
+              c.stroke();
+              c.restore();
+            }
+            continue;
+          }
           // 周期性受击伤害数字与白闪
           if (it.rel - (it.st.lastHitRel || 0) >= 0.28) {
             it.st.lastHitRel = it.rel;
@@ -1485,7 +1523,21 @@
       renderOver: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          if (!it.active) continue;
+          if (!it.active) {
+            if (it.exitAlpha > 0) {
+              var koBarW = Math.max(36, Math.min(g.w, 120));
+              var koBx = clamp(g.x + g.w / 2 - koBarW / 2, roll.kbW + 4, roll.w - koBarW - 4);
+              var koBy = Math.max(roll.rulerH + 4, g.y - 11);
+              c.save();
+              c.globalAlpha = it.exitAlpha * 0.72;
+              c.fillStyle = '#181420';
+              c.fillRect(koBx - 1, koBy - 1, koBarW + 2, 7);
+              c.strokeStyle = '#ff5a72'; c.lineWidth = 0.9;
+              c.strokeRect(koBx - 1, koBy - 1, koBarW + 2, 7);
+              c.restore();
+            }
+            continue;
+          }
           var hp = clamp(1 - it.rel, 0, 1);
           // 英雄剑气斩击弧光
           var sx = g.x + g.w * clamp(it.rel, 0, 1);
@@ -1527,7 +1579,7 @@
         var lookY = fx.mouse.inside ? fx.mouse.y : (roll.gridBottom() * 0.45);
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? clamp(it.age * 5, 0, 1) : clamp(1 - it.exitAge / 0.95, 0, 1);
+          var alpha = it.active ? clamp(it.age * 5, 0, 1) : it.exitAlpha;
           if (alpha <= 0) continue;
           var cx = g.x + g.w / 2, cy = g.y + g.h / 2;
 
@@ -1584,7 +1636,7 @@
         var lookY = fx.mouse.inside ? fx.mouse.y : (roll.gridBottom() * 0.5);
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? clamp(it.age * 5, 0, 1) : clamp(1 - it.exitAge / 0.95, 0, 1);
+          var alpha = it.active ? clamp(it.age * 5, 0, 1) : it.exitAlpha;
           if (alpha <= 0) continue;
           // 在音符表面密密麻麻睁开一排盯着你的眼睛！
           var eyeCount = clamp(Math.floor(g.w / 24), 1, 6);
@@ -1641,7 +1693,7 @@
       renderUnder: function (fx, c, roll, T, A, items) {
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var alpha = it.active ? clamp(it.age * 5, 0, 1) : clamp(1 - it.exitAge / 0.75, 0, 1);
+          var alpha = it.active ? clamp(it.age * 5, 0, 1) : it.exitAlpha;
           if (alpha <= 0) continue;
           var cx = g.x + g.w * clamp(it.active ? it.rel : 1, 0, 1);
           var cy = g.y + g.h / 2;
@@ -1823,10 +1875,23 @@
     this.rafId = 0;
   };
 
+  EyeFx.prototype._effectiveLinger = function () {
+    var base = (this.mode && this.mode.linger) || 0.7;
+    return (this.roll && this.roll.relativeMotion) ? Math.max(base * 2.5, 2.4) : base;
+  };
+
   EyeFx.prototype.spawn = function (p) {
-    if (this.particles.length >= 260) this.particles.shift();
+    var relMotion = !!(this.roll && this.roll.relativeMotion);
+    var maxParticles = relMotion ? 380 : 260;
+    if (this.particles.length >= maxParticles) this.particles.shift();
     p.age = 0;
-    p.life = p.life || 0.6;
+    var baseLife = p.life || 0.6;
+    if (relMotion) {
+      var mul = (p.kind === 'shard' || p.kind === 'shardText' || p.kind === 'coin' || p.kind === 'moth' || p.kind === 'drop') ? 1.85 : 1.35;
+      p.life = baseLife * mul;
+    } else {
+      p.life = baseLife;
+    }
     this.particles.push(p);
   };
 
@@ -1861,10 +1926,12 @@
 
     // 扫描被播放指针触及的音符
     var touchedIds = Object.create(null);
+    var noteById = Object.create(null);
     var notes = roll.activeTrackVisible === false ? [] : (roll.notes || []);
     var pitchInfo = roll._lastPitchInfo || null;
     for (var i = 0; i < notes.length; i++) {
       var n = notes[i];
+      noteById[n.id] = n;
       if (playPos >= n.start - 1e-4 && playPos <= n.start + n.dur + 1e-4) {
         touchedIds[n.id] = n;
         var st = this.noteStates[n.id];
@@ -1881,6 +1948,7 @@
             active: true,
             enteredAt: this.elapsed,
             exitedAt: null,
+            fadeAge: 0,
             rel: rel,
             seed: hashStr(String(n.id || i)),
             crossedPts: Object.create(null)
@@ -1905,27 +1973,50 @@
     }
 
     // 处理已离开播放指针的音符（进入余韵/收尾阶段）
-    var linger = this.mode.linger || 0.7;
+    var baseLinger = this.mode.linger || 0.7;
+    var relMotion = !!(roll && roll.relativeMotion);
+    var isPlaying = !!(roll && roll.isPlaying);
+    var effLinger = this._effectiveLinger();
+    var offLeftMargin = 84;
     var keys = Object.keys(this.noteStates);
     for (var k = 0; k < keys.length; k++) {
       var id = keys[k], s = this.noteStates[id];
+      var note = noteById[id] || null;
       if (s.active && !touchedIds[id]) {
         s.active = false;
         s.exitedAt = this.elapsed;
-        if (this.mode.onExitNote) {
-          var found = null;
-          for (var ni = 0; ni < notes.length; ni++) if (notes[ni].id === id) { found = notes[ni]; break; }
-          if (found) {
-            this.mode.onExitNote(this, found, s, {
-              x: roll.beatX(found.start),
-              y: Math.round(roll.rowY(found.pitch)) + 1,
-              w: Math.max(6, found.dur * roll.pxBeat) - 1,
-              h: Math.max(4, roll.rowH - 2)
-            }, T, A);
-          }
+        s.fadeAge = 0;
+        if (this.mode.onExitNote && note) {
+          this.mode.onExitNote(this, note, s, {
+            x: roll.beatX(note.start),
+            y: Math.round(roll.rowY(note.pitch)) + 1,
+            w: Math.max(6, note.dur * roll.pxBeat) - 1,
+            h: Math.max(4, roll.rowH - 2)
+          }, T, A);
         }
-      } else if (!s.active && this.elapsed - s.exitedAt > linger) {
-        delete this.noteStates[id];
+      } else if (!s.active) {
+        if (!note || playPos < note.start - 1e-4) {
+          delete this.noteStates[id];
+          continue;
+        }
+        if (relMotion) {
+          var nx = roll.beatX(note.start);
+          var nw = Math.max(6, note.dur * roll.pxBeat);
+          if (nx + nw < roll.kbW - offLeftMargin) {
+            // 相对运动模式下，待被揍过的音符移出屏幕左边界后再恢复
+            delete this.noteStates[id];
+            continue;
+          }
+          if (isPlaying) {
+            s.fadeAge = 0;
+          } else {
+            s.fadeAge = (s.fadeAge || 0) + dt;
+            if (s.fadeAge > effLinger) delete this.noteStates[id];
+          }
+        } else {
+          s.fadeAge = (s.fadeAge || 0) + dt;
+          if (s.fadeAge > baseLinger) delete this.noteStates[id];
+        }
       }
     }
 
@@ -1935,7 +2026,7 @@
     for (var pi = this.particles.length - 1; pi >= 0; pi--) {
       var p = this.particles[pi];
       p.age += dt;
-      if (p.age >= p.life) { this.particles.splice(pi, 1); continue; }
+      if (p.age >= p.life || (relMotion && p.x < roll.kbW - 90)) { this.particles.splice(pi, 1); continue; }
       if (p.kind === 'shard' || p.kind === 'shardText' || p.kind === 'coin') {
         p.vy += 380 * dt;
         p.x += p.vx * dt;
@@ -1974,6 +2065,9 @@
     var roll = this.roll;
     var out = [];
     if (!roll || roll.activeTrackVisible === false) return out;
+    var relMotion = !!roll.relativeMotion;
+    var linger = this._effectiveLinger();
+    var leftCull = relMotion ? 84 : 40;
     var pitchInfo = roll._lastPitchInfo || null;
     var notes = roll.notes || [];
     for (var i = 0; i < notes.length; i++) {
@@ -1982,14 +2076,20 @@
       if (!st) continue;
       var x = roll.beatX(n.start);
       var wd = Math.max(6, n.dur * roll.pxBeat);
-      if (x > roll.w + 40 || x + wd < roll.kbW - 40) continue;
+      if (x > roll.w + 40 || x + wd < roll.kbW - leftCull) continue;
+      var exitAge = st.exitedAt !== null ? Math.max(0, this.elapsed - st.exitedAt) : 0;
+      var fadeAge = st.exitedAt !== null ? (st.fadeAge !== undefined ? st.fadeAge : exitAge) : 0;
       out.push({
         n: n,
         st: st,
         active: st.active,
         rel: st.rel,
         age: Math.max(0, this.elapsed - st.enteredAt),
-        exitAge: st.exitedAt !== null ? Math.max(0, this.elapsed - st.exitedAt) : 0,
+        exitAge: exitAge,
+        fadeAge: fadeAge,
+        linger: linger,
+        exitAlpha: st.active ? 1 : clamp(1 - fadeAge / linger, 0, 1),
+        relMotion: relMotion,
         nInfo: pitchInfo ? pitchInfo[n.id] : null,
         geo: {
           x: x + 0.5,

@@ -41,6 +41,8 @@
     this._rightClickAction = null;
     this.snap = 0.25;
     this.forceSnap = false;
+    this.relativeMotion = false;
+    this.isPlaying = false;
     this.pxBeat = 88;
     this.rowH = 20;
     this.lowPitch = 40;

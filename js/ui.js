@@ -1873,8 +1873,11 @@
     roll.forceSnap = !!state.forceSnap;
     var forceSnapChkInit = $('#forceSnapChk');
     if (forceSnapChkInit) forceSnapChkInit.checked = !!roll.forceSnap;
+    state.relativeMotion = false;
+    roll.relativeMotion = false;
+    roll.isPlaying = !!state.playing;
     var relativeMotionChkInit = $('#relativeMotionChk');
-    if (relativeMotionChkInit) relativeMotionChkInit.checked = !!state.relativeMotion;
+    if (relativeMotionChkInit) relativeMotionChkInit.checked = false;
     roll.onContextMenu = onRollContextMenu;
     roll.onSelectionChange = syncInspector;
     roll.onTuningInput = syncInspector;
@@ -2282,10 +2285,7 @@
     if (relativeMotionChk) {
       relativeMotionChk.addEventListener('change', function () {
         state.relativeMotion = !!this.checked;
-        try {
-          if (state.relativeMotion) localStorage.setItem('nsg.relativeMotion', '1');
-          else localStorage.removeItem('nsg.relativeMotion');
-        } catch (e) { }
+        if (roll) roll.relativeMotion = state.relativeMotion;
         if (state.relativeMotion && state.playing && roll) {
           applyRelativeMotionScroll(roll.playPos);
           roll.draw();
@@ -2837,6 +2837,7 @@
     finally { finish(); }
   }
   function setPlayingClass(on) {
+    if (roll) roll.isPlaying = !!on;
     if (document.body && document.body.classList) document.body.classList.toggle('is-playing', on);
   }
   function updateStat() {
@@ -8164,7 +8165,8 @@
       savedTheme = localStorage.getItem('nsg.theme') || 'aero';
       savedTransparency = localStorage.getItem('nsg.uiTransparency');
       state.forceSnap = localStorage.getItem('nsg.forceSnap') === '1';
-      state.relativeMotion = localStorage.getItem('nsg.relativeMotion') === '1';
+      state.relativeMotion = false;
+      localStorage.removeItem('nsg.relativeMotion');
       if (localStorage.getItem('nsg.legacySound') === '1' && NSG.setLegacySound) NSG.setLegacySound(true);
       var savedSchemesRaw = localStorage.getItem('nsg.themeSchemes');
       if (savedSchemesRaw) {
