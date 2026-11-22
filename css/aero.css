@@ -1490,7 +1490,7 @@ body #status.processing::before {
 /* ==========================================================================
    眼睛谱曲法 · 曲线编辑器
    ========================================================================== */
-.modal.wide { width: 880px; max-width: 96vw; }
+.modal.wide { width: 912px; max-width: 96vw; }
 /* 自动伴奏：基础设置与表现参数并排，窄屏回到单列。 */
 .modal.arrange-modal { width: 960px; }
 .arrange-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
@@ -1505,24 +1505,38 @@ body #status.processing::before {
 @media (max-width: 760px) {
   .arrange-grid { grid-template-columns: minmax(0, 1fr); }
 }
-.eyewrap { display: flex; gap: 12px; align-items: flex-start; }
+.eyewrap { display: flex; gap: 14px; align-items: flex-start; }
 .eyeleft { flex: 1 1 auto; min-width: 0; }
-.eyeright { flex: 0 0 224px; width: 224px; }
+.eyeright { flex: 0 0 248px; width: 248px; }
+.eyeright .cap2 { margin: 6px 0 4px; }
+.eyeright .cap2:first-child { margin-top: 0; }
+.eyeright .row2 { margin-top: 3px; }
 #eyeCv {
   display: block; width: 100%; height: auto; border-radius: 8px;
   border: 1px solid #7da8c3; cursor: crosshair;
   box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(15, 65, 100, .16);
 }
-.eyebar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 6px; }
+.eyebar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 5px; }
 .eyebar .abtn { font-size: 11px; padding: 3px 8px; }
-.eyebar .tl { display: flex; align-items: center; gap: 3px; color: #1e506c; font-size: 11px; }
+.eyebar .tl { display: inline-flex; align-items: center; gap: 4px; color: #1e506c; font-size: 11px; white-space: nowrap; flex: none; }
+.eyebar .tl input[type="checkbox"] { flex: none; margin: 0; }
+.eyebar .eyemom { margin-left: auto; }
+.eyefullbar {
+  margin: 4px 0 8px; padding: 5px 9px; gap: 8px 14px;
+  border-radius: 7px; border: 1px solid rgba(120, 165, 195, .32);
+  background: rgba(128, 168, 195, .08);
+}
+.eyefullbar .eyectl { gap: 5px; transition: opacity .15s ease; }
+.eyefullbar .eyectl.off { opacity: .48; }
+.eyefullbar select.tiny { width: auto; flex: none; min-width: 84px; height: 22px; padding: 1px 6px; font-size: 11px; }
+.eyefullbar input.numin { width: 46px; flex: none; height: 22px; padding: 1px 4px; font-size: 11px; text-align: center; }
 .eyeparams { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .eyeparams .row label { width: 58px; font-size: 11px; }
 .eyeparams .row .val { width: 38px; }
 .eyehint { font-size: 10.5px; line-height: 15px; color: #4f7f9a; margin: 6px 0 0; }
-.eyepresets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
+.eyepresets { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 4px; margin-bottom: 5px; }
 .eyepreset, .eyestyle {
-  font-size: 11px; padding: 4px 4px; border-radius: 7px; cursor: pointer; color: #103d58;
+  font-size: 11px; padding: 3px 4px; border-radius: 7px; cursor: pointer; color: #103d58;
   border: 1px solid #88b4ce;
   background: var(--gloss);
   box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(15, 65, 100, .1);
@@ -1540,20 +1554,20 @@ body #status.processing::before {
   box-shadow: inset 0 1px 0 #fff, 0 0 8px rgba(245, 185, 50, .48);
   color: #6e4400; font-weight: bold;
 }
-.eyestyles { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.eyestyles .eyestyle { flex: 0 0 auto; padding: 4px 8px; }
+.eyestyles { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.eyestyles .eyestyle { flex: 0 0 auto; padding: 3px 8px; }
 .eyeout {
-  font-size: 11px; line-height: 16px; color: #1f5470; min-height: 34px;
+  font-size: 11px; line-height: 15.5px; color: #1f5470; min-height: 32px;
   background: linear-gradient(180deg, rgba(235,247,254,.78), rgba(255,255,255,.9));
-  border: 1px solid #9ec4dc; border-radius: 7px; padding: 6px 8px;
+  border: 1px solid #9ec4dc; border-radius: 7px; padding: 5px 8px;
   box-shadow: inset 0 1px 2px rgba(15, 65, 100, .1), 0 1px 0 rgba(255,255,255,.9);
 }
-.eyepreview { display: flex; gap: 5px; margin-top: 6px; }
+.eyepreview { display: flex; gap: 5px; margin-top: 5px; }
 .eyepreview .abtn {
   flex: 1 1 0; min-width: 0; font-size: 11px; padding: 3px 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.eyeright textarea { width: 100%; font-size: 11px; }
+.eyeright textarea { width: 100%; font-size: 11px; margin-bottom: 2px; }
 
 /* 分段速度 */
 .abtn.tiny { padding: 2px 8px; font-size: 10.5px; height: 21px; line-height: 1; }

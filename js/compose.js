@@ -348,8 +348,757 @@
   };
 
   /* ---------------- 自动谱曲（眼睛谱曲法） ----------------
-     opt: { root, beat, style:'pop', eye:{eyes,momentum}, span, degs, formantLess }
-     句子对 → 一只（或一组）眼睛横向铺满 → 每个音节按 x 取高度 → 换成音级 */
+     opt: { root, beat, style:'pop', eye:{eyes,momentum}, span, degs, formantLess,
+            fullSong:false, eyeCycleMode:'group'|'perEye' }
+     普通模式：句子对 → 一只（或一组）眼睛横向铺满 → 每个音节按 x 取高度 → 换成音级
+     谱全曲模式：识别空行段落/起承转合 → 自动分配每只（或每组）眼睛覆盖的乐句长度
+                → 循环使用眼睛曲线 + 全曲多波峰宏观势与微变奏 + 分段节奏与小节对齐 */
+  var FULL_SONG_SECTIONS = {
+    verse:  { base: 0.24, ramp:  0.08, spanScale: 0.72, mirror: 0,    peakShift: -0.04, label: '主歌' },
+    pre:    { base: 0.42, ramp:  0.22, spanScale: 0.86, mirror: 0,    peakShift:  0.08, label: '导歌' },
+    chorus: { base: 0.64, ramp:  0.08, spanScale: 1.06, mirror: 0,    peakShift:  0.02, label: '副歌' },
+    bridge: { base: 0.48, ramp: -0.06, spanScale: 0.90, mirror: 0.65, peakShift:  0.10, label: '桥段' },
+    outro:  { base: 0.34, ramp: -0.22, spanScale: 0.66, mirror: 0,    peakShift: -0.08, label: '尾声' }
+  };
+
+  function scaleStepsBySemis(degs, semis) {
+    var L = degs.length, base = [];
+    for (var i = 0; i < L; i++) {
+      if (semis.indexOf(degs[i]) >= 0) base.push(i);
+    }
+    if (!base.length) base.push(0);
+    var out = [];
+    for (var oct = -1; oct <= 3; oct++) {
+      for (var k = 0; k < base.length; k++) out.push(oct * L + base[k]);
+    }
+    return out;
+  }
+
+  function snapToSteps(step, candidates, maxDist) {
+    var best = step, bd = 999;
+    for (var i = 0; i < candidates.length; i++) {
+      var d = Math.abs(candidates[i] - step);
+      if (d < bd) { bd = d; best = candidates[i]; }
+    }
+    return bd <= maxDist ? best : step;
+  }
+
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+  function warpX(x, shift) {
+    x = clamp01(x);
+    if (!shift || Math.abs(shift) < 1e-4) return x;
+    var p = Math.max(0.2, Math.min(0.8, 0.5 + shift));
+    if (x <= p) return 0.5 * (x / p);
+    return 0.5 + 0.5 * ((x - p) / (1 - p));
+  }
+
+  function normLyricKey(s) {
+    return (s || '').toLowerCase().replace(/[\s，。、；：！？,.;:!?…—\-~'"“”‘’()（）\[\]【】]+/g, '');
+  }
+
+  function lyricSimilarity(a, b) {
+    var na = normLyricKey(a), nb = normLyricKey(b);
+    if (!na || !nb) return 0;
+    if (na === nb) return 1;
+    var minL = Math.min(na.length, nb.length), maxL = Math.max(na.length, nb.length);
+    if (minL < 3 || maxL / minL > 1.8) return 0;
+    var gramsA = {}, cntA = 0, hit = 0, cntB = 0;
+    for (var i = 0; i < na.length - 1; i++) {
+      var g = na.slice(i, i + 2);
+      gramsA[g] = (gramsA[g] || 0) + 1;
+      cntA++;
+    }
+    var used = {};
+    for (var j = 0; j < nb.length - 1; j++) {
+      var g2 = nb.slice(j, j + 2);
+      cntB++;
+      if (gramsA[g2] && (used[g2] || 0) < gramsA[g2]) {
+        used[g2] = (used[g2] || 0) + 1;
+        hit++;
+      }
+    }
+    return (cntA + cntB) > 0 ? (2 * hit) / (cntA + cntB) : 0;
+  }
+
+  var WORD_SEGMENTERS = {};
+  var CLAUSE_CONJ = {
+    '但是': 1, '可是': 1, '不过': 1, '因为': 1, '所以': 1, '如果': 1, '虽然': 1, '然后': 1,
+    '而且': 1, '还是': 1, '只要': 1, '即使': 1, '就算': 1, '哪怕': 1, '除非': 1, '然而': 1,
+    '于是': 1, '或者': 1, '并且': 1, '否则': 1, '尽管': 1, '只是': 1,
+    'but': 1, 'because': 1, 'though': 1, 'although': 1, 'while': 1, 'when': 1, 'until': 1,
+    'unless': 1, 'however': 1, 'and': 1, 'so': 1,
+    'だけど': 1, 'けれど': 1, 'だから': 1, 'そして': 1, 'でも': 1, 'しかし': 1
+  };
+  var NO_BREAK_BEFORE = {
+    '的': 1, '地': 1, '得': 1, '了': 1, '着': 1, '过': 1, '们': 1, '吗': 1, '呢': 1, '吧': 1,
+    '啊': 1, '呀': 1, '嘛': 1, '哦': 1, '么': 1, '呗': 1, '咯': 1, '嘅': 1, '咗': 1,
+    'の': 1, 'は': 1, 'が': 1, 'を': 1, 'に': 1, 'で': 1, 'と': 1, 'も': 1, 'て': 1, 'た': 1
+  };
+
+  function getWordSegmenter(lang) {
+    if (typeof Intl === 'undefined' || typeof Intl.Segmenter !== 'function') return null;
+    var locale = (lang === 'ja') ? 'ja' : (lang === 'ko') ? 'ko' : (lang === 'th') ? 'th' :
+      (/^(zh|yue|nan|hak)/.test(lang || 'zh') ? 'zh' : (lang || 'en'));
+    if (!Object.prototype.hasOwnProperty.call(WORD_SEGMENTERS, locale)) {
+      try { WORD_SEGMENTERS[locale] = new Intl.Segmenter(locale, { granularity: 'word' }); }
+      catch (e) { WORD_SEGMENTERS[locale] = null; }
+    }
+    return WORD_SEGMENTERS[locale];
+  }
+
+  /* 用词边界标注每个音节是否为词首及所属词，避免在词语中间切句（如「两|千」「等|于」） */
+  function annotateWordBoundaries(seg, syls, lang) {
+    if (!syls.length) return;
+    syls.forEach(function (s) { s.wordStart = false; s.wordText = s.text || ''; });
+    var segmenter = getWordSegmenter(lang);
+    if (!segmenter || !seg) {
+      syls.forEach(function (s) { s.wordStart = true; });
+      return;
+    }
+    var words = [];
+    try {
+      var it = segmenter.segment(seg);
+      for (var item of it) {
+        if (item.isWordLike) words.push(item.segment);
+      }
+    } catch (e) {
+      syls.forEach(function (s) { s.wordStart = true; });
+      return;
+    }
+    if (!words.length) {
+      syls.forEach(function (s) { s.wordStart = true; });
+      return;
+    }
+    /* 按字符顺序将词段对齐到音节数组 */
+    var si = 0;
+    for (var wi = 0; wi < words.length && si < syls.length; wi++) {
+      var w = words[wi], wLow = w.toLowerCase();
+      if (syls[si].text && syls[si].text.toLowerCase() === wLow) {
+        syls[si].wordStart = true;
+        syls[si].wordText = w;
+        si++;
+        continue;
+      }
+      var acc = '', startIdx = si;
+      while (si < syls.length && acc.length < w.length) {
+        acc += (syls[si].text || '');
+        syls[si].wordText = w;
+        syls[si].wordStart = (si === startIdx);
+        si++;
+        if (acc.toLowerCase() === wLow) break;
+      }
+      if (si === startIdx) {
+        syls[si].wordStart = true;
+        si++;
+      }
+    }
+    while (si < syls.length) { syls[si].wordStart = true; si++; }
+    if (syls.length) syls[0].wordStart = true;
+  }
+
+  /* 仅在超长无标点单行（>14 字且存在明确分句连词，或 >18 字）时，
+     按词边界计算句内轻换气点；绝不在正常 11–14 字歌词或词语内部硬切 */
+  function findIntraClauseBreaks(syls) {
+    var n = syls.length;
+    if (n <= 14) return [];
+    var breaks = [];
+    if (n <= 18) {
+      var bestK = -1, bestDist = 999;
+      var mid = n * 0.55;
+      for (var k = 4; k <= n - 4; k++) {
+        var s = syls[k];
+        if (!s || !s.wordStart) continue;
+        var wt = (s.wordText || s.text || '').toLowerCase();
+        if (CLAUSE_CONJ[wt] && Math.abs(k - mid) < bestDist) {
+          bestDist = Math.abs(k - mid);
+          bestK = k;
+        }
+      }
+      if (bestK > 0) breaks.push(bestK);
+      return breaks;
+    }
+    var chunks = Math.ceil(n / 12);
+    var start = 0;
+    for (var c = 0; c < chunks - 1; c++) {
+      var remain = n - start, leftChunks = chunks - c;
+      var target = start + Math.round(remain / leftChunks);
+      var lo = Math.max(start + 4, target - 4), hi = Math.min(n - 4, target + 4);
+      var bestCut = -1, bestScore = -999;
+      for (var j = lo; j <= hi; j++) {
+        var sj = syls[j];
+        if (!sj) continue;
+        var tText = (sj.text || '').toLowerCase();
+        var wText = (sj.wordText || tText).toLowerCase();
+        if (NO_BREAK_BEFORE[tText]) continue;
+        var score = -Math.abs(j - target) * 0.45;
+        if (sj.wordStart) score += 2.0;
+        if (CLAUSE_CONJ[wText] && sj.wordStart) score += 2.5;
+        if (sj.fn && sj.wordStart) score += 0.4;
+        if (score > bestScore) { bestScore = score; bestCut = j; }
+      }
+      if (bestCut > start) {
+        breaks.push(bestCut);
+        start = bestCut;
+      }
+    }
+    return breaks;
+  }
+
+  function assignSongSections(paragraphs) {
+    var result = [];
+    if (!paragraphs.length) return result;
+
+    if (paragraphs.length >= 2) {
+      var M = paragraphs.length;
+      var pTexts = paragraphs.map(function (pg) {
+        return pg.phrases.map(function (ph) { return ph.text || ''; }).join('');
+      });
+      var pLens = paragraphs.map(function (pg) { return pg.phrases.length; });
+      /* 检测重复歌词段落（多半是副歌） */
+      var repGroup = new Array(M).fill(-1), repCounts = {};
+      for (var i = 0; i < M; i++) {
+        if (repGroup[i] >= 0) continue;
+        var grp = [i];
+        for (var j = i + 1; j < M; j++) {
+          if (repGroup[j] < 0 && lyricSimilarity(pTexts[i], pTexts[j]) >= 0.45) grp.push(j);
+        }
+        if (grp.length >= 2) {
+          grp.forEach(function (idx) { repGroup[idx] = i; });
+          repCounts[i] = grp;
+        }
+      }
+      var roles = new Array(M).fill(null);
+      var hasRepChorus = false;
+      Object.keys(repCounts).forEach(function (k) {
+        var grp = repCounts[k];
+        if (grp.some(function (idx) { return idx >= 1; })) {
+          grp.forEach(function (idx) { roles[idx] = 'chorus'; });
+          hasRepChorus = true;
+        }
+      });
+      if (hasRepChorus) {
+        var firstCh = roles.indexOf('chorus'), lastCh = roles.lastIndexOf('chorus');
+        for (var r = 0; r < M; r++) {
+          if (roles[r]) continue;
+          if (r > lastCh) {
+            roles[r] = 'outro';
+          } else if (r > firstCh && r < lastCh) {
+            var nextIsCh = roles[r + 1] === 'chorus', prevIsCh = roles[r - 1] === 'chorus';
+            if (prevIsCh && nextIsCh) roles[r] = (r >= Math.floor(M * 0.45) || pLens[r] <= 4) ? 'bridge' : 'verse';
+            else if (nextIsCh) roles[r] = 'pre';
+            else roles[r] = 'verse';
+          } else if (r === firstCh - 1 && r >= 1) {
+            roles[r] = 'pre';
+          } else {
+            roles[r] = 'verse';
+          }
+        }
+      } else {
+        if (M === 2) {
+          roles = ['verse', 'chorus'];
+        } else if (M === 3) {
+          roles = (pLens[2] <= 2 && pLens[1] >= 2 && pLens[1] >= pLens[0]) ? ['verse', 'chorus', 'outro'] : ['verse', 'pre', 'chorus'];
+        } else if (M === 4) {
+          roles = (pLens[3] <= 2 || pLens[1] < pLens[2]) ? ['verse', 'pre', 'chorus', 'outro'] : ['verse', 'chorus', 'bridge', 'chorus'];
+        } else if (M === 5) {
+          roles = pLens[4] <= 2 ? ['verse', 'pre', 'chorus', 'bridge', 'outro'] : ['verse', 'pre', 'chorus', 'bridge', 'chorus'];
+        } else if (M === 6) {
+          roles = pLens[5] <= 2 ? ['verse', 'pre', 'chorus', 'bridge', 'chorus', 'outro'] : ['verse', 'pre', 'chorus', 'verse', 'pre', 'chorus'];
+        } else {
+          var tailOutro = pLens[M - 1] <= 2;
+          var bodyCount = tailOutro ? M - 1 : M;
+          var cycleTpl = ['verse', 'pre', 'chorus', 'verse', 'pre', 'chorus', 'bridge', 'chorus'];
+          for (var c = 0; c < bodyCount; c++) {
+            roles[c] = c < cycleTpl.length ? cycleTpl[c] : (c === bodyCount - 1 ? 'chorus' : (c % 2 === 0 ? 'bridge' : 'chorus'));
+          }
+          if (tailOutro) roles[M - 1] = 'outro';
+        }
+      }
+      var instCount = {};
+      for (var p = 0; p < M; p++) {
+        var rl = roles[p] || 'verse';
+        var inst = instCount[rl] || 0;
+        instCount[rl] = inst + 1;
+        result.push({ role: rl, phrases: paragraphs[p].phrases, paraIndex: p, instance: inst });
+      }
+      return result;
+    }
+
+    /* 无空行（单一大段）：先探测内部重复块，否则按总句数切分起承转合 / 流行曲式 */
+    var allP = paragraphs[0].phrases;
+    var N = allP.length;
+    if (N <= 2) {
+      return [{ role: 'verse', phrases: allP, paraIndex: 0, instance: 0 }];
+    }
+    /* 探测重复的 2–4 句副歌歌词块 */
+    if (N >= 6) {
+      var bestWin = null;
+      for (var win = Math.min(4, Math.floor(N / 2)); win >= 2; win--) {
+        for (var a = 1; a <= N - win * 2; a++) {
+          for (var b = a + win; b <= N - win; b++) {
+            var sA = allP.slice(a, a + win).map(function (x) { return x.text || ''; }).join('');
+            var sB = allP.slice(b, b + win).map(function (x) { return x.text || ''; }).join('');
+            if (lyricSimilarity(sA, sB) >= 0.55) {
+              bestWin = { win: win, a: a, b: b };
+              break;
+            }
+          }
+          if (bestWin) break;
+        }
+        if (bestWin) break;
+      }
+      if (bestWin) {
+        var cuts = [0, bestWin.a, bestWin.a + bestWin.win, bestWin.b, bestWin.b + bestWin.win, N];
+        var pseudo = [];
+        for (var ci = 0; ci < cuts.length - 1; ci++) {
+          if (cuts[ci + 1] > cuts[ci]) pseudo.push({ phrases: allP.slice(cuts[ci], cuts[ci + 1]) });
+        }
+        if (pseudo.length >= 2) return assignSongSections(pseudo);
+      }
+    }
+
+    var plan;
+    if (N === 3) plan = [['verse', 1], ['chorus', 2]];
+    else if (N === 4) plan = [['verse', 2], ['chorus', 2]];
+    else if (N === 5) plan = [['verse', 2], ['pre', 1], ['chorus', 2]];
+    else if (N === 6) plan = [['verse', 2], ['pre', 1], ['chorus', 2], ['outro', 1]];
+    else if (N === 7) plan = [['verse', 2], ['pre', 1], ['chorus', 3], ['outro', 1]];
+    else if (N === 8) plan = [['verse', 2], ['pre', 2], ['chorus', 3], ['outro', 1]];
+    else if (N === 9) plan = [['verse', 3], ['pre', 2], ['chorus', 3], ['outro', 1]];
+    else if (N === 10) plan = [['verse', 2], ['pre', 2], ['chorus', 2], ['bridge', 2], ['chorus', 2]];
+    else if (N === 11) plan = [['verse', 3], ['pre', 2], ['chorus', 2], ['bridge', 2], ['chorus', 2]];
+    else if (N === 12) plan = [['verse', 3], ['pre', 2], ['chorus', 3], ['bridge', 2], ['chorus', 2]];
+    else {
+      var v1 = Math.max(2, Math.round(N * 0.22));
+      var pre1 = Math.max(1, Math.round(N * 0.12));
+      var ch1 = Math.max(2, Math.round(N * 0.22));
+      var br = Math.max(2, Math.round(N * 0.14));
+      var outN = N >= 16 ? Math.max(1, Math.round(N * 0.10)) : 0;
+      var ch2 = Math.max(2, N - v1 - pre1 - ch1 - br - outN);
+      plan = [['verse', v1], ['pre', pre1], ['chorus', ch1], ['bridge', br], ['chorus', ch2]];
+      if (outN > 0) plan.push(['outro', outN]);
+    }
+    var cursor = 0, instMap = {};
+    plan.forEach(function (item, idx) {
+      var cnt = idx === plan.length - 1 ? N - cursor : Math.min(item[1], N - cursor);
+      if (cnt <= 0) return;
+      var rl = item[0], inst = instMap[rl] || 0;
+      instMap[rl] = inst + 1;
+      result.push({ role: rl, phrases: allP.slice(cursor, cursor + cnt), paraIndex: idx, instance: inst });
+      cursor += cnt;
+    });
+    return result;
+  }
+
+  function assignEyeUnits(sections, eyeSet, cycleMode) {
+    var sortedEyes = ((eyeSet && eyeSet.eyes) || []).map(EYE.eye).sort(function (a, b) { return a['开始'] - b['开始']; });
+    if (!sortedEyes.length) sortedEyes = [EYE.eye({})];
+    var K = sortedEyes.length;
+    var normEyes = sortedEyes.map(function (e) {
+      var w = Math.max(0.05, e['结束'] - e['开始']);
+      return {
+        width: w,
+        eye: {
+          '开始': 0, '结束': 1,
+          '峰的时间': Math.max(0.06, Math.min(0.94, (e['峰的时间'] - e['开始']) / w)),
+          '峰值': e['峰值'],
+          '左尖锐': e['左尖锐'],
+          '右尖锐': e['右尖锐'],
+          '开始基值': e['开始基值'],
+          '结束基值': e['结束基值']
+        }
+      };
+    });
+    var totalW = normEyes.reduce(function (s, ne) { return s + ne.width; }, 0);
+    var avgW = totalW / Math.max(1, K);
+
+    var units = [], eyeCursor = 0;
+    sections.forEach(function (sec, secIdx) {
+      var phs = sec.phrases.slice();
+      var secUnits = [];
+      if (cycleMode === 'perEye') {
+        if (sec.role === 'chorus') eyeCursor = 0;
+        var p = 0;
+        while (p < phs.length) {
+          var ne = normEyes[eyeCursor % K];
+          var relW = ne.width / Math.max(1e-6, avgW);
+          var cur = phs[p];
+          var picked = [cur];
+          if (relW >= 1.25 && p + 1 < phs.length && cur.syls.length + phs[p + 1].syls.length <= 15) {
+            picked.push(phs[p + 1]);
+            p += 2;
+          } else {
+            p += 1;
+          }
+          secUnits.push({
+            kind: 'single',
+            eye: ne.eye,
+            eyeIndex: eyeCursor % K,
+            phrases: picked,
+            section: sec,
+            secIdx: secIdx
+          });
+          eyeCursor++;
+        }
+      } else {
+        /* 整组循环：按眼睛数量与句长自动决定每轮覆盖 1、2 或 3 句 */
+        var maxUnitSyls = K === 1 ? 14 : K === 2 ? 16 : 20;
+        var minSingleSyls = K === 1 ? 9 : K === 2 ? 11 : 13;
+        var p2 = 0;
+        while (p2 < phs.length) {
+          var a = phs[p2];
+          var grp = [a];
+          if (p2 + 1 < phs.length && a.syls.length < minSingleSyls && a.syls.length + phs[p2 + 1].syls.length <= maxUnitSyls) {
+            var pairSum = a.syls.length + phs[p2 + 1].syls.length;
+            if (K >= 3 && p2 + 2 < phs.length && phs.length - p2 !== 4 && pairSum + phs[p2 + 2].syls.length <= maxUnitSyls) {
+              grp.push(phs[p2 + 1], phs[p2 + 2]);
+              p2 += 3;
+            } else {
+              grp.push(phs[p2 + 1]);
+              p2 += 2;
+            }
+          } else {
+            p2 += 1;
+          }
+          secUnits.push({
+            kind: 'group',
+            eyeSet: eyeSet,
+            eyeIndex: -1,
+            phrases: grp,
+            section: sec,
+            secIdx: secIdx
+          });
+        }
+      }
+      secUnits.forEach(function (u, ui) {
+        u.ui = ui;
+        u.secUnitCount = secUnits.length;
+        units.push(u);
+      });
+    });
+    return units;
+  }
+
+  function sampleUnitEye(unit, x, peakShift, mirror, peakMod) {
+    var x1 = warpX(x, peakShift);
+    var v1 = unit.kind === 'single' ? EYE.at(unit.eye, x1) : EYE.value(unit.eyeSet, x1);
+    if (mirror > 0) {
+      var x2 = warpX(1 - x, -peakShift);
+      var v2 = unit.kind === 'single' ? EYE.at(unit.eye, x2) : EYE.value(unit.eyeSet, x2);
+      v1 = v1 * (1 - mirror) + v2 * mirror;
+    }
+    if (peakMod) {
+      var arch = Math.sin(Math.PI * clamp01(x));
+      v1 = clamp01(v1 + peakMod * arch);
+    }
+    return clamp01(v1);
+  }
+
+  function computeFullSongPhraseDurs(syls, sectionRole, durScale, peakIdx, isUnitEnd, isSectionEnd, isSongEnd, clauseBreakSet) {
+    var fast = durScale <= 0.7;
+    var slow = durScale >= 1.25;
+    var n = syls.length;
+    var durs = new Array(n);
+    var runTime = 0;
+    for (var k = 0; k < n; k++) {
+      var syl = syls[k];
+      var isLast = k === n - 1;
+      var isFirst = k === 0;
+      var isPeak = k === peakIdx && n >= 4 && !isFirst && !isLast;
+      var isWordStart = syl.wordStart !== false;
+      var beforeClauseBreak = !!(clauseBreakSet && clauseBreakSet[k + 1]);
+      var onHalf = Math.abs(runTime - Math.round(runTime)) > 0.01;
+      var d;
+      if (fast) {
+        d = 0.5;
+        if (sectionRole === 'chorus' && (isFirst || isPeak) && !syl.fn) d = 1.0;
+        if (isLast) d = isSongEnd ? 2.0 : isSectionEnd ? 1.5 : 1.0;
+      } else if (slow) {
+        if (n >= 10) {
+          /* 长乐句在抒情风格下按词首/强拍交替 1.0 与 0.5，词内连贯不拖沓 */
+          d = (syl.fn || !isWordStart || onHalf) ? 0.5 : 1.0;
+          if (sectionRole === 'chorus' && isPeak && !syl.fn) d = 1.0;
+          if (beforeClauseBreak && !isLast) d = Math.max(d, 0.5);
+        } else {
+          d = syl.fn ? 0.5 : 1.0;
+          if (sectionRole === 'chorus' && (isFirst || isPeak) && !syl.fn) d = 1.5;
+          else if (sectionRole === 'outro' && !syl.fn) d = 1.5;
+          else if (sectionRole === 'pre' && !isLast && n >= 6) d = 0.5;
+        }
+        if (isLast) d = isSongEnd ? 3.5 : isSectionEnd ? 2.5 : (n >= 10 ? 2.0 : (isUnitEnd ? 2.5 : 2.0));
+      } else {
+        if (sectionRole === 'pre') {
+          /* 导歌：紧凑推进，句尾蓄力拉长 */
+          d = syl.fn ? 0.5 : ((isWordStart && !onHalf && n <= 7) ? 1.0 : 0.5);
+          if (isLast) d = isSectionEnd ? 2.0 : 1.5;
+        } else if (sectionRole === 'chorus') {
+          /* 副歌：开句有力，峰音舒展，收尾饱满 */
+          d = syl.fn ? 0.5 : (n >= 10 ? ((isWordStart && !onHalf && isFirst) ? 1.0 : 0.5) : (n >= 8 ? ((isWordStart && !onHalf) ? 1.0 : 0.5) : 1.0));
+          if (isFirst && !syl.fn) d = 1.0;
+          if (isPeak && !syl.fn) d = Math.max(d, n >= 11 ? 1.0 : 1.5);
+          if (isLast) d = isSongEnd ? 3.5 : isSectionEnd ? 2.5 : 2.0;
+        } else if (sectionRole === 'bridge') {
+          /* 桥段：带切分/留白感的对比节奏 */
+          d = syl.fn ? 0.5 : (isFirst ? 1.5 : ((!isWordStart || onHalf || n >= 10) ? 0.5 : 1.0));
+          if (isLast) d = isSectionEnd ? 2.5 : 2.0;
+        } else if (sectionRole === 'outro') {
+          /* 尾声：渐宽、舒缓收束 */
+          d = (syl.fn || (n >= 11 && !isWordStart)) ? 0.5 : 1.0;
+          if (k >= n - 2 && !isLast && n <= 10) d = Math.max(d, 1.0);
+          if (isLast) d = isSongEnd ? 4.0 : 2.5;
+        } else {
+          /* 主歌：自然口语感，按词首与句长平衡疏密 */
+          d = syl.fn ? 0.5 : ((onHalf || !isWordStart || n >= 9) ? 0.5 : 1.0);
+          if (isLast) d = isSongEnd ? 3.0 : isSectionEnd ? 2.0 : (isUnitEnd ? 2.0 : 1.5);
+        }
+      }
+      if (beforeClauseBreak && !isLast) d = Math.min(d, 1.0);
+      d = Math.max(0.25, Math.round(d * 4) / 4);
+      durs[k] = d;
+      runTime += d;
+      if (beforeClauseBreak && !isLast) runTime += 0.5;
+    }
+    return durs;
+  }
+
+  function composeFullSongMelody(text, lang, opt, toSyls, sentenceBreak) {
+    var root = opt.root === undefined ? 60 : opt.root;
+    var style = opt.style ? C.styleById(opt.style) : null;
+    var eyeSet = opt.eye || (style ? EYE.preset(style.eye) : EYE.preset('单眼·峰偏左'));
+    var span = opt.span !== undefined ? opt.span : (style ? style.span : 7);
+    var durScale = opt.durScale !== undefined ? opt.durScale : (style ? style.durScale : 1);
+    var dot = opt.dot !== undefined ? opt.dot : (style ? style.dot : 0.3);
+    var degs = opt.degs || C.SCALES.penta;
+    var mScale = opt.momentumWeight !== undefined ? opt.momentumWeight : 0.35;
+    var mom = EYE.momentum(eyeSet.momentum);
+    var cycleMode = opt.eyeCycleMode === 'perEye' ? 'perEye' : 'group';
+    var introBars = opt.introBars !== undefined && isFinite(+opt.introBars)
+      ? Math.max(0, Math.min(16, Math.round(+opt.introBars)))
+      : 4;
+    var introBeats = introBars * 4;
+
+    /* 按空行切段落，再按标点/换行切自然乐句；保留每行完整性，仅标注词边界与超长句轻换气点 */
+    var rawText = lang === 'asaxi' ? (text || '').replace(/([mn])\.(?=\1)/gi, '$1\uE000') : (text || '');
+    var rawBlocks = rawText.replace(/\r\n/g, '\n').split(/\n\s*\n+/);
+    var paragraphs = [];
+    rawBlocks.forEach(function (blk) {
+      var segs = blk.split(sentenceBreak).map(function (s) {
+        return s.replace(/\uE000/g, '.').trim();
+      }).filter(Boolean);
+      var phs = [];
+      segs.forEach(function (seg) {
+        var syls = toSyls(seg);
+        if (!syls.length) return;
+        annotateWordBoundaries(seg, syls, lang);
+        var clauseBreaks = findIntraClauseBreaks(syls);
+        phs.push({
+          syls: syls,
+          text: syls.map(function (s) { return s.text; }).join(''),
+          clauseBreaks: clauseBreaks
+        });
+      });
+      if (phs.length) paragraphs.push({ phrases: phs });
+    });
+    if (!paragraphs.length) return [];
+
+    var sections = assignSongSections(paragraphs);
+    var units = assignEyeUnits(sections, eyeSet, cycleMode);
+    if (!units.length) return [];
+
+    var stable = stableSteps(degs);
+    var tonics = scaleStepsBySemis(degs, [0]);
+    var halfCads = scaleStepsBySemis(degs, [7, 2]);
+    if (!halfCads.length) halfCads = scaleStepsBySemis(degs, [5, 7, 2]);
+    var softOpenCads = scaleStepsBySemis(degs, [2, 4, 3, 5]);
+    if (!softOpenCads.length) softOpenCads = halfCads;
+
+    var notes = [], t = introBeats;
+    var totalUnits = units.length;
+    var momActive = mScale > 0.01;
+    var sectionTrack = sections.map(function (sec) {
+      return { role: sec.role, start: Infinity, end: 0, phraseCount: sec.phrases.length, instance: sec.instance };
+    });
+    var macroPoints = [];
+    var totalPhrases = 0;
+
+    units.forEach(function (unit, uIdx) {
+      var sec = unit.section;
+      var prof = FULL_SONG_SECTIONS[sec.role] || FULL_SONG_SECTIONS.verse;
+      var secUnitCount = unit.secUnitCount;
+      var ui = unit.ui;
+      var isLastUnitInSec = ui === secUnitCount - 1;
+      var isLastUnitInSong = uIdx === totalUnits - 1;
+      var nextSec = unit.secIdx + 1 < sections.length ? sections[unit.secIdx + 1] : null;
+      var isQuestion = (ui % 2 === 0) && !isLastUnitInSec;
+      var instLift = Math.min(0.08, sec.instance * 0.05);
+      var peakShift = prof.peakShift + (isQuestion ? -0.04 : 0.04);
+      var peakMod = isQuestion ? -0.06 : 0.07;
+
+      var unitTotalSyls = unit.phrases.reduce(function (s, ph) { return s + ph.syls.length; }, 0);
+      var sylCursor = 0;
+      var secBox = sectionTrack[unit.secIdx];
+
+      unit.phrases.forEach(function (ph, phIdx) {
+        totalPhrases++;
+        var isUnitEnd = phIdx === unit.phrases.length - 1;
+        var isSectionEnd = isLastUnitInSec && isUnitEnd;
+        var isSongEnd = isLastUnitInSong && isUnitEnd;
+        var list = ph.syls;
+        var yVals = new Array(list.length);
+        var macroVals = new Array(list.length);
+        var peakIdx = -1, peakVal = -Infinity;
+
+        for (var k = 0; k < list.length; k++) {
+          var uX = unitTotalSyls > 1 ? (sylCursor + k + 0.5) / unitTotalSyls : 0.5;
+          var secProg = secUnitCount > 1 ? (ui + uX) / secUnitCount : uX;
+          var gPos = totalUnits > 1 ? (uIdx + uX) / totalUnits : uX;
+          var yEye = sampleUnitEye(unit, uX, peakShift, prof.mirror, peakMod);
+          var macroVal = clamp01(prof.base + prof.ramp * secProg + instLift);
+          if (mom) {
+            macroVal = clamp01(macroVal * 0.78 + EYE.momValue(mom, gPos) * 0.22);
+          }
+          var effCenter = momActive ? macroVal : (0.5 + (macroVal - 0.5) * 0.35);
+          var eyeWeight = momActive ? 0.68 : 0.88;
+          var yCombined = effCenter + (yEye - 0.5) * prof.spanScale * eyeWeight;
+          yVals[k] = yCombined;
+          macroVals[k] = effCenter;
+          if (k > 0 && k < list.length - 1 && yCombined > peakVal) {
+            peakVal = yCombined;
+            peakIdx = k;
+          }
+        }
+
+        var clauseBreakSet = null;
+        if (ph.clauseBreaks && ph.clauseBreaks.length) {
+          clauseBreakSet = {};
+          ph.clauseBreaks.forEach(function (bi) { clauseBreakSet[bi] = 1; });
+        }
+        var durs = computeFullSongPhraseDurs(list, sec.role, durScale, peakIdx, isUnitEnd, isSectionEnd, isSongEnd, clauseBreakSet);
+        var off = span >= 7 ? 0.9 : 0.5;
+
+        for (var k2 = 0; k2 < list.length; k2++) {
+          var syl = list[k2];
+          var isPhraseFirst = k2 === 0;
+          var isPhraseLast = k2 === list.length - 1;
+          var step = Math.round(yVals[k2] * span + (syl.fn ? -off : off));
+          step = Math.max(-1, Math.min(span + 2, step));
+
+          if (isPhraseFirst && ui === 0 && phIdx === 0) {
+            /* 段落首音就近靠向主/三/五稳定音，开句即立住调性 */
+            step = snapToSteps(step, stable, 1);
+          }
+
+          if (isPhraseLast) {
+            if (isSongEnd) {
+              step = snapToSteps(step, tonics, 3);
+            } else if (isSectionEnd && nextSec && nextSec.role === 'chorus' && (sec.role === 'pre' || sec.role === 'bridge')) {
+              /* 导歌/桥段进副歌前落半终止（属音/二级），便于自动伴奏顺势接属和弦推入副歌 */
+              step = snapToSteps(step, halfCads, 2);
+            } else if (isSectionEnd && (sec.role === 'chorus' || sec.role === 'outro' || sec.role === 'verse')) {
+              step = snapToSteps(step, tonics, 2);
+              if (tonics.indexOf(step) < 0) step = snapToSteps(step, stable, 2);
+            } else if (isSectionEnd) {
+              step = snapToSteps(step, stable, 2);
+            } else if (isQuestion) {
+              step = snapToSteps(step, softOpenCads, 1);
+            } else {
+              step = snapToSteps(step, tonics, 1);
+              if (tonics.indexOf(step) < 0) step = snapToSteps(step, stable, 1);
+            }
+          }
+
+          var dur = durs[k2];
+          if (t < secBox.start) secBox.start = t;
+          if (t + dur > secBox.end) secBox.end = t + dur;
+          macroPoints.push({ t: t + dur * 0.5, y: macroVals[k2] });
+          notes.push({
+            start: t, dur: dur,
+            pitch: C.degToMidi(root, degs, step),
+            lyric: syl.text, phones: syl.phones,
+            vel: sec.role === 'chorus' ? 104 : (sec.role === 'pre' ? 98 : (sec.role === 'outro' ? 88 : 94)),
+            vib: (isPhraseLast && dur >= 1.5) ? 1 : (dur >= 1.25 + dot ? 0.65 : 0.25),
+            eye: isPhraseLast ? 1 : 0,
+            composeSection: sec.role
+          });
+          t += dur;
+          if (clauseBreakSet && clauseBreakSet[k2 + 1] && !isPhraseLast) {
+            /* 超长单行内的词边界轻换气（半拍），不拆词、不拉长停顿 */
+            t += 0.5;
+          }
+        }
+        sylCursor += list.length;
+
+        /* 句间呼吸与 4/4 小节对齐：确保自动伴奏检测出精准的小节网格与段落转场 */
+        if (!isSongEnd) {
+          var lastNote = notes[notes.length - 1];
+          if (isSectionEnd) {
+            var majorBreak = (sec.role === 'chorus' && nextSec && (nextSec.role === 'verse' || nextSec.role === 'bridge'));
+            var minSecGap = majorBreak ? 2.0 : 1.0;
+            /* 若句尾长音刚好擦过小节线导致多空出一整小节，微收尾音 0.5–1 拍，让下段紧接在下一小节强拍 */
+            var remSec = (4 - (t % 4)) % 4;
+            if (!majorBreak && remSec < minSecGap && lastNote && lastNote.dur - (minSecGap - remSec) >= 1.0) {
+              var trimS = minSecGap - remSec;
+              lastNote.dur -= trimS;
+              t -= trimS;
+              secBox.end = t;
+            }
+            var nextBar = Math.ceil((t + minSecGap) / 4) * 4;
+            /* 保障副歌等主段落至少占满 2 小节，便于编曲识别为独立段落 */
+            if (secBox.start < Infinity && nextBar - Math.floor(secBox.start / 4) * 4 < 8 && (sec.role === 'chorus' || sec.role === 'verse')) {
+              nextBar = Math.floor(secBox.start / 4) * 4 + 8;
+            }
+            t = nextBar;
+          } else {
+            var minBreath = isUnitEnd ? 1.0 : 0.5;
+            var remPh = (4 - (t % 4)) % 4;
+            if (remPh < minBreath && lastNote && lastNote.dur - (minBreath - remPh) >= 1.0) {
+              var trimP = minBreath - remPh;
+              lastNote.dur -= trimP;
+              t -= trimP;
+              secBox.end = t;
+            }
+            var cand = Math.ceil((t + minBreath) / 2) * 2;
+            /* 离下一小节线只剩不到 1 拍时顺势落到下一小节强拍 */
+            if (cand % 4 === 3 || (cand - t < 1.0 && isUnitEnd)) cand = Math.ceil((t + minBreath) / 4) * 4;
+            t = cand;
+          }
+        }
+      });
+    });
+
+    var totalBeats = notes.length ? Math.max(t, notes[notes.length - 1].start + notes[notes.length - 1].dur) : introBeats;
+    var vocalStart = introBeats;
+    var vocalBeats = Math.max(0, totalBeats - vocalStart);
+    var sectionRanges = sectionTrack.filter(function (s) { return s.start < Infinity; }).map(function (s) {
+      return {
+        role: s.role,
+        start: s.start,
+        end: s.end,
+        startRatio: vocalBeats > 0 ? clamp01((s.start - vocalStart) / vocalBeats) : 0,
+        endRatio: vocalBeats > 0 ? clamp01((s.end - vocalStart) / vocalBeats) : 1,
+        phraseCount: s.phraseCount,
+        barCount: Math.max(1, Math.round((s.end - s.start) / 4))
+      };
+    });
+    var macroCurve = macroPoints.map(function (pt) {
+      return { x: vocalBeats > 0 ? clamp01((pt.t - vocalStart) / vocalBeats) : 0.5, y: clamp01(pt.y) };
+    });
+    notes.fullSongMeta = {
+      cycleMode: cycleMode,
+      introBars: introBars,
+      introBeats: introBeats,
+      vocalStart: vocalStart,
+      vocalBeats: vocalBeats,
+      sections: sectionRanges,
+      macroCurve: macroCurve,
+      totalBeats: totalBeats,
+      totalBars: Math.max(1, Math.ceil(totalBeats / 4)),
+      phraseCount: totalPhrases
+    };
+    return notes;
+  }
+
   C.melody = function (text, lang, opt) {
     opt = opt || {};
     var root = opt.root === undefined ? 60 : opt.root;
@@ -380,9 +1129,14 @@
 
     /* 先按标点切句，再把过长的句子切开（一口气唱不完） */
     // Asaxi m.m / n.n 是重鼻音的音节界，不是句号；保留给 G2P。
-    var phraseText = lang === 'asaxi' ? (text || '').replace(/([mn])\.(?=\1)/gi, '$1\uE000') : (text || '');
     var sentenceBreak = /^(eo|fi|es|pt|it|fr|ro|fil|id|ms|th|tlh)$/.test(lang) ? /[，。、；：！？,.;:!?¡¿…—~ฯ๚๛\uf8fd\uf8fe\n\r]+|(?<![\p{L}\p{M}'’\uf8d0-\uf8e9])-|-(?![\p{L}\p{M}'’\uf8d0-\uf8e9])/u :
       /[，。、；：！？,.;:!?…—\-~\n\r]+/;
+
+    if (opt.fullSong) {
+      return composeFullSongMelody(text, lang, opt, toSyls, sentenceBreak);
+    }
+
+    var phraseText = lang === 'asaxi' ? (text || '').replace(/([mn])\.(?=\1)/gi, '$1\uE000') : (text || '');
     var raw = phraseText.split(sentenceBreak).map(function (s) {
       return s.replace(/\uE000/g, '.').trim();
     }).filter(Boolean);
@@ -465,8 +1219,8 @@
     return notes;
   };
 
-  /* 选区谱曲：整段共用一组眼睛，按原音符的时间中点采样，只返回新音高。
-     不重新分词、切句或生成节奏，延音及多音节歌词也始终一音对一音。 */
+  /* 选区谱曲：普通模式整段共用一组眼睛；谱全曲模式自动切句分段落循环套用眼睛并施加全曲宏观势。
+     保留原音符的起点、时值、歌词与调教，始终一音对一音。 */
   C.reshapeMelody = function (notes, lang, opt) {
     opt = opt || {};
     var style = C.styleById(opt.style), root = opt.root === undefined ? 60 : opt.root;
@@ -478,8 +1232,143 @@
     if (!sorted.length) return [];
     var start = sorted[0].start, end = start;
     sorted.forEach(function (n) { end = Math.max(end, n.start + n.dur); });
-    var voiced = sorted.filter(function (n) { return NSG.noteKind(n) === 'voiced'; });
+    var voiced = sorted.filter(function (n) { return NSG.noteKind ? NSG.noteKind(n) === 'voiced' : !n.rest; });
+    if (!voiced.length) return [];
     var stable = stableSteps(degs);
+
+    if (opt.fullSong) {
+      var cycleMode = opt.eyeCycleMode === 'perEye' ? 'perEye' : 'group';
+      var rawPhrases = C.splitPhrases(sorted);
+      if (!rawPhrases.length) rawPhrases = [{ start: start, end: end, notes: voiced }];
+      /* 按显著大空隙识别选区内的自然段落边界；若仅因单个长停顿切成失衡两段，则交由曲式算法统一分节 */
+      var gaps = [];
+      for (var gi = 1; gi < rawPhrases.length; gi++) {
+        gaps.push(Math.max(0, rawPhrases[gi].start - rawPhrases[gi - 1].end));
+      }
+      var sortedGaps = gaps.slice().sort(function (a, b) { return a - b; });
+      var medGap = sortedGaps.length ? sortedGaps[sortedGaps.length >> 1] : 0;
+      var paraBreakGap = Math.max(3.5, medGap * 2.2);
+      var gapParagraphs = [{ phrases: [] }];
+      var allFixedPhrases = [];
+      rawPhrases.forEach(function (rp, idx) {
+        var phObj = {
+          fixedNotes: true,
+          syls: rp.notes,
+          start: rp.start,
+          end: rp.end,
+          text: rp.notes.map(function (n) { return n.lyric || ''; }).join('')
+        };
+        allFixedPhrases.push(phObj);
+        if (idx > 0 && gaps[idx - 1] >= paraBreakGap && gapParagraphs[gapParagraphs.length - 1].phrases.length) {
+          gapParagraphs.push({ phrases: [] });
+        }
+        gapParagraphs[gapParagraphs.length - 1].phrases.push(phObj);
+      });
+      var paragraphs = (gapParagraphs.length >= 3 && gapParagraphs.every(function (pg) { return pg.phrases.length >= 1; }))
+        ? gapParagraphs
+        : [{ phrases: allFixedPhrases }];
+      var sections = assignSongSections(paragraphs);
+      var units = assignEyeUnits(sections, eyeSet, cycleMode);
+      var tonics = scaleStepsBySemis(degs, [0]);
+      var halfCads = scaleStepsBySemis(degs, [7, 2]);
+      if (!halfCads.length) halfCads = scaleStepsBySemis(degs, [5, 7, 2]);
+      var softOpenCads = scaleStepsBySemis(degs, [2, 4, 3, 5]);
+      if (!softOpenCads.length) softOpenCads = halfCads;
+      var momActive = weight > 0.01;
+      var totalUnits = units.length;
+      var totalSpan = Math.max(1e-6, end - start);
+      var outNotes = [], macroCurve = [];
+      var sectionTrack = sections.map(function (sec) {
+        return { role: sec.role, start: Infinity, end: 0, phraseCount: sec.phrases.length, instance: sec.instance };
+      });
+      var totalPhrases = 0;
+
+      units.forEach(function (unit, uIdx) {
+        var sec = unit.section;
+        var prof = FULL_SONG_SECTIONS[sec.role] || FULL_SONG_SECTIONS.verse;
+        var ui = unit.ui, secUnitCount = unit.secUnitCount;
+        var isLastUnitInSec = ui === secUnitCount - 1;
+        var isLastUnitInSong = uIdx === totalUnits - 1;
+        var nextSec = unit.secIdx + 1 < sections.length ? sections[unit.secIdx + 1] : null;
+        var isQuestion = (ui % 2 === 0) && !isLastUnitInSec;
+        var instLift = Math.min(0.08, sec.instance * 0.05);
+        var peakShift = prof.peakShift + (isQuestion ? -0.04 : 0.04);
+        var peakMod = isQuestion ? -0.06 : 0.07;
+
+        var uStart = unit.phrases[0].start;
+        var uEnd = unit.phrases[unit.phrases.length - 1].end;
+        var uDur = Math.max(1e-6, uEnd - uStart);
+        var secBox = sectionTrack[unit.secIdx];
+
+        unit.phrases.forEach(function (ph, phIdx) {
+          totalPhrases++;
+          var isUnitEnd = phIdx === unit.phrases.length - 1;
+          var isSectionEnd = isLastUnitInSec && isUnitEnd;
+          var isSongEnd = isLastUnitInSong && isUnitEnd;
+          var ns = ph.syls;
+          var off = span >= 7 ? 0.9 : 0.5;
+          ns.forEach(function (n, k) {
+            var mid = n.start + n.dur / 2;
+            var uX = clamp01((mid - uStart) / uDur);
+            var secProg = secUnitCount > 1 ? (ui + uX) / secUnitCount : uX;
+            var gPos = clamp01((mid - start) / totalSpan);
+            var yEye = sampleUnitEye(unit, uX, peakShift, prof.mirror, peakMod);
+            var macroVal = clamp01(prof.base + prof.ramp * secProg + instLift);
+            if (mom) macroVal = clamp01(macroVal * 0.78 + EYE.momValue(mom, gPos) * 0.22);
+            var effCenter = momActive ? macroVal : (0.5 + (macroVal - 0.5) * 0.35);
+            var yCombined = effCenter + (yEye - 0.5) * prof.spanScale * (momActive ? 0.68 : 0.88);
+            var step = Math.round(yCombined * span + (isFunc(n.lyric || '', n.lang || lang) ? -off : off));
+            step = Math.max(-1, Math.min(span + 2, step));
+            if (k === 0 && ui === 0 && phIdx === 0) {
+              step = snapToSteps(step, stable, 1);
+            }
+            if (k === ns.length - 1) {
+              if (isSongEnd) step = snapToSteps(step, tonics, 3);
+              else if (isSectionEnd && nextSec && nextSec.role === 'chorus' && (sec.role === 'pre' || sec.role === 'bridge')) {
+                step = snapToSteps(step, halfCads, 2);
+              } else if (isSectionEnd && (sec.role === 'chorus' || sec.role === 'outro' || sec.role === 'verse')) {
+                step = snapToSteps(step, tonics, 2);
+                if (tonics.indexOf(step) < 0) step = snapToSteps(step, stable, 2);
+              } else if (isSectionEnd) step = snapToSteps(step, stable, 2);
+              else if (isQuestion) step = snapToSteps(step, softOpenCads, 1);
+              else {
+                step = snapToSteps(step, tonics, 1);
+                if (tonics.indexOf(step) < 0) step = snapToSteps(step, stable, 1);
+              }
+            }
+            if (n.start < secBox.start) secBox.start = n.start;
+            if (n.start + n.dur > secBox.end) secBox.end = n.start + n.dur;
+            macroCurve.push({ x: gPos, y: clamp01(effCenter) });
+            outNotes.push(Object.assign({}, n, {
+              pitch: C.degToMidi(root, degs, step),
+              composeSection: sec.role
+            }));
+          });
+        });
+      });
+
+      var sectionRanges = sectionTrack.filter(function (s) { return s.start < Infinity; }).map(function (s) {
+        return {
+          role: s.role,
+          start: s.start,
+          end: s.end,
+          startRatio: clamp01((s.start - start) / totalSpan),
+          endRatio: clamp01((s.end - start) / totalSpan),
+          phraseCount: s.phraseCount,
+          barCount: Math.max(1, Math.round((s.end - s.start) / 4))
+        };
+      });
+      outNotes.fullSongMeta = {
+        cycleMode: cycleMode,
+        sections: sectionRanges,
+        macroCurve: macroCurve,
+        totalBeats: end - start,
+        totalBars: Math.max(1, Math.ceil((end - start) / 4)),
+        phraseCount: totalPhrases
+      };
+      return outNotes;
+    }
+
     return voiced.map(function (n, i) {
       var x = end > start ? (n.start + n.dur / 2 - start) / (end - start) : 0.5;
       var y = EYE.value(eyeSet, x);
@@ -1315,97 +2204,169 @@
       p.section = 'bridge';
       p.confidence = Math.min(0.88, 0.6 + (rising ? 0.08 : 0) + (rhythmChange ? 0.06 : 0) + (p.repeatCount > 1 ? 0.08 : 0));
     });
+    /* 若音符带有全曲眼睛谱曲写入的段落提示（composeSection），在提示覆盖充分时优先遵循其曲式划分，
+       同时保留对前奏/尾声开关及空小节过渡的处理。未标记的工程完全走原有统计分析。 */
+    var VALID_COMPOSE_SEC = { verse: 1, pre: 1, chorus: 1, bridge: 1, outro: 1 };
+    var hintedPhraseCount = 0, hintedRoleSet = {};
+    phrases.forEach(function (p) {
+      var durByRole = {}, totalHintDur = 0, totalNoteDur = 0;
+      p.notes.forEach(function (n) {
+        var d = Math.max(0.05, n.dur || 0.25);
+        totalNoteDur += d;
+        if (n.composeSection && VALID_COMPOSE_SEC[n.composeSection]) {
+          durByRole[n.composeSection] = (durByRole[n.composeSection] || 0) + d;
+          totalHintDur += d;
+        }
+      });
+      if (totalNoteDur > 0 && totalHintDur >= totalNoteDur * 0.6) {
+        var bestRole = null, bestDur = -1;
+        Object.keys(durByRole).forEach(function (r) {
+          if (durByRole[r] > bestDur) { bestDur = durByRole[r]; bestRole = r; }
+        });
+        if (bestRole) {
+          p._composeHint = bestRole;
+          hintedPhraseCount++;
+          hintedRoleSet[bestRole] = 1;
+        }
+      }
+    });
+    var useComposeHints = hintedPhraseCount >= Math.max(2, Math.ceil(phrases.length * 0.5)) && Object.keys(hintedRoleSet).length >= 2;
+    if (useComposeHints) {
+      phrases.forEach(function (p) {
+        if (p._composeHint) {
+          p.section = p._composeHint;
+          p.confidence = 0.9;
+        }
+      });
+    }
+
     var sections = [], barEnergy = [], barPitch = [], coverage = [];
     for (var b = 0; b < bars; b++) {
-      var weights = { verse: 0, chorus: 0, bridge: 0 }, energy = 0, wpitch = 0, weight = 0;
+      var weights = { verse: 0, pre: 0, chorus: 0, bridge: 0, outro: 0 }, energy = 0, wpitch = 0, weight = 0;
       phrases.forEach(function (p, i) {
         var overlap = phraseTimings[i].duration(barStarts[b], barStarts[b] + 4);
+        if (weights[p.section] === undefined) weights[p.section] = 0;
         weights[p.section] += overlap; energy += overlap * features[i].energy; wpitch += overlap * features[i].pitch; weight += overlap;
       });
-      sections.push(weights.bridge > 0 && weights.bridge >= Math.max(weights.verse, weights.chorus) ? 'bridge' :
-        weights.chorus > weights.verse ? 'chorus' : 'verse');
+      if (useComposeHints) {
+        if (weight > 0) {
+          var domSec = 'verse', domW = -1;
+          ['chorus', 'bridge', 'pre', 'outro', 'verse'].forEach(function (r) {
+            if (weights[r] > domW) { domW = weights[r]; domSec = r; }
+          });
+          sections.push(domSec);
+        } else {
+          sections.push(null);
+        }
+      } else {
+        sections.push(weights.bridge > 0 && weights.bridge >= Math.max(weights.verse, weights.chorus) ? 'bridge' :
+          weights.chorus > weights.verse ? 'chorus' : 'verse');
+      }
       barEnergy.push(weight ? energy / weight : 0); barPitch.push(weight ? wpitch / weight : meanPitch); coverage.push(weight);
     }
-    // Bridge brief (<=2 bar) verse dips enclosed on both sides by chorus.
-    for (var hc = 1; hc < bars - 1; hc++) {
-      if (sections[hc] === 'verse' && sections[hc - 1] === 'chorus') {
-        var hEnd = hc;
-        while (hEnd < bars && sections[hEnd] === 'verse') hEnd++;
-        if (hEnd < bars && sections[hEnd] === 'chorus' && hEnd - hc <= 2 && coverage.slice(hc, hEnd).some(function (c) { return c > 0; })) {
-          for (var hf = hc; hf < hEnd; hf++) sections[hf] = 'chorus';
-        }
-      }
-    }
-    // Detect late C-section bridge (fresh contrasting 2..16 bar passage between two chorus blocks).
-    if (opt.detectBridge !== false) {
-      var firstVersePitch = 0, firstVerseW = 0, firstChorusBar = -1, lastChorusBar = -1;
-      for (var sb = 0; sb < bars; sb++) {
-        if (sections[sb] === 'chorus') { if (firstChorusBar < 0) firstChorusBar = sb; lastChorusBar = sb; }
-        else if (sections[sb] === 'verse' && firstChorusBar < 0 && coverage[sb] > 0) { firstVersePitch += barPitch[sb] * coverage[sb]; firstVerseW += coverage[sb]; }
-      }
-      var v1Avg = firstVerseW > 0 ? firstVersePitch / firstVerseW : meanPitch;
-      if (firstChorusBar >= 0 && lastChorusBar > firstChorusBar + 4) {
-        for (var bb = firstChorusBar + 2; bb < lastChorusBar; bb++) {
-          if (sections[bb] !== 'verse') continue;
-          var bEnd = bb;
-          while (bEnd < lastChorusBar && sections[bEnd] === 'verse') bEnd++;
-          var runLen = bEnd - bb;
-          if (bb >= Math.floor(bars * 0.42) && runLen >= 3 && runLen <= 16 && sections[bb - 1] === 'chorus' && sections[bEnd] === 'chorus') {
-            var spanStart = barStarts[bb], spanEnd = barStarts[bEnd - 1] + 4;
-            var inside = phrases.filter(function (p) { return p.start < spanEnd - 1e-6 && p.end > spanStart + 1e-6; });
-            var fresh = inside.length > 0 && inside.every(function (p) { return p.repeatCount === 1; });
-            var shifted = inside.some(function (p, idx) {
-              var fi = phrases.indexOf(p);
-              return Math.abs(features[fi].pitch - v1Avg) >= 2.0 || p.key !== globalKey.key || p.minor !== globalKey.minor;
-            });
-            if (fresh && shifted) {
-              for (var bk = bb; bk < bEnd; bk++) if (coverage[bk] > 0) sections[bk] = 'bridge';
-              inside.forEach(function (p) { if (p.section === 'verse') { p.section = 'bridge'; p.confidence = Math.max(p.confidence, 0.72); } });
-            }
+    if (useComposeHints) {
+      /* 填补段落间的空换气小节：副歌前空小节作预推，末尾空小节作尾声，其余顺延前段 */
+      var lastActiveBar = bars - 1;
+      while (lastActiveBar >= 0 && sections[lastActiveBar] === null) lastActiveBar--;
+      for (var fb = 0; fb < bars; fb++) {
+        if (sections[fb] !== null) continue;
+        if (fb > lastActiveBar) {
+          sections[fb] = 'outro';
+        } else {
+          var nextNonNull = null;
+          for (var nb = fb + 1; nb <= lastActiveBar; nb++) {
+            if (sections[nb] !== null) { nextNonNull = sections[nb]; break; }
           }
-          bb = bEnd - 1;
+          var prevSec = fb > 0 ? sections[fb - 1] : null;
+          if (nextNonNull === 'chorus' && prevSec && prevSec !== 'chorus') sections[fb] = 'pre';
+          else sections[fb] = prevSec || nextNonNull || 'verse';
         }
       }
-    }
-    // One high pickup or ornamental bar is not enough to establish a chorus.
-    for (var b2 = 0; b2 < bars;) {
-      var stop = b2 + 1;
-      while (stop < bars && sections[stop] === sections[b2]) stop++;
-      if (sections[b2] === 'chorus' && stop - b2 < 2) sections[b2] = 'verse';
-      b2 = stop;
-    }
-    // The optional intro only changes orchestration; it does not bias analysis.
-    if (opt.intro) sections[0] = 'intro';
-    for (var tail = bars - 1; tail > 0 && (ensemble ? overlapSpans(barStarts[tail], barStarts[tail] + 4, ensemble.allVocalSpans) : coverage[tail]) === 0; tail--) sections[tail] = 'outro';
-    // Multi-bar rising pre-chorus (1..8 bars directly preceding chorus, leaving >=2 bars of verse before it).
-    for (var pb = 3; pb < bars; pb++) {
-      if (sections[pb] !== 'chorus' || sections[pb - 1] !== 'verse') continue;
-      var vStart = pb - 1;
-      while (vStart > 0 && sections[vStart - 1] === 'verse') vStart--;
-      var verseRun = pb - vStart;
-      if (verseRun < 3) continue;
-      var maxPre = verseRun >= 10 ? Math.min(8, Math.floor(verseRun * 0.45)) : Math.min(4, verseRun - 2);
-      var baseEnd = Math.max(vStart + 2, pb - maxPre), baseW = 0, baseE = 0, baseP = 0;
-      for (var vb = vStart; vb < baseEnd; vb++) {
-        if (coverage[vb] > 0) { baseW += coverage[vb]; baseE += barEnergy[vb] * coverage[vb]; baseP += barPitch[vb] * coverage[vb]; }
+      if (opt.intro) sections[0] = 'intro';
+      for (var tailH = bars - 1; tailH > 0 && (ensemble ? overlapSpans(barStarts[tailH], barStarts[tailH] + 4, ensemble.allVocalSpans) : coverage[tailH]) === 0; tailH--) sections[tailH] = 'outro';
+    } else {
+      // Bridge brief (<=2 bar) verse dips enclosed on both sides by chorus.
+      for (var hc = 1; hc < bars - 1; hc++) {
+        if (sections[hc] === 'verse' && sections[hc - 1] === 'chorus') {
+          var hEnd = hc;
+          while (hEnd < bars && sections[hEnd] === 'verse') hEnd++;
+          if (hEnd < bars && sections[hEnd] === 'chorus' && hEnd - hc <= 2 && coverage.slice(hc, hEnd).some(function (c) { return c > 0; })) {
+            for (var hf = hc; hf < hEnd; hf++) sections[hf] = 'chorus';
+          }
+        }
       }
-      if (!baseW) continue;
-      baseE /= baseW; baseP /= baseW;
-      var preBars = 0;
-      function preLifted(idx) {
-        return coverage[idx] > 0 && (barEnergy[idx] > baseE + 0.10 || barPitch[idx] >= baseP + 1.4);
+      // Detect late C-section bridge (fresh contrasting 2..16 bar passage between two chorus blocks).
+      if (opt.detectBridge !== false) {
+        var firstVersePitch = 0, firstVerseW = 0, firstChorusBar = -1, lastChorusBar = -1;
+        for (var sb = 0; sb < bars; sb++) {
+          if (sections[sb] === 'chorus') { if (firstChorusBar < 0) firstChorusBar = sb; lastChorusBar = sb; }
+          else if (sections[sb] === 'verse' && firstChorusBar < 0 && coverage[sb] > 0) { firstVersePitch += barPitch[sb] * coverage[sb]; firstVerseW += coverage[sb]; }
+        }
+        var v1Avg = firstVerseW > 0 ? firstVersePitch / firstVerseW : meanPitch;
+        if (firstChorusBar >= 0 && lastChorusBar > firstChorusBar + 4) {
+          for (var bb = firstChorusBar + 2; bb < lastChorusBar; bb++) {
+            if (sections[bb] !== 'verse') continue;
+            var bEnd = bb;
+            while (bEnd < lastChorusBar && sections[bEnd] === 'verse') bEnd++;
+            var runLen = bEnd - bb;
+            if (bb >= Math.floor(bars * 0.42) && runLen >= 3 && runLen <= 16 && sections[bb - 1] === 'chorus' && sections[bEnd] === 'chorus') {
+              var spanStart = barStarts[bb], spanEnd = barStarts[bEnd - 1] + 4;
+              var inside = phrases.filter(function (p) { return p.start < spanEnd - 1e-6 && p.end > spanStart + 1e-6; });
+              var fresh = inside.length > 0 && inside.every(function (p) { return p.repeatCount === 1; });
+              var shifted = inside.some(function (p, idx) {
+                var fi = phrases.indexOf(p);
+                return Math.abs(features[fi].pitch - v1Avg) >= 2.0 || p.key !== globalKey.key || p.minor !== globalKey.minor;
+              });
+              if (fresh && shifted) {
+                for (var bk = bb; bk < bEnd; bk++) if (coverage[bk] > 0) sections[bk] = 'bridge';
+                inside.forEach(function (p) { if (p.section === 'verse') { p.section = 'bridge'; p.confidence = Math.max(p.confidence, 0.72); } });
+              }
+            }
+            bb = bEnd - 1;
+          }
+        }
       }
-      for (var k = 1; k <= maxPre; k++) {
-        var idx = pb - k;
-        if (preLifted(idx)) { preBars = k; continue; }
-        if (k === 1 && coverage[idx] <= 1.5 && maxPre >= 2 && preLifted(pb - 2)) continue;
-        var hasEarlierLift = false;
-        for (var k2 = k + 1; k2 <= maxPre; k2++) if (preLifted(pb - k2)) { hasEarlierLift = true; break; }
-        if (hasEarlierLift && coverage[idx] > 0 && (barEnergy[idx] > baseE - 0.08 || barPitch[idx] >= baseP + 0.5)) continue;
-        break;
+      // One high pickup or ornamental bar is not enough to establish a chorus.
+      for (var b2 = 0; b2 < bars;) {
+        var stop = b2 + 1;
+        while (stop < bars && sections[stop] === sections[b2]) stop++;
+        if (sections[b2] === 'chorus' && stop - b2 < 2) sections[b2] = 'verse';
+        b2 = stop;
       }
-      if (preBars > 0) for (var pk = 1; pk <= preBars; pk++) sections[pb - pk] = 'pre';
+      // The optional intro only changes orchestration; it does not bias analysis.
+      if (opt.intro) sections[0] = 'intro';
+      for (var tail = bars - 1; tail > 0 && (ensemble ? overlapSpans(barStarts[tail], barStarts[tail] + 4, ensemble.allVocalSpans) : coverage[tail]) === 0; tail--) sections[tail] = 'outro';
+      // Multi-bar rising pre-chorus (1..8 bars directly preceding chorus, leaving >=2 bars of verse before it).
+      for (var pb = 3; pb < bars; pb++) {
+        if (sections[pb] !== 'chorus' || sections[pb - 1] !== 'verse') continue;
+        var vStart = pb - 1;
+        while (vStart > 0 && sections[vStart - 1] === 'verse') vStart--;
+        var verseRun = pb - vStart;
+        if (verseRun < 3) continue;
+        var maxPre = verseRun >= 10 ? Math.min(8, Math.floor(verseRun * 0.45)) : Math.min(4, verseRun - 2);
+        var baseEnd = Math.max(vStart + 2, pb - maxPre), baseW = 0, baseE = 0, baseP = 0;
+        for (var vb = vStart; vb < baseEnd; vb++) {
+          if (coverage[vb] > 0) { baseW += coverage[vb]; baseE += barEnergy[vb] * coverage[vb]; baseP += barPitch[vb] * coverage[vb]; }
+        }
+        if (!baseW) continue;
+        baseE /= baseW; baseP /= baseW;
+        var preBars = 0;
+        function preLifted(idx) {
+          return coverage[idx] > 0 && (barEnergy[idx] > baseE + 0.10 || barPitch[idx] >= baseP + 1.4);
+        }
+        for (var k = 1; k <= maxPre; k++) {
+          var idx = pb - k;
+          if (preLifted(idx)) { preBars = k; continue; }
+          if (k === 1 && coverage[idx] <= 1.5 && maxPre >= 2 && preLifted(pb - 2)) continue;
+          var hasEarlierLift = false;
+          for (var k2 = k + 1; k2 <= maxPre; k2++) if (preLifted(pb - k2)) { hasEarlierLift = true; break; }
+          if (hasEarlierLift && coverage[idx] > 0 && (barEnergy[idx] > baseE - 0.08 || barPitch[idx] >= baseP + 0.5)) continue;
+          break;
+        }
+        if (preBars > 0) for (var pk = 1; pk <= preBars; pk++) sections[pb - pk] = 'pre';
+      }
     }
+    phrases.forEach(function (p) { delete p._composeHint; });
     if (opt.outro) {
       var vocalEnd = origin + vocalBars * 4;
       var residual = vocalEnd - lastVocalEnd;
@@ -1432,7 +2393,7 @@
         if (cuts[cut + 1] - cuts[cut] < 1e-6) continue;
         var active = null;
         phrases.forEach(function (p) { if (p.start <= cuts[cut] + 1e-6) active = p; });
-        var section = active ? active.section : sections[bi];
+        var section = (useComposeHints && (!active || active.end <= cuts[cut] + 1e-6)) ? sections[bi] : (active ? active.section : sections[bi]);
         if (sections[bi] === 'intro' || sections[bi] === 'outro' || (sections[bi] === 'pre' && section === 'verse')) section = sections[bi];
         else if (section === 'verse' && cut === 0 && bi > 0 && sections[bi - 1] === 'pre' && sections[bi] === 'chorus') section = 'pre';
         blocks.push({ start: cuts[cut], end: cuts[cut + 1], barStart: barStarts[bi], bar: bi, section: section });

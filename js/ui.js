@@ -990,7 +990,7 @@
     gainVox: null, gainAcc: null, srcs: null,
     vowel: 'a',
     /* 谱曲 / 编曲的当前选择 */
-    composeStyle: 'pop', eyeSet: null, eyeSel: 0, eyeName: '',
+    composeStyle: 'pop', composeFullSong: false, composeCycleMode: 'group', composeIntroBars: 4, eyeSet: null, eyeSel: 0, eyeName: '',
     arrStyle: 'pop', arrSeed: 0, arrIntro: true, arrKit: true, arrSample: false, arrSampleAmt: 1, arrImprov: 50, arrMeter: 'auto', arrGridMode: 'auto', arrSpace: 'auto', arrChip: false, arrOffset: '',
     arrHuman: 1, arrSwing: 6, arrDensity: 1, arrExpression: 1, arrChordRate: 1, arrMood: 'auto', arrKey: 'auto', arrHalfBpm: false, arrTrackScope: 'all', tm: null,
     tuneStyle: 'natural', tuneParts: { pit: true, vibrato: true, vel: true },
@@ -3062,6 +3062,7 @@
         o.harmonyEnd = n.harmonyEnd; o.dur = Math.min(o.dur, n.harmonyEnd - o.start);
       }
       if (n.eye) o.eye = n.eye;
+      if (n.composeSection) o.composeSection = n.composeSection;
       if (n.velPan) o.velPan = n.velPan;
       if (n.slur) o.slur = true;            // 延音符：只延长上一个元音，不重发辅音
       if (n.wordJoin) o.wordJoin = true;    // 英语拆词：与上一个音符同属一个词
@@ -6454,16 +6455,51 @@
       c.stroke();
     }
 
-    /* 整体势虚线 */
+    /* 谱全曲模式下的段落分界线与段落标记 */
+    var fsMeta = ctxData && ctxData.fullSongMeta;
+    if (fsMeta && fsMeta.sections && fsMeta.sections.length > 1) {
+      c.save();
+      c.font = 'bold 9px Consolas, monospace';
+      c.textAlign = 'center';
+      fsMeta.sections.forEach(function (sec, si) {
+        if (si > 0) {
+          var sx = eyePlotX(sec.startRatio);
+          c.strokeStyle = P.eyeMom;
+          c.globalAlpha = 0.55;
+          c.setLineDash([2, 3]);
+          c.lineWidth = 1;
+          c.beginPath(); c.moveTo(sx, eyePlotY(1)); c.lineTo(sx, eyePlotY(0)); c.stroke();
+          c.setLineDash([]);
+        }
+        var midX = eyePlotX((sec.startRatio + sec.endRatio) * 0.5);
+        var shortName = t('arr.sec.' + sec.role, null, { verse: '主', pre: '预', chorus: '副', bridge: '桥', outro: '尾' }[sec.role] || sec.role);
+        c.globalAlpha = 0.88;
+        c.fillStyle = P.eyeTitle;
+        c.fillText(shortName, midX, eyePlotY(1) + 11);
+      });
+      c.restore();
+    }
+
+    /* 整体势虚线（谱全曲模式绘制全曲多波峰宏观势曲线） */
     var mom = NSG.COMPOSE.EYE.momentum(set.momentum);
-    if (mom && ctxData && ctxData.momOn) {
-      c.strokeStyle = P.eyeMom; c.setLineDash([4, 4]); c.lineWidth = 1.3;
-      c.beginPath();
-      for (var m = 0; m <= 100; m++) {
-        var xm = eyePlotX(m / 100), ym = eyePlotY(NSG.COMPOSE.EYE.momValue(mom, m / 100));
-        if (m === 0) c.moveTo(xm, ym); else c.lineTo(xm, ym);
+    if (ctxData && ctxData.momOn) {
+      if (fsMeta && fsMeta.macroCurve && fsMeta.macroCurve.length > 1) {
+        c.strokeStyle = P.eyeMom; c.setLineDash([4, 4]); c.lineWidth = 1.5;
+        c.beginPath();
+        fsMeta.macroCurve.forEach(function (pt, mi) {
+          var xm = eyePlotX(pt.x), ym = eyePlotY(pt.y);
+          if (mi === 0) c.moveTo(xm, ym); else c.lineTo(xm, ym);
+        });
+        c.stroke(); c.setLineDash([]);
+      } else if (mom) {
+        c.strokeStyle = P.eyeMom; c.setLineDash([4, 4]); c.lineWidth = 1.3;
+        c.beginPath();
+        for (var m = 0; m <= 100; m++) {
+          var xm2 = eyePlotX(m / 100), ym2 = eyePlotY(NSG.COMPOSE.EYE.momValue(mom, m / 100));
+          if (m === 0) c.moveTo(xm2, ym2); else c.lineTo(xm2, ym2);
+        }
+        c.stroke(); c.setLineDash([]);
       }
-      c.stroke(); c.setLineDash([]);
     }
 
     /* 试听乐谱时的播放头 */
@@ -6542,7 +6578,21 @@
       '<button class="abtn" id="eyeAdd">' + t('compose.addEye', null, '＋ 加一只眼睛') + '</button>' +
       '<button class="abtn" id="eyeDel">' + t('compose.delEye', null, '－ 删掉这只') + '</button>' +
       '<button class="abtn" id="eyeMirror">' + t('compose.mirrorEye', null, '左右翻转') + '</button>' +
-      '<label class="tl"><input type="checkbox" id="eyeMomChk" checked> ' + t('compose.momentum', null, '整体势') + '</label>' +
+      '<label class="tl eyemom"><input type="checkbox" id="eyeMomChk" checked> ' + t('compose.momentum', null, '整体势') + '</label>' +
+      '</div>' +
+      '<div class="eyebar eyefullbar">' +
+      '<label class="tl" title="' + escAttr(t('compose.fullSongTitle', null, '自动识别空行段落或起承转合，按乐句长度循环使用眼睛曲线，并加入全曲宏观势、变奏与节奏呼吸，便于长歌词谱曲与自动伴奏')) + '"><input type="checkbox" id="eyeFullChk"' + (state.composeFullSong ? ' checked' : '') + '> ' + t('compose.fullSong', null, '谱全曲') + '</label>' +
+      '<label class="tl eyectl' + (state.composeFullSong ? '' : ' off') + '" id="eyeCycleWrap">' +
+      '<span>' + t('compose.cycleMode', null, '循环方式') + '</span>' +
+      '<select id="eyeCycleMode" class="tiny"' + (state.composeFullSong ? '' : ' disabled') + '>' +
+      '<option value="group"' + (state.composeCycleMode !== 'perEye' ? ' selected' : '') + '>' + t('compose.cycleGroup', null, '整组循环') + '</option>' +
+      '<option value="perEye"' + (state.composeCycleMode === 'perEye' ? ' selected' : '') + '>' + t('compose.cyclePerEye', null, '逐眼分配') + '</option>' +
+      '</select></label>' +
+      (selectionMode ? '' :
+        '<label class="tl eyectl' + (state.composeFullSong ? '' : ' off') + '" id="eyeIntroWrap" title="' + escAttr(t('compose.introBarsTitle', null, '在第一句起唱前预留的空白小节数，方便自动伴奏演奏前奏')) + '">' +
+        '<span>' + t('compose.introBars', null, '前奏留白') + '</span>' +
+        '<input type="number" id="eyeIntroBars" class="numin" min="0" max="16" step="1" value="' + (Number.isFinite(state.composeIntroBars) ? state.composeIntroBars : 4) + '"' + (state.composeFullSong ? '' : ' disabled') + '>' +
+        '<span>' + t('compose.barsUnit', null, '小节') + '</span></label>') +
       '</div>' +
       '<div id="eyeParams" class="eyeparams">' + eyeParamsHtml() + '</div>' +
       '<p class="eyehint">' + t('compose.dragHint', null, '拖峰点改「峰在哪、峰多高」；拖两端的方块改起落高度。峰越靠近句尾，最后几个字才冲上去；左右尖锐越大，峰越尖。') + '</p>' +
@@ -6550,8 +6600,8 @@
       '<div class="eyeright">' +
       '<div class="cap2">' + t('compose.presetsCap', null, '样式') + '<span class="mini">' + t('compose.presetsNote', null, '点一下即换') + '</span></div>' +
       '<div class="eyepresets" id="eyePresets"></div>' +
-      '<div class="cap2">' + (selectionMode ? t('compose.selLyrics', null, '选中段歌词（只读）') : t('compose.phraseLyrics', null, '这句歌词')) + '</div>' +
-      '<textarea id="cpLyr" rows="3"' + (selectionMode ? ' readonly' : '') + '>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</textarea>' +
+      '<div class="cap2" id="cpLyrCap">' + (selectionMode ? t('compose.selLyrics', null, '选中段歌词（只读）') : (state.composeFullSong ? t('compose.fullLyrics', null, '全曲歌词') + '<span class="mini">' + t('compose.fullLyricsNote', null, '空行分段落') + '</span>' : t('compose.phraseLyrics', null, '这句歌词'))) + '</div>' +
+      '<textarea id="cpLyr" rows="' + (!selectionMode && state.composeFullSong ? 4 : 3) + '"' + (selectionMode ? ' readonly' : '') + '>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</textarea>' +
       '<div class="row2"><label class="lb">' + t('left.key', null, '调性') + '</label><select id="cpRoot" class="tiny">' + keyOptionsHtml() + '</select></div>' +
       '<div class="row2"><label class="lb">' + t('left.scale', null, '音阶') + '</label><select id="cpScale" class="tiny">' +
       scaleOptionsHtml() + '</select></div>' +
@@ -6570,6 +6620,12 @@
 
     var cv = $('#eyeCv', m.el);
     var momChk = $('#eyeMomChk', m.el);
+    var fullChk = $('#eyeFullChk', m.el);
+    var cycleSel = $('#eyeCycleMode', m.el);
+    var cycleWrap = $('#eyeCycleWrap', m.el);
+    var introIn = $('#eyeIntroBars', m.el);
+    var introWrap = $('#eyeIntroWrap', m.el);
+    var lyrCap = $('#cpLyrCap', m.el);
     var lyrBox = $('#cpLyr', m.el);
     var rootSel = $('#cpRoot', m.el);
     var scaleSel = $('#cpScale', m.el);
@@ -6578,6 +6634,30 @@
     var prevScoreBtn = $('#cpPrevScore', m.el);
     rootSel.value = String(state.score.root || 62);
     scaleSel.value = $('#scaleSel').value || 'penta';
+
+    function syncFullSongUI() {
+      var on = !!(fullChk && fullChk.checked);
+      state.composeFullSong = on;
+      if (cycleSel) {
+        cycleSel.disabled = !on;
+        state.composeCycleMode = cycleSel.value === 'perEye' ? 'perEye' : 'group';
+      }
+      if (cycleWrap) cycleWrap.classList.toggle('off', !on);
+      if (introIn) {
+        introIn.disabled = !on;
+        var ib = parseInt(introIn.value, 10);
+        if (isFinite(ib)) state.composeIntroBars = Math.max(0, Math.min(16, ib));
+      }
+      if (introWrap) introWrap.classList.toggle('off', !on);
+      if (!selectionMode) {
+        if (lyrBox) lyrBox.rows = on ? 4 : 3;
+        if (lyrCap) {
+          lyrCap.innerHTML = on
+            ? t('compose.fullLyrics', null, '全曲歌词') + '<span class="mini">' + t('compose.fullLyricsNote', null, '空行分段落') + '</span>'
+            : t('compose.phraseLyrics', null, '这句歌词');
+        }
+      }
+    }
 
     /* 钢琴预览（选定音阶 / 当前设定实际乐谱） */
     var previewSource = null, previewRenderer = null, previewReq = 0;
@@ -6681,6 +6761,8 @@
       }
       var shiftedTm = NSG.TEMPO.map(previewScore);
       var selDur = selectedEnd - selectedStart || 1;
+      var fsVocalStart = res.fullSongMeta ? (res.fullSongMeta.vocalStart || 0) : 0;
+      var fsVocalDur = res.fullSongMeta && res.fullSongMeta.vocalBeats > 0 ? res.fullSongMeta.vocalBeats : 0;
       return {
         score: previewScore,
         trackPlayhead: function (elapsedSec) {
@@ -6689,6 +6771,9 @@
           if (curBeat > endBeat) return null;
           if (selectionMode) {
             return Math.max(0, Math.min(1, (offset + curBeat - selectedStart) / selDur));
+          }
+          if (fsVocalDur > 0) {
+            return Math.max(0, Math.min(1, (offset + curBeat - fsVocalStart) / fsVocalDur));
           }
           var totalN = previewNotes.length;
           if (!totalN) return null;
@@ -6795,6 +6880,23 @@
       var res = buildMelody();
       var scaleNotes = res.degs.map(function (d) { return KEY_NAMES[((res.root + d) % 12 + 12) % 12]; }).join(' ');
       scaleSel.title = scaleNotes;
+      var secSummaryHtml = '';
+      if (res.fullSongMeta && res.fullSongMeta.sections && res.fullSongMeta.sections.length) {
+        var secParts = [];
+        if (res.fullSongMeta.introBars > 0) {
+          secParts.push(t('compose.sec.introTag', { n: res.fullSongMeta.introBars }, '前奏(' + res.fullSongMeta.introBars + '小节)'));
+        }
+        res.fullSongMeta.sections.forEach(function (s) {
+          var lb = t('compose.sec.' + s.role, null, { verse: '主歌', pre: '导歌', chorus: '副歌', bridge: '桥段', outro: '尾声' }[s.role] || s.role);
+          secParts.push(lb + '(' + s.phraseCount + ')');
+        });
+        var secLabels = secParts.join('→');
+        secSummaryHtml = '<div style="margin-top:3px;font-size:10px;opacity:.92">' +
+          t('compose.fullSongSummary', {
+            secs: secLabels,
+            bars: res.fullSongMeta.totalBars
+          }, '段落：' + secLabels + ' · ' + res.fullSongMeta.totalBars + ' 小节') + '</div>';
+      }
       $('#eyeOut', m.el).innerHTML = (res.notes.length
         ? t('compose.outSummary', {
             n: res.notes.length,
@@ -6803,10 +6905,14 @@
           }, '音符 <b>' + res.notes.length + '</b> · 音域 ' + noteName(Math.min.apply(null, res.notes.map(function (n) { return n.pitch; }))) +
           '–' + noteName(Math.max.apply(null, res.notes.map(function (n) { return n.pitch; }))))
         : '<span style="color:#b03020">' + (selectionMode ? t('compose.noVoicedSel', null, '选中段没有发声音符') : t('compose.noSyl', null, '没有解析出音节')) + '</span>') +
+        secSummaryHtml +
         '<div style="margin-top:3px;opacity:.82;font-size:10px">' + scaleNotes + '</div>';
       if (prevScoreBtn) prevScoreBtn.disabled = !res.notes.length;
       lastRes = res;
-      drawEyeEditor(cv, { syl: res.syl, steps: res.steps, ranges: res.ranges, span: res.span, momOn: momChk.checked, playheadX: previewPlayheadX });
+      drawEyeEditor(cv, {
+        syl: res.syl, steps: res.steps, ranges: res.ranges, span: res.span,
+        momOn: momChk.checked, playheadX: previewPlayheadX, fullSongMeta: res.fullSongMeta
+      });
     }
     function buildMelody() {
       var lyric = lyrBox.value;
@@ -6814,19 +6920,33 @@
       var root = parseInt(rootSel.value, 10);
       var degs = NSG.COMPOSE.SCALES[scaleSel.value] || NSG.COMPOSE.SCALES.penta;
       var span = Math.max(2, Math.min(14, +spanIn.value || 7));
+      var fullSong = !!(fullChk && fullChk.checked);
+      var cycleMode = (cycleSel && cycleSel.value === 'perEye') ? 'perEye' : 'group';
+      var introBars = introIn ? Math.max(0, Math.min(16, Math.round(+introIn.value || 0))) : (Number.isFinite(state.composeIntroBars) ? state.composeIntroBars : 4);
       var options = {
         root: root, style: state.composeStyle, eye: state.eyeSet,
         span: span, degs: degs,
-        momentumWeight: momChk.checked ? 0.35 : 0
+        momentumWeight: momChk.checked ? 0.35 : 0,
+        fullSong: fullSong,
+        eyeCycleMode: cycleMode,
+        introBars: introBars
       };
       var notes = selectionMode ? NSG.COMPOSE.reshapeMelody(picked, state.score.lang, options)
         : NSG.COMPOSE.melody(lyric, state.score.lang, options);
+      var fullSongMeta = notes.fullSongMeta || null;
       var ranges = null;
       if (selectionMode) {
         syl = notes.map(function (n) { return { text: n.lyric }; });
         var duration = selectedEnd - selectedStart || 1;
         ranges = notes.map(function (n) {
           return [(n.start - selectedStart) / duration, (n.start + n.dur - selectedStart) / duration];
+        });
+      } else if (fullSongMeta && fullSongMeta.vocalBeats > 0) {
+        syl = notes.map(function (n) { return { text: n.lyric }; });
+        var fsStart = fullSongMeta.vocalStart || 0;
+        var fsDur = fullSongMeta.vocalBeats;
+        ranges = notes.map(function (n) {
+          return [(n.start - fsStart) / fsDur, (n.start + n.dur - fsStart) / fsDur];
         });
       }
       /* 量化后的音级：单调音阶按音级序绘制；非单调音阶（如「大」）按实际半音高度映射，
@@ -6839,7 +6959,7 @@
         var idx = degs.indexOf(pc);
         return idx < 0 ? (oct + 0.5) * degs.length : oct * degs.length + idx;
       });
-      return { notes: notes, steps: steps, ranges: ranges, syl: syl, span: span, degs: degs, root: root };
+      return { notes: notes, steps: steps, ranges: ranges, syl: syl, span: span, degs: degs, root: root, fullSongMeta: fullSongMeta };
     }
 
     /* 预置按钮 */
@@ -6925,7 +7045,8 @@
         ranges: lastRes ? lastRes.ranges : null,
         span: lastRes ? lastRes.span : 1,
         momOn: momChk.checked,
-        playheadX: previewPlayheadX
+        playheadX: previewPlayheadX,
+        fullSongMeta: lastRes ? lastRes.fullSongMeta : null
       });
     }
     /* 拖动 */
@@ -7105,6 +7226,14 @@
       syncEyeUI(); refreshOut();
     };
     momChk.onchange = refreshOut;
+    if (fullChk) fullChk.onchange = function () { syncFullSongUI(); refreshOut(); };
+    if (cycleSel) cycleSel.onchange = function () { syncFullSongUI(); refreshOut(); };
+    if (introIn) introIn.onchange = function () {
+      var v = Math.max(0, Math.min(16, Math.round(+introIn.value || 0)));
+      introIn.value = String(v);
+      syncFullSongUI();
+      refreshOut();
+    };
     lyrBox.addEventListener('input', function () { refreshOut(); });
     rootSel.onchange = function () { if (previewKind === 'scale') stopComposePreview(false); refreshOut(); };
     scaleSel.onchange = function () { if (previewKind === 'scale') stopComposePreview(false); refreshOut(); };
@@ -7138,6 +7267,7 @@
       styleCap.parentNode.insertBefore(styleRow, styleCap);
     }
 
+    syncFullSongUI();
     syncEyeUI();
     setTimeout(refreshOut, 20);
 
@@ -7147,15 +7277,21 @@
       state.score.root = res.root;
       $('#keySel').value = String(res.root);
       if ($('#scaleSel')) $('#scaleSel').value = scaleSel.value;
+      var isFull = !!(fullChk && fullChk.checked);
       if (selectionMode) {
-        var pitches = {};
-        res.notes.forEach(function (n) { pitches[n.id] = n.pitch; });
+        var updates = {};
+        res.notes.forEach(function (n) { updates[n.id] = { pitch: n.pitch, composeSection: n.composeSection }; });
         roll.notes.forEach(function (n) {
-          if (Object.prototype.hasOwnProperty.call(pitches, n.id)) n.pitch = pitches[n.id];
+          if (Object.prototype.hasOwnProperty.call(updates, n.id)) {
+            n.pitch = updates[n.id].pitch;
+            if (isFull && updates[n.id].composeSection) n.composeSection = updates[n.id].composeSection;
+            else if (!isFull && n.composeSection) delete n.composeSection;
+          }
         });
       } else {
         var end = 0;
         roll.notes.forEach(function (n) { end = Math.max(end, n.start + n.dur); });
+        if (isFull && end > 0) end = Math.ceil(end / 4) * 4;
         var add = normNotes(res.notes);
         add.forEach(function (n) { n.start += end; });
         roll.notes = roll.notes.concat(add);
