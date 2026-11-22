@@ -4926,13 +4926,17 @@
   NSG.DSP.runAccompSpace = function (effect, bufL, bufR, sr, spaceName, spb0) {
     var profile = ACCOMP_SPACE_PROFILES[spaceName];
     if (profile && bufL && bufR && bufL.length) {
-      runAccompSpaceEffect(effect, bufL, bufR, bufL, bufR, sr, profile, spb0);
+      if (!(NSG.VOCAL_WASM && NSG.VOCAL_WASM.runAccompSpace && NSG.VOCAL_WASM.runAccompSpace(effect, bufL, bufR, sr, profile, spb0))) {
+        runAccompSpaceEffect(effect, bufL, bufR, bufL, bufR, sr, profile, spb0);
+      }
     }
     return { effect: effect, left: bufL, right: bufR };
   };
 
   NSG.DSP.finalizeAccomp = function (left, right, sr, spaceName, legacySound) {
     var profile = (!legacySound && spaceName) ? ACCOMP_SPACE_PROFILES[spaceName] || null : null;
+    var wasmRes = NSG.VOCAL_WASM && NSG.VOCAL_WASM.finalizeAccomp && NSG.VOCAL_WASM.finalizeAccomp(left, right, sr, profile, !!legacySound);
+    if (wasmRes) return wasmRes;
     return finalizeAccompMix(left, right, sr, profile, !!legacySound);
   };
 
@@ -4984,8 +4988,6 @@
       if (minS < maxS) { bufOffset = minS; bufLen = maxS - minS; }
       else { bufOffset = 0; bufLen = 0; }
     }
-    var left = new Float32Array(bufLen), right = new Float32Array(bufLen);
-    var hallL, hallR, plateL, plateR, delayL, delayR, chorusL, chorusR;
     function sendFor(orig, knd, nt) {
       if (/^chip/.test(knd) || knd === 'bass' || knd === 'tuba' || knd === 'kick') return null;
       var rp = Math.round(nt.pitch);
@@ -5017,6 +5019,227 @@
       hat: -0.35, openhat: -0.35, ride: 0.4, crash: -0.45, tom: 0.25, perc: 0.45,
       chipPWM: 0.25, chipSaw: 0.2, chipTable: 0.3, chipHybrid: 0, chipPulse12: -0.25, chipPulse25: -0.2, chipPulse50: 0.2, chipPulse75: 0.25, chipPulse87: -0.2,
       chipPulse: -0.25, chipTriangle: 0, chipArp: -0.15, chipNoise: 0.15, chipKick: 0, chipTom: 0.2 };
+
+    // Fast path: Rust SIMD128 WebAssembly accompaniment synthesizer + in-WASM bus accumulation.
+    var wasmSess = NSG.VOCAL_WASM && NSG.VOCAL_WASM.accompBegin ? NSG.VOCAL_WASM.accompBegin(bufLen) : null;
+    if (wasmSess) {
+      var wp = new Float64Array(64), wExtra = new Float64Array(64);
+      var DRUM_ID = { kick: 0, snare: 1, tom: 2, rim: 3, clap: 4, hat: 5, openhat: 6, ride: 7, crash: 8, perc: 9 };
+      var CHIP_ID = {
+        chipNoise: 0, chipKick: 1, chipTom: 2, chipTriangle: 3, chipTable: 4,
+        chipHybrid: 5, chipSaw: 6, chipPWM: 7, chipPulse12: 8, chipPulse25: 9,
+        chipPulse50: 10, chipPulse: 10, chipPulse75: 11, chipPulse87: 12, chipArp: 13
+      };
+      var CHIP_DRUM_ID = { hat: 1, openhat: 2, rim: 3, crash: 4, ride: 4, perc: 5 };
+      var defBass = NSG.Instruments.get('bass').sound;
+      var defPad = NSG.Instruments.get('pad').sound;
+      var defStrings = NSG.Instruments.get('strings').sound;
+      var defEp = NSG.Instruments.get('ep').sound;
+      var defGuitar = NSG.Instruments.get('guitar').sound;
+      var defPluck = NSG.Instruments.get('pluck').sound;
+      var maxPadSamples = Math.ceil(SR * 1.4);
+      for (var wn = noteStart; wn < noteEnd; wn++) {
+        var wNote = notes[wn];
+        var wStartS = Math.round(tm.secOf(wNote.start) * SR);
+        if (wStartS >= total) continue;
+        var wLen = Math.max(24, Math.round((tm.secOf(wNote.start + wNote.dur) - tm.secOf(wNote.start)) * SR));
+        var wGate = Number.isFinite(wNote.harmonyEnd) ? Math.max(0, Math.round(tm.secOf(wNote.harmonyEnd) * SR) - wStartS) : Infinity;
+        if (!wGate) continue;
+        wLen = Math.min(wLen, wGate);
+        var wGateFade = Math.min(SR * 0.012, wGate);
+        var wf = NSG.mtof(wNote.pitch);
+        var wVel = (wNote.vel === undefined ? 90 : wNote.vel) / 127;
+        var wOrig = wNote.inst || 'pad', wPreset = NSG.Instruments.get(wOrig);
+        var wKind = wPreset && wPreset.family !== 'chip' ? wPreset.family : wOrig;
+        if (wKind === 'drumkit') wKind = DRUM_BY_NOTE[Math.round(wNote.pitch)] || 'snare';
+        var wMaxOut = Math.min(total - wStartS, wLen + maxPadSamples);
+        if (wMaxOut <= 0) continue;
+
+        var wHasEq = Array.isArray(wNote.noteEq) && (wNote.noteEq.length === 48 || wNote.noteEq.length === 64) && wNote.noteEq.every(Number.isFinite);
+        var wPan = Number.isFinite(wNote.pan) ? Math.max(-1, Math.min(1, wNote.pan)) : wPreset && Number.isFinite(wPreset.pan) ? wPreset.pan : (pans[wOrig] || 0);
+        var wLg = Math.cos((wPan + 1) * Math.PI / 4) * Math.SQRT2;
+        var wRg = Math.sin((wPan + 1) * Math.PI / 4) * Math.SQRT2;
+        var wHasGain = !!(wNote.gainPoints && wNote.gainPoints.length);
+        var wSnd = spaceProfile ? sendFor(wOrig, wKind, wNote) : null;
+        var wLocalStart = wStartS - bufOffset;
+        var wConstGain = wHasGain ? 1 : (wNote.gain !== undefined ? NSG.TUNING.noteGain(wNote, 0) : 1);
+
+        wp[0] = SR; wp[1] = wf; wp[2] = wVel; wp[3] = wLen;
+        wp[4] = Number.isFinite(wGate) ? wGate : -1;
+        wp[5] = wGateFade; wp[6] = wMaxOut;
+        wp[7] = (0x1234 + (wn * 2654435761 % 2147483647)) >>> 0;
+        wp[8] = legacySound ? 1 : 0;
+        wp[9] = wLocalStart;
+        wp[10] = wLg * wConstGain; wp[11] = wRg * wConstGain;
+        wp[12] = wSnd ? wSnd.h : 0; wp[13] = wSnd ? wSnd.p : 0;
+        wp[14] = wSnd ? wSnd.d : 0; wp[15] = wSnd ? wSnd.c : 0;
+
+        var vId = 0, pCnt = 16, eCnt = 0, ps;
+        if (wKind.charCodeAt(0) === 99 && wKind.indexOf('chip') === 0) {
+          vId = 18;
+          wp[16] = CHIP_ID[wKind] !== undefined ? CHIP_ID[wKind] : 10;
+          wp[17] = wStartS; wp[18] = wn;
+          wp[19] = CHIP_DRUM_ID[wNote.chipDrum || 'snare'] || 0;
+          wp[20] = (wKind === 'chipPWM' && (wNote.role === 'melodySample' || wNote.role === 'instrumentalLead')) ? 1 : 0;
+          wp[21] = NSG.mtof(wNote.pitch - 9);
+          var cTones = Array.isArray(wNote.chipTones) && wNote.chipTones.length ? wNote.chipTones.filter(Number.isFinite).slice(0, 4) : [wNote.pitch];
+          if (!cTones.length) cTones = [wNote.pitch];
+          wp[22] = cTones.length;
+          for (var ct = 0; ct < cTones.length; ct++) wp[23 + ct] = NSG.mtof(cTones[ct]);
+          pCnt = 27;
+        } else if (wKind === 'piano') {
+          vId = 1; ps = (wPreset && wPreset.sound) || {};
+          wp[16] = ps.tauScale || 1;
+          wp[17] = ps.brightBase !== undefined ? ps.brightBase : 0.48;
+          wp[18] = ps.brightVel !== undefined ? ps.brightVel : 0.36;
+          wp[19] = ps.warmth || 0;
+          wp[20] = ps.hammer !== undefined ? ps.hammer : 0.18;
+          wp[21] = ps.gain || 0.2;
+          pCnt = 22;
+        } else if (wKind === 'pad') {
+          vId = 2; ps = (wPreset && wPreset.sound) || defPad;
+          wp[16] = ps.attack; wp[17] = ps.release; wp[18] = ps.cutoff;
+          wp[19] = ps.sub || 0; wp[20] = ps.air || 0; wp[21] = ps.glass || 0; wp[22] = ps.gain;
+          pCnt = 23;
+        } else if (wKind === 'string') {
+          vId = 3; ps = (wPreset && wPreset.sound) || (wOrig === 'pluck' ? defPluck : defGuitar);
+          wp[16] = ps.excite; wp[17] = ps.velocityExcite; wp[18] = ps.pick;
+          wp[19] = ps.tau; wp[20] = ps.reference; wp[21] = ps.release;
+          wp[22] = ps.body; wp[23] = ps.cutoff; wp[24] = ps.bodyGain;
+          wp[25] = ps.pickup || 0; wp[26] = ps.overtone || 0;
+          wp[27] = ps.drive || 0; wp[28] = ps.cabinet || 0;
+          wp[29] = ps.octaveString || 0; wp[30] = ps.chorus || 0; wp[31] = ps.gain;
+          pCnt = 32;
+        } else if (wKind === 'bass') {
+          vId = 4; ps = (wPreset && wPreset.sound) || defBass;
+          wp[16] = ps.release; wp[17] = ps.tau || 0; wp[18] = ps.mwah || 0;
+          wp[19] = ps.harmonic || 0; wp[20] = ps.noise || 0; wp[21] = ps.attack;
+          wp[22] = ps.gain; wp[23] = ps.scoop || 0; wp[24] = ps.cutoff;
+          wp[25] = ps.resonance || 1.2; wp[26] = ps.square || 0;
+          pCnt = 27;
+        } else if (wKind === 'strings') {
+          vId = 5; ps = (wPreset && wPreset.sound) || defStrings;
+          wp[16] = ps.voices || 5; wp[17] = ps.bodyHigh || 1100; wp[18] = ps.nasal || 0;
+          wp[19] = ps.bodyLow || 430; wp[20] = ps.solo ? 1 : 0; wp[21] = ps.lush ? 1 : 0;
+          wp[22] = ps.attack; wp[23] = ps.release; wp[24] = ps.gain;
+          wp[25] = ps.vibDepth !== undefined ? ps.vibDepth : 0.0028;
+          wp[26] = ps.scoop || 0; wp[27] = ps.swell || 0; wp[28] = ps.dark || 1; wp[29] = ps.octave || 0;
+          pCnt = 30;
+        } else if (wKind === 'ep') {
+          vId = 6; ps = (wPreset && wPreset.sound) || defEp;
+          wp[16] = ps.bell || 0; wp[17] = ps.release; wp[18] = ps.index;
+          wp[19] = ps.velocityIndex; wp[20] = ps.gain; wp[21] = ps.bellDecay || 0.45;
+          wp[22] = ps.ratio; wp[23] = ps.warmth || 0; wp[24] = ps.reed ? 1 : 0;
+          pCnt = 25;
+        } else if (wKind === 'mallet') {
+          vId = 7; ps = wPreset.sound;
+          var mNr = Math.min(32, ps.ratios.length);
+          wp[16] = ps.tau; wp[17] = ps.gain; wp[18] = ps.softAttack || 0.0015;
+          wp[19] = ps.tremolo || 0; wp[20] = mNr;
+          for (var mi2 = 0; mi2 < mNr; mi2++) { wExtra[mi2] = ps.ratios[mi2]; wExtra[mNr + mi2] = ps.amplitudes[mi2]; }
+          pCnt = 21; eCnt = mNr * 2;
+        } else if (wKind === 'arp') {
+          vId = 9;
+        } else if (wKind === 'lead') {
+          vId = 10;
+        } else if (wKind === 'organ') {
+          vId = 11;
+        } else if (wKind === 'brass') {
+          vId = 12;
+        } else if (wKind === 'choir') {
+          vId = 13; ps = (wPreset && wPreset.sound) || {};
+          var cFmts = ps.formants || [700, 1250, 2600], cWts = ps.weights || [0.8, 0.4, 0.2];
+          wp[16] = cFmts[0]; wp[17] = cFmts[1]; wp[18] = cFmts[2];
+          wp[19] = cWts[0]; wp[20] = cWts[1]; wp[21] = cWts[2];
+          wp[22] = ps.attack || 0.28; wp[23] = ps.release || 0.5;
+          wp[24] = ps.gain || 0.12; wp[25] = ps.air || 0;
+          pCnt = 26;
+        } else if (wKind === 'woodwind') {
+          vId = 14; ps = wPreset.sound;
+          var wNh = Math.min(64, ps.harmonics.length);
+          wp[16] = ps.attack; wp[17] = ps.release; wp[18] = ps.noise; wp[19] = ps.gain;
+          wp[20] = ps.vibDepth !== undefined ? ps.vibDepth : 0.002;
+          wp[21] = wNh;
+          for (var wh = 0; wh < wNh; wh++) wExtra[wh] = ps.harmonics[wh];
+          pCnt = 22; eCnt = wNh;
+        } else if (wKind === 'accordion') {
+          vId = 15;
+        } else if (wKind === 'tuba') {
+          vId = 16;
+        } else if (wKind === 'electronic') {
+          vId = 17; ps = wPreset.sound;
+          wp[16] = ps.release; wp[17] = ps.cutoff; wp[18] = ps.attack; wp[19] = ps.decay; wp[20] = ps.sustain;
+          wp[21] = ps.filterAttack || 0.004; wp[22] = ps.filterDecay; wp[23] = ps.filterSustain;
+          wp[24] = ps.keytrack; wp[25] = ps.sweep; wp[26] = ps.motion; wp[27] = ps.rate;
+          wp[28] = ps.randomRate || 0; wp[29] = ps.randomDepth || 0;
+          wp[30] = ps.q; wp[31] = ps.pwm || 0; wp[32] = ps.serial ? 1 : 0; wp[33] = ps.gain;
+          wp[34] = ps.formants ? 1 : 0; wp[35] = ps.formantEnvelope ? 1 : 0;
+          if (ps.formants) {
+            wp[36] = ps.formants[0][0]; wp[37] = ps.formants[0][1];
+            wp[38] = ps.formants[1][0]; wp[39] = ps.formants[1][1];
+          } else { wp[36] = wp[37] = wp[38] = wp[39] = 0; }
+          var eNo = Math.min(3, ps.oscs.length);
+          wp[40] = eNo;
+          for (var eo = 0; eo < eNo; eo++) {
+            var osc = ps.oscs[eo];
+            wExtra[eo * 4] = osc.wave === 'sine' ? 1 : osc.wave === 'pulse' ? 2 : 0;
+            wExtra[eo * 4 + 1] = osc.ratio;
+            wExtra[eo * 4 + 2] = osc.cents;
+            wExtra[eo * 4 + 3] = osc.gain;
+          }
+          pCnt = 41; eCnt = eNo * 4;
+        } else {
+          vId = 8;
+          wp[16] = DRUM_ID[wKind] !== undefined ? DRUM_ID[wKind] : 10;
+          wp[17] = wNote.pitch;
+          var wChoke = nextClosedHat[wn] - tm.secOf(wNote.start);
+          wp[18] = Number.isFinite(wChoke) ? wChoke : 1e15;
+          pCnt = 19;
+        }
+
+        var wAutoMix = !wHasEq && !wHasGain;
+        var wUsed = wasmSess.renderNote(vId, wp, pCnt, wExtra, eCnt, wAutoMix);
+        if (!wAutoMix && wUsed > 0) {
+          var wMixLen = wUsed;
+          if (wHasEq) {
+            wMixLen = Math.min(wMaxOut, wUsed + ((EQ_L - 1) >> 1));
+            var sViewEq = wasmSess.scratchView(wMixLen);
+            if (wMixLen > wUsed) sViewEq.fill(0, wUsed, wMixLen);
+            var wEqScale = Number.isFinite(wNote.noteEqRoot) ? Math.pow(2, (wNote.pitch - wNote.noteEqRoot) / 12) : 1;
+            NSG.DSP.applyOutEq(sViewEq.subarray(0, wMixLen), wNote.noteEq, SR, wEqScale);
+          }
+          if (wHasGain) {
+            var sViewG = wasmSess.scratchView(wMixLen);
+            var wSingleSeg = tm.count === 1, wBeat0 = tm.beatOf(wStartS / SR), wBeatStep = wSingleSeg ? (tm.segs[0].bpm / 60 / SR) : 0;
+            var wGVal = 1;
+            for (var ws = 0; ws < wMixLen; ws++) {
+              if ((ws & 7) === 0) {
+                wGVal = NSG.TUNING.noteGain(wNote, ((wSingleSeg ? wBeat0 + ws * wBeatStep : tm.beatOf((wStartS + ws) / SR)) - wNote.start) / wNote.dur);
+              }
+              sViewG[ws] *= wGVal;
+            }
+          }
+          wasmSess.mixScratch(wLocalStart, wMixLen, wLg * wConstGain, wRg * wConstGain,
+            wSnd ? wSnd.h : 0, wSnd ? wSnd.p : 0, wSnd ? wSnd.d : 0, wSnd ? wSnd.c : 0);
+        }
+      }
+      if (noteRange) {
+        return {
+          offset: bufOffset, length: bufLen, total: total, sr: SR,
+          spaceName: spaceName, spb0: tm.spbAt(0), legacySound: legacySound,
+          left: wasmSess.readBus(0) || new Float32Array(bufLen),
+          right: wasmSess.readBus(1) || new Float32Array(bufLen),
+          hallL: wasmSess.readBus(3), hallR: wasmSess.readBus(4),
+          plateL: wasmSess.readBus(5), plateR: wasmSess.readBus(6),
+          delayL: wasmSess.readBus(7), delayR: wasmSess.readBus(8),
+          chorusL: wasmSess.readBus(9), chorusR: wasmSess.readBus(10)
+        };
+      }
+      return wasmSess.finishFull(SR, tm.spbAt(0), spaceProfile, legacySound);
+    }
+
+    var left = new Float32Array(bufLen), right = new Float32Array(bufLen);
+    var hallL, hallR, plateL, plateR, delayL, delayR, chorusL, chorusR;
     var TWO_PI = Math.PI * 2;
 
     /* 每个音符用独立种子：渲染顺序不影响结果，重渲染听感一致 */

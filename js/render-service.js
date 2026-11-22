@@ -616,25 +616,31 @@
     }
     var total = valid[0].total, sr = valid[0].sr, spaceName = valid[0].spaceName, spb0 = valid[0].spb0;
     var legacySound = !!valid[0].legacySound;
-    var left = new Float32Array(total), right = new Float32Array(total);
+    var left = new Float32Array(total), right = new Float32Array(total), mainEnd = 0;
     var busNames = ['hall', 'plate', 'delay', 'chorus'];
-    var buses = {};
+    var buses = {}, busEnds = { hall: 0, plate: 0, delay: 0, chorus: 0 };
     for (var bi = 0; bi < busNames.length; bi++) {
       var bn = busNames[bi];
       if (spaceName && valid.some(function (s) { return !!s[bn + 'L']; })) {
         buses[bn] = [new Float32Array(total), new Float32Array(total)];
       }
     }
+    function accStereoSpan(dL, dR, sL, sR, off, len, prevEnd) {
+      var over = off < prevEnd ? Math.min(len, prevEnd - off) : 0;
+      for (var k = 0; k < over; k++) { dL[off + k] += sL[k]; dR[off + k] += sR[k]; }
+      if (over === 0) { dL.set(sL, off); dR.set(sR, off); }
+      else if (over < len) { dL.set(sL.subarray(over), off + over); dR.set(sR.subarray(over), off + over); }
+      return Math.max(prevEnd, off + len);
+    }
     for (var si = 0; si < valid.length; si++) {
-      var ch = valid[si], off = ch.offset, len = ch.length, cL = ch.left, cR = ch.right;
-      for (var k = 0; k < len; k++) { left[off + k] += cL[k]; right[off + k] += cR[k]; }
+      var ch = valid[si], off = ch.offset, len = ch.length;
+      mainEnd = accStereoSpan(left, right, ch.left, ch.right, off, len, mainEnd);
       for (var bj = 0; bj < busNames.length; bj++) {
         var bName = busNames[bj], pair = buses[bName];
         if (!pair) continue;
         var sL = ch[bName + 'L'], sR = ch[bName + 'R'];
         if (!sL) continue;
-        var dL = pair[0], dR = pair[1];
-        for (var k2 = 0; k2 < len; k2++) { dL[off + k2] += sL[k2]; dR[off + k2] += sR[k2]; }
+        busEnds[bName] = accStereoSpan(pair[0], pair[1], sL, sR, off, len, busEnds[bName]);
       }
     }
     var wetList = [];
