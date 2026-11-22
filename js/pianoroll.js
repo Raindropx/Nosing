@@ -671,6 +671,45 @@
     return grad;
   }
 
+  PianoRoll.prototype._paintGridPatch = function (c, rx, ry, rw, rh, T) {
+    var kbW = this.kbW, gridH = this.gridBottom();
+    var x0 = Math.max(kbW, rx), y0 = Math.max(this.rulerH, ry);
+    var x1 = Math.min(this.w, rx + rw), y1 = Math.min(gridH, ry + rh);
+    if (x1 <= x0 || y1 <= y0) return;
+    T = T || this._themePalette();
+    var themeId = this.theme || NSG.theme;
+    var bgAlpha = themeId === 'aero' ? this.backgroundOpacity : (themeId === 'cyberpunk' ? 0.85 : 1);
+    c.save();
+    c.beginPath(); c.rect(x0, y0, x1 - x0, y1 - y0); c.clip();
+    c.clearRect(x0, y0, x1 - x0, y1 - y0);
+    var topP = this.yPitch(y0), botP = this.yPitch(y1);
+    for (var p = botP; p <= topP; p++) {
+      var py = this.rowY(p);
+      c.fillStyle = (BLACK[p % 12] ? T.rowBlack : T.rowWhite) + bgAlpha + ')';
+      c.fillRect(x0, py, x1 - x0, this.rowH);
+      if (p % 12 === 0) { c.fillStyle = T.octaveLine; c.fillRect(x0, py + this.rowH - 1, x1 - x0, 1); }
+    }
+    var step = this._snapStep();
+    var b0 = Math.max(0, this.xBeat(x0 - 2)), b1 = this.xBeat(x1 + 2);
+    var gridPaths = [[], [], []];
+    for (var k = Math.floor(b0 / step); ; k++) {
+      var b = k * step;
+      if (b > b1 + 1e-9) break;
+      var gx = Math.round(this.beatX(b));
+      if (gx < x0 - 1 || gx > x1 + 1) continue;
+      var isBar = Math.abs(b / 4 - Math.round(b / 4)) < 1e-6;
+      var isBeat = Math.abs(b - Math.round(b)) < 1e-6;
+      gridPaths[isBar ? 0 : isBeat ? 1 : 2].push(gx + 0.5);
+    }
+    [[T.gridBar, 1.4], [T.gridBeat, 1], [T.gridSub, 1]].forEach(function (style, idx) {
+      if (!gridPaths[idx].length) return;
+      c.strokeStyle = style[0]; c.lineWidth = style[1]; c.beginPath();
+      gridPaths[idx].forEach(function (gx) { c.moveTo(gx, y0); c.lineTo(gx, y1); });
+      c.stroke();
+    });
+    c.restore();
+  };
+
   PianoRoll.prototype._present = function () {
     var v = this.viewCtx, T = this._themePalette();
     if (v !== this.ctx) {
@@ -679,16 +718,24 @@
       v.drawImage(this.base, 0, 0);
       v.restore();
     }
-    if (this.playPos < 0) return;
-    var px2 = this.beatX(this.playPos);
-    if (px2 < this.kbW || px2 > this.w) return;
-    v.strokeStyle = T.playGlow; v.lineWidth = 5;
-    v.beginPath(); v.moveTo(px2, 0); v.lineTo(px2, this.h); v.stroke();
-    v.strokeStyle = T.playLine; v.lineWidth = 1.6;
-    v.beginPath(); v.moveTo(px2, 0); v.lineTo(px2, this.h); v.stroke();
-    var pHead = fillStops(v.createLinearGradient(0, 0, 0, 18), T.playHead);
-    v.fillStyle = pHead; v.beginPath(); v.moveTo(px2 - 6.5, 0); v.lineTo(px2 + 6.5, 0); v.lineTo(px2 + 6.5, 11); v.lineTo(px2, 18); v.lineTo(px2 - 6.5, 11); v.closePath(); v.fill();
-    v.strokeStyle = T.playHeadStroke; v.lineWidth = 1; v.stroke();
+    var eyeFx = this._eyeFx;
+    var eyeOn = !!(eyeFx && eyeFx.active);
+    if (eyeOn) eyeFx.renderUnderPlayhead(v, T);
+    if (this.playPos >= 0) {
+      var px2 = this.beatX(this.playPos);
+      if (px2 >= this.kbW && px2 <= this.w) {
+        if (!(eyeOn && eyeFx.drawCustomPlayhead && eyeFx.drawCustomPlayhead(v, T, px2))) {
+          v.strokeStyle = T.playGlow; v.lineWidth = 5;
+          v.beginPath(); v.moveTo(px2, 0); v.lineTo(px2, this.h); v.stroke();
+          v.strokeStyle = T.playLine; v.lineWidth = 1.6;
+          v.beginPath(); v.moveTo(px2, 0); v.lineTo(px2, this.h); v.stroke();
+          var pHead = fillStops(v.createLinearGradient(0, 0, 0, 18), T.playHead);
+          v.fillStyle = pHead; v.beginPath(); v.moveTo(px2 - 6.5, 0); v.lineTo(px2 + 6.5, 0); v.lineTo(px2 + 6.5, 11); v.lineTo(px2, 18); v.lineTo(px2 - 6.5, 11); v.closePath(); v.fill();
+          v.strokeStyle = T.playHeadStroke; v.lineWidth = 1; v.stroke();
+        }
+      }
+    }
+    if (eyeOn) eyeFx.renderOverPlayhead(v, T);
   };
 
   PianoRoll.prototype.draw = function () {

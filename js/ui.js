@@ -1867,6 +1867,7 @@
     $('#app').classList.add('entering');
     setTimeout(function () { $('#app').classList.remove('entering'); }, 600);
     roll = new NSG.PianoRoll($('#roll'), $('#rollScroll'));
+    roll._eyeFx = NSG.EyeFx ? new NSG.EyeFx(roll) : null;
     roll.timbre = state.timbre;
     roll.theme = state.theme;
     roll.forceSnap = !!state.forceSnap;
@@ -2042,6 +2043,32 @@
     }
   }
 
+  function syncEyeModeButton() {
+    var btn = $('#btnEyeMode');
+    if (!btn) return;
+    var fx = roll && roll._eyeFx;
+    var on = !!(fx && fx.active);
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    if (on && fx.mode) {
+      var modeName = fx.modeLabel();
+      var ec = fx.mode.eyeColor;
+      btn.dataset.eyeMode = fx.mode.id;
+      if (ec) {
+        btn.style.setProperty('--eye-mode-iris', ec.iris);
+        btn.style.setProperty('--eye-mode-ring', ec.ring);
+        btn.style.setProperty('--eye-mode-pupil', ec.pupil);
+      }
+      btn.title = t('transport.eyeTitleActive', { mode: modeName }, '莫名其妙模式：' + modeName + '（再次点击弹起退出）');
+    } else {
+      delete btn.dataset.eyeMode;
+      btn.style.removeProperty('--eye-mode-iris');
+      btn.style.removeProperty('--eye-mode-ring');
+      btn.style.removeProperty('--eye-mode-pupil');
+      btn.title = t('transport.eyeTitle', null, '……？');
+    }
+  }
+
   function applyUiLanguage() {
     if (NSG && NSG.I18N && typeof NSG.I18N.applyDom === 'function' && typeof document !== 'undefined') {
       NSG.I18N.applyDom(document);
@@ -2049,6 +2076,7 @@
     if (roll && roll.cv) {
       roll._defaultCvTitle = roll.cv.title || '';
     }
+    syncEyeModeButton();
     var langBtn = $('#uiLangBtn');
     if (langBtn) {
       var meta = NSG && NSG.I18N && typeof NSG.I18N.getLanguageMeta === 'function' ? NSG.I18N.getLanguageMeta() : null;
@@ -2341,6 +2369,37 @@
       setStatus(t(this.checked ? 'ui.rawOnStatus' : 'ui.rawOffStatus', null,
         this.checked ? '正在听未经滤波的声带音（共振腔已旁路）' : '已恢复：声带音 → 口腔/鼻腔共振'));
     });
+    var eyeBtn = $('#btnEyeMode');
+    if (eyeBtn) {
+      eyeBtn.addEventListener('click', function () {
+        if (!roll || !roll._eyeFx) return;
+        var mode = roll._eyeFx.toggle();
+        syncEyeModeButton();
+        if (mode) {
+          var modeName = roll._eyeFx.modeLabel(mode);
+          setStatus(t(mode.showcase ? 'eye.enteredShowcase' : 'eye.entered', { mode: modeName },
+            '👁 进入莫名其妙模式：「' + modeName + '」' + (mode.showcase ? '✨（适合晒调教）' : '')));
+        } else {
+          setStatus(t('eye.exited', null, '已退出莫名其妙模式，回到正常视图'));
+        }
+      });
+      var transportBar = eyeBtn.closest('.transport');
+      if (transportBar) {
+        transportBar.addEventListener('mousemove', function (e) {
+          var r = eyeBtn.getBoundingClientRect();
+          var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          var dx = e.clientX - cx, dy = e.clientY - cy;
+          var dist = Math.hypot(dx, dy) || 1;
+          var mag = Math.min(2.3, dist / 28);
+          eyeBtn.style.setProperty('--eye-dx', ((dx / dist) * mag).toFixed(2) + 'px');
+          eyeBtn.style.setProperty('--eye-dy', ((dy / dist) * mag * 0.72).toFixed(2) + 'px');
+        });
+        transportBar.addEventListener('mouseleave', function () {
+          eyeBtn.style.setProperty('--eye-dx', '0px');
+          eyeBtn.style.setProperty('--eye-dy', '0px');
+        });
+      }
+    }
     $('#curveVowel').style.cursor = 'pointer';
     $('#curveVowel').title = t('an.curveVowelTitle', null, '点击切换元音');
     $('#curveVowel').addEventListener('click', function () {
@@ -3904,7 +3963,8 @@
     animPlayhead();
   }
 
-  // 已停止时再按停止：视图与播放指针都回到第一个音素前一小格（没有音符时回到开头），以便完整播放发音
+  // 已停止时再按停止：视图与播放指针都回到第一个音素前一小格（没有音符时回到开头），以便完整播放发音；
+  // 若播放指针已在第一个音素前，则再按一次移到曲谱最开头
   function rewindToFirstNote() {
     if (!roll.notes || !roll.notes.length) {
       roll.playPos = 0; roll.scrollBeat = 0;
@@ -3936,6 +3996,13 @@
     }
     var snap = (roll && Number.isFinite(roll.snap) && roll.snap > 0) ? roll.snap : 0.25;
     var target = Math.max(0, first - snap);
+    var cur = Number.isFinite(roll.playPos) ? roll.playPos : 0;
+    if (cur <= target + 1e-6 || cur < first - 1e-6) {
+      roll.playPos = 0; roll.scrollBeat = 0;
+      roll.draw(); syncCursor();
+      setStatus(t('ui.rewoundStart', null, '已回到开头'));
+      return;
+    }
     roll.playPos = target; roll.scrollBeat = Math.max(0, target - 1);
     roll.draw(); syncCursor();
     setStatus(t('ui.rewoundFirst', null, '已回到第一个音素前'));

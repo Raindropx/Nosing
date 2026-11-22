@@ -905,6 +905,45 @@
 }
 :root[data-theme="9x"] .pbtn.stop::after { left: 8px; top: 8px; border-radius: 0; background: var(--t9x-danger); box-shadow: none; }
 :root[data-theme="9x"] .tsep { background: var(--t9x-shadow); box-shadow: 1px 0 0 var(--t9x-hi); }
+:root[data-theme="9x"] .eye-btn {
+  border-radius: 0;
+  width: 32px;
+  height: 22px;
+  color: var(--t9x-text);
+  background: var(--t9x-face);
+  border: 1px solid var(--t9x-outline);
+  box-shadow: inset 1px 1px 0 var(--t9x-hi), inset -1px -1px 0 var(--t9x-shadow);
+  animation: none;
+}
+:root[data-theme="9x"] .eye-btn:hover {
+  color: var(--t9x-val-text);
+  background: var(--t9x-face-hover);
+  border-color: var(--t9x-outline);
+  box-shadow: inset 1px 1px 0 var(--t9x-hi), inset -1px -1px 0 var(--t9x-shadow);
+}
+:root[data-theme="9x"] .eye-btn:active { transform: none; }
+:root[data-theme="9x"] .eye-btn .eye-sclera { fill: var(--t9x-input-bg, #ffffff); }
+:root[data-theme="9x"] .eye-btn .eye-iris { fill: var(--t9x-accent); }
+:root[data-theme="9x"] .eye-btn .eye-iris-ring { stroke: var(--t9x-hi); }
+:root[data-theme="9x"] .eye-btn .eye-pupil { fill: var(--t9x-outline); }
+:root[data-theme="9x"] .eye-btn .eye-lid { fill: var(--t9x-face); }
+:root[data-theme="9x"] .eye-btn.on,
+:root[data-theme="9x"] .eye-btn[aria-pressed="true"] {
+  color: var(--t9x-primary-text);
+  background: var(--t9x-primary);
+  border-color: var(--t9x-outline);
+  box-shadow: inset 1px 1px 0 var(--t9x-shadow), inset -1px -1px 0 var(--t9x-hi);
+  animation: none;
+  filter: none;
+}
+:root[data-theme="9x"] .eye-btn.on .eye-sclera,
+:root[data-theme="9x"] .eye-btn[aria-pressed="true"] .eye-sclera { fill: var(--t9x-hi); }
+:root[data-theme="9x"] .eye-btn.on .eye-iris,
+:root[data-theme="9x"] .eye-btn[aria-pressed="true"] .eye-iris { fill: var(--eye-mode-iris, var(--t9x-hd)); }
+:root[data-theme="9x"] .eye-btn.on .eye-iris-ring,
+:root[data-theme="9x"] .eye-btn[aria-pressed="true"] .eye-iris-ring { stroke: var(--eye-mode-ring, var(--t9x-gold)); }
+:root[data-theme="9x"] .eye-btn.on .eye-pupil,
+:root[data-theme="9x"] .eye-btn[aria-pressed="true"] .eye-pupil { fill: var(--eye-mode-pupil, var(--t9x-outline)); }
 
 /* 滑杆 */
 :root[data-theme="9x"] input[type=range]::-webkit-slider-runnable-track {
@@ -1589,6 +1628,39 @@
 :root[data-theme="cyberpunk"] .pbtn.play.on::after { background: var(--tcp-volt); box-shadow: 7px 0 0 var(--tcp-volt); filter: none; }
 :root[data-theme="cyberpunk"] .pbtn.stop::after { background: var(--tcp-hot); box-shadow: 0 0 6px var(--tcp-hot); }
 :root[data-theme="cyberpunk"] .tsep { background: var(--tcp-neon-42); box-shadow: none; }
+:root[data-theme="cyberpunk"] .eye-btn {
+  border-radius: 3px;
+  color: var(--tcp-neon);
+  background: var(--gloss);
+  border: 1px solid var(--tcp-neon-42);
+  box-shadow: 0 0 8px var(--tcp-neon-24);
+}
+:root[data-theme="cyberpunk"] .eye-btn:hover {
+  color: var(--tcp-volt);
+  border-color: var(--tcp-neon);
+  background: var(--gloss-hover);
+  box-shadow: 0 0 12px var(--tcp-neon-42);
+}
+:root[data-theme="cyberpunk"] .eye-btn .eye-sclera { fill: rgba(5, 10, 22, .9); }
+:root[data-theme="cyberpunk"] .eye-btn .eye-iris { fill: var(--tcp-neon); }
+:root[data-theme="cyberpunk"] .eye-btn .eye-iris-ring { stroke: var(--tcp-volt); }
+:root[data-theme="cyberpunk"] .eye-btn .eye-pupil { fill: #050811; }
+:root[data-theme="cyberpunk"] .eye-btn .eye-lid { fill: #121c33; }
+:root[data-theme="cyberpunk"] .eye-btn.on,
+:root[data-theme="cyberpunk"] .eye-btn[aria-pressed="true"] {
+  color: var(--tcp-volt);
+  background: rgba(120, 14, 58, .72);
+  border-color: var(--tcp-hot);
+  box-shadow: inset 0 0 8px var(--tcp-hot-45), 0 0 14px var(--tcp-hot-45), 0 0 6px var(--tcp-volt-42);
+}
+:root[data-theme="cyberpunk"] .eye-btn.on .eye-sclera,
+:root[data-theme="cyberpunk"] .eye-btn[aria-pressed="true"] .eye-sclera { fill: #12061c; }
+:root[data-theme="cyberpunk"] .eye-btn.on .eye-iris,
+:root[data-theme="cyberpunk"] .eye-btn[aria-pressed="true"] .eye-iris { fill: var(--eye-mode-iris, var(--tcp-hot)); }
+:root[data-theme="cyberpunk"] .eye-btn.on .eye-iris-ring,
+:root[data-theme="cyberpunk"] .eye-btn[aria-pressed="true"] .eye-iris-ring { stroke: var(--eye-mode-ring, var(--tcp-volt)); }
+:root[data-theme="cyberpunk"] .eye-btn.on .eye-pupil,
+:root[data-theme="cyberpunk"] .eye-btn[aria-pressed="true"] .eye-pupil { fill: var(--eye-mode-pupil, var(--tcp-volt)); }
 
 /* 输入框 & 滑杆 */
 :root[data-theme="cyberpunk"] textarea,
@@ -2553,6 +2625,40 @@
   box-shadow: none;
 }
 :root[data-theme="xp"] .tsep { background: var(--txp-line); box-shadow: 1px 0 0 var(--txp-line-hi); }
+:root[data-theme="xp"] .eye-btn {
+  border-radius: 4px;
+  color: var(--txp-accent-dark, #003c74);
+  background: var(--gloss);
+  border: 1px solid var(--txp-btn-border);
+  box-shadow: inset 0 1px 0 var(--txp-line-hi);
+}
+:root[data-theme="xp"] .eye-btn:hover {
+  border-color: var(--txp-accent);
+  background: var(--gloss-hover);
+  box-shadow: inset 0 0 0 1px var(--txp-play-on-bg, #f8c662);
+}
+:root[data-theme="xp"] .eye-btn .eye-sclera { fill: #ffffff; }
+:root[data-theme="xp"] .eye-btn .eye-iris { fill: var(--txp-accent); }
+:root[data-theme="xp"] .eye-btn .eye-iris-ring { stroke: #ffffff; }
+:root[data-theme="xp"] .eye-btn .eye-pupil { fill: #002350; }
+:root[data-theme="xp"] .eye-btn .eye-lid { fill: #dce4f2; }
+:root[data-theme="xp"] .eye-btn.on,
+:root[data-theme="xp"] .eye-btn[aria-pressed="true"] {
+  color: #ffffff;
+  background: linear-gradient(180deg, #ffbe4d 0%, #e58200 52%, #c96200 100%);
+  border-color: #8c3d00;
+  box-shadow: inset 0 1px 3px rgba(96, 36, 0, .48), 0 0 8px rgba(255, 168, 36, .55);
+  animation: none;
+  filter: none;
+}
+:root[data-theme="xp"] .eye-btn.on .eye-sclera,
+:root[data-theme="xp"] .eye-btn[aria-pressed="true"] .eye-sclera { fill: #fffef6; }
+:root[data-theme="xp"] .eye-btn.on .eye-iris,
+:root[data-theme="xp"] .eye-btn[aria-pressed="true"] .eye-iris { fill: var(--eye-mode-iris, #d8371c); }
+:root[data-theme="xp"] .eye-btn.on .eye-iris-ring,
+:root[data-theme="xp"] .eye-btn[aria-pressed="true"] .eye-iris-ring { stroke: var(--eye-mode-ring, #ffe680); }
+:root[data-theme="xp"] .eye-btn.on .eye-pupil,
+:root[data-theme="xp"] .eye-btn[aria-pressed="true"] .eye-pupil { fill: var(--eye-mode-pupil, #2b0a00); }
 
 /* 滑杆 */
 :root[data-theme="xp"] input[type=range]::-webkit-slider-runnable-track {
@@ -3356,6 +3462,41 @@
   box-shadow: none;
 }
 :root[data-theme="pixel"] .tsep { background: var(--tpx-line); box-shadow: none; }
+:root[data-theme="pixel"] .eye-btn {
+  border-radius: 0;
+  color: var(--tpx-accent);
+  background: var(--tpx-surf-btn);
+  border: 2px solid var(--tpx-accent);
+  box-shadow: 2px 2px 0 var(--tpx-surf-deep);
+}
+:root[data-theme="pixel"] .eye-btn:hover {
+  color: var(--tpx-warn);
+  border-color: var(--tpx-warn);
+  box-shadow: 2px 2px 0 var(--tpx-surf-deep), 0 0 8px var(--tpx-accent-glow);
+}
+:root[data-theme="pixel"] .eye-btn .eye-sclera { fill: var(--tpx-surf-deep); }
+:root[data-theme="pixel"] .eye-btn .eye-iris { fill: var(--tpx-accent); }
+:root[data-theme="pixel"] .eye-btn .eye-iris-ring { stroke: var(--tpx-warn); }
+:root[data-theme="pixel"] .eye-btn .eye-pupil { fill: var(--tpx-surf-deep); }
+:root[data-theme="pixel"] .eye-btn .eye-lid { fill: var(--tpx-surf-btn); }
+:root[data-theme="pixel"] .eye-btn.on,
+:root[data-theme="pixel"] .eye-btn[aria-pressed="true"] {
+  color: var(--tpx-warn);
+  background: var(--tpx-primary);
+  border-color: var(--tpx-warn);
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--tpx-surf-deep), 0 0 10px var(--tpx-accent-glow);
+  animation: none;
+  filter: none;
+}
+:root[data-theme="pixel"] .eye-btn.on .eye-sclera,
+:root[data-theme="pixel"] .eye-btn[aria-pressed="true"] .eye-sclera { fill: var(--tpx-surf-deep); }
+:root[data-theme="pixel"] .eye-btn.on .eye-iris,
+:root[data-theme="pixel"] .eye-btn[aria-pressed="true"] .eye-iris { fill: var(--eye-mode-iris, var(--tpx-warn)); }
+:root[data-theme="pixel"] .eye-btn.on .eye-iris-ring,
+:root[data-theme="pixel"] .eye-btn[aria-pressed="true"] .eye-iris-ring { stroke: var(--eye-mode-ring, var(--tpx-ok)); }
+:root[data-theme="pixel"] .eye-btn.on .eye-pupil,
+:root[data-theme="pixel"] .eye-btn[aria-pressed="true"] .eye-pupil { fill: var(--eye-mode-pupil, var(--tpx-surf-deep)); }
 
 /* 滑杆 */
 :root[data-theme="pixel"] input[type=range]::-webkit-slider-runnable-track {
@@ -3994,6 +4135,41 @@
   box-shadow: none;
 }
 :root[data-theme="modern"] .tsep { background: var(--md-outline-variant); box-shadow: none; }
+:root[data-theme="modern"] .eye-btn {
+  border-radius: 12px;
+  color: var(--md-on-surface-variant, var(--md-on-surface));
+  background: var(--md-surface-high);
+  border: 1px solid var(--md-outline-variant);
+  box-shadow: none;
+}
+:root[data-theme="modern"] .eye-btn:hover {
+  color: var(--md-primary);
+  border-color: var(--md-primary);
+  background: var(--md-primary-container);
+  box-shadow: none;
+}
+:root[data-theme="modern"] .eye-btn .eye-sclera { fill: var(--md-surface, #ffffff); }
+:root[data-theme="modern"] .eye-btn .eye-iris { fill: var(--md-primary); }
+:root[data-theme="modern"] .eye-btn .eye-iris-ring { stroke: var(--md-primary-container); }
+:root[data-theme="modern"] .eye-btn .eye-pupil { fill: var(--md-on-surface); }
+:root[data-theme="modern"] .eye-btn .eye-lid { fill: var(--md-surface-high); }
+:root[data-theme="modern"] .eye-btn.on,
+:root[data-theme="modern"] .eye-btn[aria-pressed="true"] {
+  color: var(--md-on-primary, #ffffff);
+  background: var(--md-tertiary);
+  border-color: var(--md-tertiary);
+  box-shadow: 0 2px 8px var(--md-primary-34);
+  animation: none;
+  filter: none;
+}
+:root[data-theme="modern"] .eye-btn.on .eye-sclera,
+:root[data-theme="modern"] .eye-btn[aria-pressed="true"] .eye-sclera { fill: var(--md-surface, #ffffff); }
+:root[data-theme="modern"] .eye-btn.on .eye-iris,
+:root[data-theme="modern"] .eye-btn[aria-pressed="true"] .eye-iris { fill: var(--eye-mode-iris, var(--md-primary)); }
+:root[data-theme="modern"] .eye-btn.on .eye-iris-ring,
+:root[data-theme="modern"] .eye-btn[aria-pressed="true"] .eye-iris-ring { stroke: var(--eye-mode-ring, var(--md-tertiary-container)); }
+:root[data-theme="modern"] .eye-btn.on .eye-pupil,
+:root[data-theme="modern"] .eye-btn[aria-pressed="true"] .eye-pupil { fill: var(--eye-mode-pupil, var(--md-on-tertiary-container)); }
 
 /* M3 滑杆 */
 :root[data-theme="modern"] input[type=range]::-webkit-slider-runnable-track {

@@ -742,6 +742,150 @@ input[type=range]:active::-webkit-slider-thumb { transform: scale(1.05); }
 }
 .tool kbd, .abtn kbd { font: 9px Consolas, monospace; opacity: .55; margin-left: 3px; }
 
+/* 莫名其妙的眼睛按钮（传输栏空白处右侧） */
+.eye-btn {
+  --eye-dx: 0px;
+  --eye-dy: 0px;
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  position: relative;
+  color: #1c5a7d;
+  border: 1px solid #7aaac7;
+  background: var(--gloss);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .94),
+    inset 0 -1px 2px rgba(155, 222, 252, .5),
+    0 1px 3px rgba(10, 56, 88, .16);
+  transition: box-shadow .16s ease, border-color .16s ease, background .16s ease, transform .1s ease, color .16s ease;
+}
+.eye-btn:hover {
+  color: #0e4a73;
+  border-color: #469cd2;
+  background: var(--gloss-hover);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 0 8px rgba(85, 200, 255, .55),
+    0 0 10px rgba(72, 198, 255, .42);
+}
+.eye-btn:active {
+  transform: translateY(1px);
+}
+.eye-btn.on,
+.eye-btn[aria-pressed="true"] {
+  color: #ffffff;
+  border-color: #6b2ca8;
+  background:
+    radial-gradient(circle at 50% 85%, rgba(110, 255, 232, .58) 0%, rgba(110, 255, 232, 0) 60%),
+    linear-gradient(180deg, #e7c8ff 0%, #9b5de5 46%, #5a22b8 54%, #20b7e6 100%);
+  box-shadow:
+    inset 0 1px 3px rgba(28, 6, 62, .58),
+    inset 0 -1px 2px rgba(160, 255, 240, .62),
+    0 0 12px rgba(145, 72, 240, .65),
+    0 0 4px rgba(64, 228, 255, .75);
+  animation: eyeAuraPulse 2.4s ease-in-out infinite;
+}
+.eye-btn .eye-svg {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+.eye-btn .eye-sclera {
+  fill: rgba(255, 255, 255, .86);
+  transition: fill .18s ease;
+}
+.eye-btn .eye-iris-wrap {
+  transform: translate(var(--eye-dx), var(--eye-dy));
+  transition: transform .12s ease-out;
+}
+.eye-btn .eye-iris {
+  fill: #2aa3dc;
+  transition: fill .2s ease;
+}
+.eye-btn .eye-iris-ring {
+  stroke: rgba(255, 255, 255, .65);
+  transition: stroke .2s ease;
+}
+.eye-btn .eye-pupil {
+  fill: #07263b;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform .18s ease, fill .18s ease;
+}
+.eye-btn .eye-catch,
+.eye-btn .eye-catch-sm {
+  fill: #ffffff;
+}
+.eye-btn .eye-lid {
+  fill: #b9dcf2;
+  opacity: .92;
+  transform: translateY(-4.5px);
+  transition: transform .18s ease, opacity .18s ease, fill .18s ease;
+  animation: eyeIdleBlink 6.8s ease-in-out infinite;
+}
+.eye-btn:hover .eye-lid {
+  transform: translateY(-7.2px);
+  animation: none;
+}
+.eye-btn .eye-rays {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(.75);
+  transition: opacity .2s ease, transform .22s cubic-bezier(.22, 1.35, .36, 1);
+}
+.eye-btn.on .eye-sclera,
+.eye-btn[aria-pressed="true"] .eye-sclera {
+  fill: #ffffff;
+}
+.eye-btn.on .eye-iris,
+.eye-btn[aria-pressed="true"] .eye-iris {
+  fill: var(--eye-mode-iris, #ff4fd8);
+}
+.eye-btn.on .eye-iris-ring,
+.eye-btn[aria-pressed="true"] .eye-iris-ring {
+  stroke: var(--eye-mode-ring, #72ffea);
+}
+.eye-btn.on .eye-pupil,
+.eye-btn[aria-pressed="true"] .eye-pupil {
+  fill: var(--eye-mode-pupil, #1b0536);
+  animation: eyePupilPulse 1.6s ease-in-out infinite;
+}
+.eye-btn.on .eye-lid,
+.eye-btn[aria-pressed="true"] .eye-lid {
+  transform: translateY(-13px);
+  opacity: 0;
+  animation: none;
+}
+.eye-btn.on .eye-rays,
+.eye-btn[aria-pressed="true"] .eye-rays {
+  opacity: .95;
+  transform: scale(1);
+}
+@keyframes eyeIdleBlink {
+  0%, 91%, 100% { transform: translateY(-4.5px); }
+  94.5% { transform: translateY(3.2px); }
+  97% { transform: translateY(-4.5px); }
+}
+@keyframes eyeAuraPulse {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(132, 72, 255, .42)); }
+  50% { filter: drop-shadow(0 0 5px rgba(72, 232, 255, .72)); }
+}
+@keyframes eyePupilPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eye-btn, .eye-btn .eye-lid, .eye-btn .eye-pupil { animation: none !important; }
+}
+
 .rollwrap {
   flex: 1; min-height: 0; border-radius: 11px; overflow: hidden; position: relative;
   border: 1px solid #6c9fc0; background: transparent;

@@ -316,7 +316,7 @@
       <main class="center">
         <div class="transport">
           <button class="pbtn play" data-act="play" id="btnPlay" aria-label="从游标播放 / 停止" title="从游标播放 / 停止（空格）" data-i18n-aria-label="transport.playAria" data-i18n-title="transport.playTitle"></button>
-          <button class="pbtn stop" data-act="stop" aria-label="停止并保留位置；已停止时回到第一个音符" title="停止并保留位置；已停止时回到第一个音符" data-i18n-aria-label="transport.stopAria" data-i18n-title="transport.stopTitle"></button>
+          <button class="pbtn stop" data-act="stop" aria-label="停止并保留位置；已停止时回到第一个音素前，再按回到曲谱开头" title="停止并保留位置；已停止时回到第一个音素前，再按回到曲谱开头" data-i18n-aria-label="transport.stopAria" data-i18n-title="transport.stopTitle"></button>
           <div class="tsep"></div>
           <label class="tl" data-i18n="transport.tempo">速度</label>
           <input type="number" id="tempo" class="numin" value="120" min="40" max="220">
@@ -344,6 +344,35 @@
           <label class="tl" style="cursor:pointer" title="开启后，拖动音符起点、调整音符结尾或粘贴时强制对齐到当前网格线（按住 Alt 拖动也可临时切换）" data-i18n-title="transport.forceSnapTitle"><input type="checkbox" id="forceSnapChk"> <span data-i18n="transport.forceSnap">强制吸附</span></label>
           <div class="tsep"></div>
           <label class="tl" style="cursor:pointer" title="跳过口腔与鼻腔共振，直接听未经滤波的声带音" data-i18n-title="transport.rawSrcTitle"><input type="checkbox" id="rawChk"> <span data-i18n="transport.rawSrc">只听声带音</span></label>
+          <button type="button" class="eye-btn" id="btnEyeMode" aria-pressed="false" title="……？" aria-label="莫名其妙的眼睛按钮" data-i18n-title="transport.eyeTitle" data-i18n-aria-label="transport.eyeAria">
+            <svg class="eye-svg" viewBox="0 0 32 22" width="24" height="16" aria-hidden="true" focusable="false">
+              <defs>
+                <clipPath id="nsgEyeClip">
+                  <path d="M2.5 11 C6.8 4.4, 25.2 4.4, 29.5 11 C25.2 17.6, 6.8 17.6, 2.5 11 Z"/>
+                </clipPath>
+              </defs>
+              <g class="eye-rays" stroke="currentColor" stroke-width="1.35" stroke-linecap="round">
+                <line x1="16" y1="0.8" x2="16" y2="3.2"/>
+                <line x1="8.2" y1="2.4" x2="9.7" y2="4.4"/>
+                <line x1="23.8" y1="2.4" x2="22.3" y2="4.4"/>
+                <line x1="16" y1="21.2" x2="16" y2="18.8"/>
+                <line x1="8.2" y1="19.6" x2="9.7" y2="17.6"/>
+                <line x1="23.8" y1="19.6" x2="22.3" y2="17.6"/>
+              </g>
+              <path class="eye-sclera" d="M2.5 11 C6.8 4.4, 25.2 4.4, 29.5 11 C25.2 17.6, 6.8 17.6, 2.5 11 Z"/>
+              <g clip-path="url(#nsgEyeClip)">
+                <g class="eye-iris-wrap">
+                  <circle class="eye-iris" cx="16" cy="11" r="4.8"/>
+                  <circle class="eye-iris-ring" cx="16" cy="11" r="3.4" fill="none" stroke-width="0.9"/>
+                  <circle class="eye-pupil" cx="16" cy="11" r="2.1"/>
+                  <circle class="eye-catch" cx="14.3" cy="9.3" r="1.05"/>
+                  <circle class="eye-catch-sm" cx="17.6" cy="12.6" r="0.52"/>
+                </g>
+                <rect class="eye-lid" x="0" y="0" width="32" height="12.5"/>
+              </g>
+              <path class="eye-outline" d="M2.5 11 C6.8 4.4, 25.2 4.4, 29.5 11 C25.2 17.6, 6.8 17.6, 2.5 11 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
         <div class="rolltools">
           <button class="abtn tiny" id="hdVoice" aria-pressed="false" title="开启原生 48kHz 模式B合成；关闭使用既有 16kHz 合成。切换会停止播放并重新渲染。" data-i18n="rolltools.hd" data-i18n-title="rolltools.hdTitle">HiFi</button>
@@ -507,6 +536,7 @@
 <script src="js/reverb.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/pianoroll.js"></script>
+<script src="js/eye-fx.js"></script>
 <script src="js/phoneme-panel.js"></script>
 <script src="js/compose.js"></script>
 <script src="assets/demo-project.js"></script>
