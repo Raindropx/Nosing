@@ -110,7 +110,7 @@
   }
 
   P._phoneTimeline = function () {
-    var cacheKey = this._notesPhoneSig ? (this._notesPhoneSig() + '|' + this._temposSig())
+    var cacheKey = this._notesPhoneSig ? ((this._frameNotes ? this._cachedPhoneSig : this._notesPhoneSig()) + '|' + this._temposSig())
       : JSON.stringify([this.notes, this.lang, this.phonemizer, this.tempo, this.tempos]);
     if (cacheKey !== this._phoneTimelineKey) {
       this._phoneTimelineKey = cacheKey;

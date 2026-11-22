@@ -1394,10 +1394,11 @@
     };
   }
 
-  function consonantOnset(n, lang) {
+  function consonantOnset(n, lang, phonemizer) {
     var phones = n.phones && n.phones.length ? n.phones : null;
     if (!phones && NSG.g2p) {
-      var syl = NSG.g2p(n.lyric || '', n.lang || lang);
+      var explicitLang = n.noteLang || (n.langSource === 'note' ? n.lang : '');
+      var syl = NSG.g2p(n.lyric || '', explicitLang || phonemizer || n.lang || lang || 'zh');
       phones = syl.length ? syl[0].phones : null;
     }
     return !!(phones && phones.length && NSG.phoneOf(phones[0]).t !== 'V');
@@ -1480,7 +1481,7 @@
         var end = Math.min(audio.pcm.length, Math.round(tm.secOf(n.start + n.dur) * audio.sr));
         var prev = voiced[index - 1];
         var follows = prev && Math.abs(tm.secOf(prev.start + prev.dur) - tm.secOf(n.start)) < 1e-6;
-        var from = follows && consonantOnset(n, score.lang) && end - begin > bleed * 4 ? begin + bleed : begin;
+        var from = follows && consonantOnset(n, score.lang, score.phonemizer) && end - begin > bleed * 4 ? begin + bleed : begin;
         var sum = 0, windows = [];
         for (var i = from; i < end; i += block) {
           var stop = Math.min(end, i + block), sq = 0;

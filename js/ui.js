@@ -1814,12 +1814,12 @@
       { t: t('boot.step6', null, '正在绘制频率网格'), p: 96 }
     ];
     var i = 0;
-    var langs = ['zh', 'zh-x-sichuan', 'yue', 'ja', 'en', 'de', 'nan', 'hak', 'nan-x-teochew', 'xdi8'];
+    var langs = NSG.collectScoreLanguages(NSG.DEMO_PROJECT.score, undefined, true);
     var loaded = 0, failed = [];
     langs.forEach(function (L) {
       NSG.loadDict(L).then(function () { loaded++; }, function () { failed.push(L); });
     });
-    // 发音和首次音频渲染都依赖字典，必须等全部加载成功后再开放编辑。
+    // 只等待示例使用的词典；其他语言在选用或导入时加载。
     var tick = setInterval(function () {
       var s = steps[Math.min(i, steps.length - 1)];
       if (i === 3) {
@@ -2496,11 +2496,22 @@
     if (!silent && TOOL_NAMES[tool]) setStatus(t('ui.toolStatus', { name: toolDisplayName(tool) }, '工具：' + TOOL_NAMES[tool]));
   }
 
-  function changeLanguage(lang) {
+  var trackLanguageRequest = 0;
+  async function changeLanguage(lang) {
     // Keep source lyrics and pronunciation overrides intact. The phonemizer
     // works on runtime copies, so switching back restores their original meaning.
     if (state.playing || playPending) stopPlay();
     var tr = activeVocalTrack();
+    var request = ++trackLanguageRequest;
+    try { await NSG.loadDict(lang); }
+    catch (e) {
+      if (request === trackLanguageRequest && tr === activeVocalTrack()) {
+        $('#langSel').value = roll.trackLanguage();
+        setStatus(tMsg(e.message));
+      }
+      return;
+    }
+    if (request !== trackLanguageRequest || tr !== activeVocalTrack()) return;
     if (tr) {
       var tracks = (state.score && state.score.tracks) || [];
       tracks.forEach(function (other) {
@@ -2713,7 +2724,7 @@
       });
     });
     $('#zoomX').addEventListener('input', function () { roll.setZoomX(+this.value); });
-    $('#zoomY').addEventListener('input', function () { roll.rowH = +this.value; roll.requestDraw(); });
+    $('#zoomY').addEventListener('input', function () { roll.rowH = +this.value; roll.requestDraw(true); });
     $('#fitRoll').addEventListener('click', function () {
       roll.fit(); $('#zoomX').value = roll.pxBeat; $('#zoomY').value = roll.rowH;
     });
@@ -4965,6 +4976,8 @@
       res = (await getRenderer().compute('normalize', { imported: res, options: { decouple: true } })).imported;
     }
     if (!currentImport(context)) return;
+    await NSG.ensureScoreDicts(res);
+    if (!currentImport(context)) return;
     if (state.playing || playPending) stopPlay();
     if (isAppend) {
       applyAppended(f, res);
@@ -5136,7 +5149,7 @@
         var kind = NSG.IO.sniff(bytes, f.name);
         if (kind === 'unknown') { setStatus(t('imp.unknownFormat', null, '无法识别文件格式')); alert(t('imp.unknownFormatAlert', null, '认不出这个文件格式。支持 MIDI、VSQ、VSQX、VPR、SVP、UST、USTX、TLP、TLPX、NN、Y77、AISP、ACEP、VCP、VSP、DSC、ufdata、NSG、CCS、CCST、TSSLN、DV、SK、MTP、VSPX 和 VOG。')); return; }
         setStatus(t('imp.reading', null, '正在读取工程…'));
-        var res = (await getRenderer().compute('read', { name: f.name, bytes: bytes })).imported;
+        var res = (await getRenderer().compute('read', { name: f.name, bytes: bytes, kind: kind })).imported;
         if (!currentImport(context)) return;
         await chooseImportTrack(f, res, context);
       } catch (e) {
@@ -5505,26 +5518,28 @@
     'tok', 'eo', 'asaxi', 'xdi8', 'tlh'
   ];
 
-  function setSelectedNotesLanguage(lang, targetNotes) {
+  var noteLanguageRequests = new WeakMap();
+  async function setSelectedNotesLanguage(lang, targetNotes) {
     if (!roll || typeof roll.setNoteLanguage !== 'function') return { n: 0, changed: 0 };
     var nextLang = (lang && typeof lang === 'string') ? lang.trim() : '';
-    var dictPromise = nextLang && NSG && typeof NSG.loadDict === 'function' ? NSG.loadDict(nextLang) : null;
-    var res = roll.setNoteLanguage(nextLang, targetNotes);
+    var tr = activeVocalTrack(), request = {};
+    var targets = targetNotes || roll.selected();
+    targets.forEach(function (n) { noteLanguageRequests.set(n, request); });
+    try { if (nextLang) await NSG.loadDict(nextLang); }
+    catch (e) {
+      if (tr === activeVocalTrack() && targets.some(function (n) { return noteLanguageRequests.get(n) === request; })) setStatus(tMsg(e.message));
+      return;
+    }
+    if (tr !== activeVocalTrack()) return;
+    var current = new Set(roll.notes);
+    targets = targets.filter(function (n) { return current.has(n) && noteLanguageRequests.get(n) === request; });
+    if (!targets.length) return;
+    var res = roll.setNoteLanguage(nextLang, targets);
     if (!res.n) return res;
     state.dirty = true;
     updateStat();
     syncInspector();
     renderAndAnalyze(60);
-    if (dictPromise && typeof dictPromise.then === 'function') {
-      dictPromise.then(function () {
-        if (roll) {
-          roll._cachedPhoneSig = '';
-          roll.draw();
-        }
-        state.dirty = true;
-        renderAndAnalyze(40);
-      }, function () {});
-    }
     var trkLang = roll.trackLanguage ? roll.trackLanguage() : (roll.phonemizer || roll.lang || state.score.lang || 'zh');
     if (nextLang) {
       setStatus(t('ui.noteLangSet', { n: res.n, lang: tLangName(nextLang) }, '已将 ' + res.n + ' 个音符的语言设为 ' + tLangName(nextLang) + ' · 可撤销'));
@@ -6112,7 +6127,7 @@
     $('#uiTransparency').value = amount;
     $('#uiTransparency').setAttribute('aria-valuetext', t('ui.transparencyAria', { pct: amount }, amount + '% 透明'));
     $('#uiTransparencyValue').textContent = amount + '%';
-    if (roll) { roll.backgroundOpacity = alpha; roll.requestDraw(); }
+    if (roll) { roll.backgroundOpacity = alpha; roll.requestDraw(true); }
   }
 
   function setBg(id) {

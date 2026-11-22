@@ -12,6 +12,7 @@
   var DICT_FILE = { zh: 'js/data/zh.js', 'zh-x-sichuan': 'js/data/zh-x-sichuan.js', yue: 'js/data/yue.js', ja: 'js/data/ja.js', en: 'js/data/en.js', de: 'js/data/de.js', nan: 'js/data/nan.js', th: 'js/data/th.js',
     hak: 'js/data/hak.js', 'nan-x-teochew': 'js/data/nan-x-teochew.js', xdi8: 'js/data/xdi8.js' };
   var cache = {};
+  var pendingDicts = new Map();
   var g2pCache = new Map(), G2P_CACHE_MAX = 4096;
   var ROMANCE_LANG = /^(es|pt|it|fr|ro)$/;
   var SOUTHEAST_ASIAN_LANG = /^(fil|id|ms|th)$/;
@@ -40,7 +41,7 @@
 
   NSG.loadDict = function (lang) {
     // 规则音素器不需要外部字典；主线程与 Worker 均可直接使用。
-    if (/^(ko|vi|pl|ru|uk|fi|eo|tok|asaxi|tlh|fil|id|ms)$/.test(lang) || ROMANCE_LANG.test(lang)) return Promise.resolve({});
+    if (!Object.prototype.hasOwnProperty.call(DICT_FILE, lang)) return Promise.resolve({});
     if (cache[lang]) return Promise.resolve(cache[lang]);
     if (root.NSG_DICT[lang]) {
       cache[lang] = makeMap(root.NSG_DICT[lang], lang);
@@ -48,17 +49,29 @@
       return Promise.resolve(cache[lang]);
     }
     if (lang === 'th' && typeof document === 'undefined') return Promise.resolve({});
-    return new Promise(function (res, rej) {
+    if (pendingDicts.has(lang)) return pendingDicts.get(lang);
+    var loading = new Promise(function (res, rej) {
       var s = document.createElement('script');
       s.src = DICT_FILE[lang];
       s.onload = function () {
-        cache[lang] = makeMap(root.NSG_DICT[lang] || '', lang);
-        g2pCache.clear();
-        res(cache[lang]);
+        try {
+          if (!root.NSG_DICT[lang]) throw new Error('字典加载失败: ' + lang);
+          cache[lang] = makeMap(root.NSG_DICT[lang], lang);
+          g2pCache.clear();
+          res(cache[lang]);
+        } catch (e) {
+          if (s.parentNode) s.parentNode.removeChild(s);
+          rej(e);
+        }
       };
-      s.onerror = function () { rej(new Error('字典加载失败: ' + lang)); };
+      s.onerror = function () {
+        if (s.parentNode) s.parentNode.removeChild(s);
+        rej(new Error('字典加载失败: ' + lang));
+      };
       document.head.appendChild(s);
-    });
+    }).finally(function () { pendingDicts.delete(lang); });
+    pendingDicts.set(lang, loading);
+    return loading;
   };
 
   function enWordEnd(str, start, end) {
@@ -137,7 +150,7 @@
     return m;
   }
 
-  NSG.collectScoreLanguages = function (score, extraLang) {
+  NSG.collectScoreLanguages = function (score, extraLang, includeMuted) {
     var seen = Object.create(null), list = [];
     function add(l) {
       if (!l || typeof l !== 'string') return;
@@ -145,37 +158,42 @@
     }
     add(extraLang);
     if (score && typeof score === 'object') {
-      add(score.phonemizer);
-      add(score.lang);
+      var scorePh = score.phonemizer, scoreLang = score.lang;
       if (score.project) {
-        NSG.collectScoreLanguages(score.project).forEach(add);
-      }
-      var tracks = [];
-      if (Array.isArray(score.tracks)) tracks = tracks.concat(score.tracks);
-      if (Array.isArray(score.selectedTracks)) tracks = tracks.concat(score.selectedTracks);
-      for (var t = 0; t < tracks.length; t++) {
-        var tr = tracks[t];
-        if (!tr || tr.type === 'inst' || tr.muted) continue;
-        add(tr.phonemizer);
-        add(tr.lang);
-        var notes = tr.notes;
-        if (Array.isArray(notes)) {
-          for (var i = 0; i < notes.length; i++) {
-            var n = notes[i];
-            if (!n) continue;
-            add(n.noteLang);
-            add(n.lang);
-            add(n.phonesLang);
+        NSG.collectScoreLanguages(score.project.score || score.project, undefined, includeMuted).forEach(add);
+      } else {
+        var tracks = [];
+        if (Array.isArray(score.tracks)) tracks = tracks.concat(score.tracks);
+        if (Array.isArray(score.selectedTracks)) tracks = tracks.concat(score.selectedTracks);
+        if (tracks.length) {
+          for (var t = 0; t < tracks.length; t++) {
+            var tr = tracks[t];
+            if (!tr || tr.type === 'inst' || (tr.muted && !includeMuted)) continue;
+            var trPh = tr.phonemizer !== undefined ? tr.phonemizer : scorePh;
+            var trLang = tr.lang || scoreLang;
+            add(trPh);
+            add(trLang);
+            var notes = tr.notes;
+            if (Array.isArray(notes)) {
+              for (var i = 0; i < notes.length; i++) {
+                var n = notes[i];
+                if (!n) continue;
+                var explicitLang = n.noteLang || (n.langSource === 'note' ? n.lang : '');
+                add(explicitLang || trPh || n.lang || trLang);
+              }
+            }
           }
-        }
-      }
-      if (Array.isArray(score.notes)) {
-        for (var j = 0; j < score.notes.length; j++) {
-          var sn = score.notes[j];
-          if (!sn) continue;
-          add(sn.noteLang);
-          add(sn.lang);
-          add(sn.phonesLang);
+        } else {
+          add(scorePh);
+          add(scoreLang);
+          if (Array.isArray(score.notes)) {
+            for (var j = 0; j < score.notes.length; j++) {
+              var sn = score.notes[j];
+              if (!sn) continue;
+              var sExplicit = sn.noteLang || (sn.langSource === 'note' ? sn.lang : '');
+              add(sExplicit || scorePh || sn.lang || scoreLang);
+            }
+          }
         }
       }
     }
@@ -184,7 +202,8 @@
   };
 
   NSG.ensureScoreDicts = function (score, extraLang) {
-    var langs = NSG.collectScoreLanguages(score, extraLang);
+    // Muted layers can still be opened and edited.
+    var langs = NSG.collectScoreLanguages(score, extraLang, true);
     return Promise.all(langs.map(function (l) { return NSG.loadDict(l); }));
   };
 

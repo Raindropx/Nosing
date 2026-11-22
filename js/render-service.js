@@ -77,7 +77,7 @@
   }
   function jobDictLangs(type, data) {
     if (!data || type === 'accomp' || type === 'extract' || type === 'analyzeVocal') return [];
-    if (type === 'read') return ['zh', 'en'];
+    if (type === 'read') return data.kind === 'nsg' ? [] : ['zh', 'en'];
     var extra = data.options && (data.options.phonemizer || data.options.lang);
     if (type === 'normalize' && data.imported) {
       return NSG.collectScoreLanguages ? NSG.collectScoreLanguages(data.imported, extra) : ['zh', 'en', 'ja'];
@@ -321,15 +321,22 @@
     else this.disabled = true;
     if (this.active) this._dispatch(this.active);
   };
-  Client.prototype._dispatch = function (job) {
+  Client.prototype._dispatch = async function (job) {
     var self = this, worker = this._worker();
     if (worker) {
+      var needed;
+      if (this.portable) {
+        needed = jobDictLangs(job.type, job.data);
+        try { await Promise.all(needed.map(function (lang) { return NSG.loadDict(lang); })); }
+        catch (e) { if (this.worker === worker) this._finish(job, e); return; }
+        if (this.worker !== worker || this.active !== job) return;
+      }
       try {
         // Only the first response has a startup deadline; long songs may take longer.
         if (!this.started) this.startupTimer = setTimeout(function () { self._fallback(); }, 30000);
         var payload = { id: job.id, type: job.type, data: job.data };
         if (this.portable && root.NSG_DICT) {
-          var needed = jobDictLangs(job.type, job.data), unsent = null;
+          var unsent = null;
           for (var i = 0; i < needed.length; i++) {
             var L = needed[i];
             if (!this.sentDicts[L] && root.NSG_DICT[L] !== undefined) {
@@ -431,7 +438,7 @@
   };
   Client.prototype.compute = function (type, data) {
     if (type === 'read' && data && data.bytes instanceof Uint8Array) {
-      return this._submit(type, { name: data.name, bytes: data.bytes }, null);
+      return this._submit(type, { name: data.name, bytes: data.bytes, kind: data.kind }, null);
     }
     if (type === 'analyzeVocal' && data && data.pcm instanceof Float32Array) {
       return this._submit(type, { pcm: data.pcm, sr: data.sr, f0: data.f0 }, null);
@@ -448,5 +455,5 @@
     this.active = null; this.queue = []; this.cache = {}; this.vocalByMode = { std: null, hd: null };
   };
   NSG.Renderer = { create: function (options) { return new Client(options); },
-    vocalKey: vocalKey, accompKey: accompKey, execute: execute };
+    vocalKey: vocalKey, accompKey: accompKey, jobDictLangs: jobDictLangs, execute: execute };
 })(typeof window !== 'undefined' ? window : globalThis);

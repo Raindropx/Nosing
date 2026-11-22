@@ -191,7 +191,7 @@
     var anchorBeat = this.xBeat(anchorX);
     this.pxBeat = pxBeat;
     this.scrollBeat = Math.max(0, anchorBeat - (anchorX - this.kbW) / this.pxBeat);
-    this.requestDraw();
+    this.requestDraw(true);
   };
 
   var BLACK = { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 };
@@ -629,13 +629,16 @@
     return explicitLang || this.phonemizer || n.lang || this.lang || 'zh';
   };
 
-  PianoRoll.prototype._syncScrollbar = function () {
+  PianoRoll.prototype._syncScrollbar = function (contentEnd) {
     if (!this.scrollbar) return;
-    var width = Math.max(1, this.w - this.kbW, this.scrollbar.clientWidth || 0), end = 16;
-    this.notes.forEach(function (n) { end = Math.max(end, Math.ceil((n.start + n.dur) / 4) * 4 + 4); });
-    (this.ghostTracks || []).forEach(function (tr) {
-      (tr.notes || []).forEach(function (n) { end = Math.max(end, Math.ceil((n.start + n.dur) / 4) * 4 + 4); });
-    });
+    var width = Math.max(1, this.w - this.kbW, this.scrollbar.clientWidth || 0);
+    var end = typeof contentEnd === 'number' ? contentEnd : 16;
+    if (typeof contentEnd !== 'number') {
+      this.notes.forEach(function (n) { end = Math.max(end, Math.ceil((n.start + n.dur) / 4) * 4 + 4); });
+      (this.ghostTracks || []).forEach(function (tr) {
+        (tr.notes || []).forEach(function (n) { end = Math.max(end, Math.ceil((n.start + n.dur) / 4) * 4 + 4); });
+      });
+    }
     // Keep the current view reachable when wheel scrolling beyond the last note.
     end = Math.max(end, this.scrollBeat + width / this.pxBeat);
     var prevScrollLeft = this.scrollbar.scrollLeft;
@@ -651,11 +654,13 @@
   };
 
   /* 合并同一帧内的多次重绘请求（拖动、滚轮、滚动条），避免一次鼠标事件重画一遍整屏 */
-  PianoRoll.prototype.requestDraw = function () {
-    if (typeof requestAnimationFrame !== 'function') { this.draw(); return; }
+  PianoRoll.prototype.requestDraw = function (viewOnly) {
+    // An edit must win even if a scroll already queued this frame.
+    if (viewOnly !== true) this._drawNotes = null;
+    if (typeof requestAnimationFrame !== 'function') { this.draw(viewOnly); return; }
     if (this._raf) return;
     var self = this;
-    this._raf = requestAnimationFrame(function () { self._raf = 0; self.draw(); });
+    this._raf = requestAnimationFrame(function () { self._raf = 0; self.draw(true); });
   };
 
   PianoRoll.prototype._sceneView = function () {
@@ -666,7 +671,7 @@
 
   /* 只移动播放头：视图没变就贴底图 + 画播放头，不重算音符与 PIT 曲线 */
   PianoRoll.prototype.drawCursor = function () {
-    if (!this.base || this._raf || this._sceneKey !== this._sceneView()) { this.draw(); return; }
+    if (!this.base || this._raf || this._sceneKey !== this._sceneView()) { this.draw(true); return; }
     this._present();
   };
 
@@ -743,14 +748,35 @@
     if (eyeOn) eyeFx.renderOverPlayhead(v, T);
   };
 
-  PianoRoll.prototype.draw = function () {
+  PianoRoll.prototype._prepareDrawNotes = function () {
+    var phones = this._phonemizedNotes(), resolved = Object.create(null);
+    phones.forEach(function (n) { resolved[n.id] = n; });
+    var list = this.notes.slice().sort(function (a, b) { return a.start - b.start || a.pitch - b.pitch; });
+    var trackLang = this.trackLanguage(), prevLang = trackLang, self = this;
+    var langs = Object.create(null), firstForeign = Object.create(null), contentEnd = 16;
+    list.forEach(function (n) {
+      contentEnd = Math.max(contentEnd, Math.ceil((n.start + n.dur) / 4) * 4 + 4);
+      var lang = (resolved[n.id] && resolved[n.id].lang) || self.noteLanguage(n);
+      langs[n.id] = lang;
+      if (lang !== trackLang && lang !== prevLang) firstForeign[n.id] = lang;
+      prevLang = lang;
+    });
+    (this.ghostTracks || []).forEach(function (tr) {
+      (tr.notes || []).forEach(function (n) { contentEnd = Math.max(contentEnd, Math.ceil((n.start + n.dur) / 4) * 4 + 4); });
+    });
+    return { phones: phones, resolved: resolved, list: list, langs: langs, firstForeign: firstForeign, contentEnd: contentEnd };
+  };
+
+  PianoRoll.prototype.draw = function (viewOnly) {
     if (this._raf && typeof cancelAnimationFrame === 'function') { cancelAnimationFrame(this._raf); this._raf = 0; }
-    this._syncScrollbar();
     var c = this.ctx, w = this.w, h = this.h, self = this, T = this._themePalette();
     var kbW = this.kbW;
     var gridH = this.gridBottom();
-    // 本帧内音素化只做一次，音符与 PIT 曲线共用
-    this._frameNotes = this._phonemizedNotes();
+    // Scrolling changes coordinates only. Content redraws refresh the runtime notes and pitch model.
+    if (viewOnly !== true || !this._drawNotes) this._drawNotes = this._prepareDrawNotes();
+    var data = this._drawNotes;
+    this._frameNotes = data.phones;
+    this._syncScrollbar(data.contentEnd);
     c.clearRect(0, 0, w, h);
     c.save(); c.beginPath(); c.rect(kbW, this.rulerH, Math.max(0, w - kbW), Math.max(0, gridH - this.rulerH)); c.clip();
 
@@ -841,31 +867,18 @@
       });
     }
     // 音符（按起点排序）
-    var drawList = this.activeTrackVisible === false ? [] : this.notes.slice().sort(function (a, b) { return a.start - b.start || a.pitch - b.pitch; });
-    var resolved = {};
-    this._frameNotes.forEach(function (n) { resolved[n.id] = n; });
+    var drawList = this.activeTrackVisible === false ? [] : data.list;
+    var resolved = data.resolved;
     var noteStyle = T.noteStyle || themeId || 'aero';
     var altT = this._altNotePalette(T);
     var trackLang = this.trackLanguage();
-    var prevNoteLang = trackLang;
-    var noteLangMap = Object.create(null);
-    var firstForeignLangMap = Object.create(null);
-    drawList.forEach(function (n) {
-      var r = resolved[n.id];
-      var nLang = (r && r.lang) || self.noteLanguage(n);
-      noteLangMap[n.id] = nLang;
-      if (nLang !== trackLang && nLang !== prevNoteLang) {
-        firstForeignLangMap[n.id] = nLang;
-      }
-      prevNoteLang = nLang;
-    });
     drawList.forEach(function (n) {
       var x = self.beatX(n.start), y = self.rowY(n.pitch);
       if (x > w || x + Math.max(6, n.dur * self.pxBeat) < kbW) return;   // 视口外的音符不画
       var isSlur = !!(resolved[n.id] || n).slur;
       var wd = Math.max(6, n.dur * self.pxBeat);
       var selected = !!self.sel[n.id];
-      var isForeignLang = noteLangMap[n.id] !== trackLang;
+      var isForeignLang = data.langs[n.id] !== trackLang;
       var NP = isForeignLang ? altT : T;
       var nx = noteStyle === '9x' || noteStyle === 'pixel' ? Math.round(x) + 0.5 : x + 0.5;
       var ny = Math.round(y) + 1;
@@ -950,14 +963,17 @@
 
     });
     this._lastPitchInfo = null;
-    if (this.activeTrackVisible !== false) this._drawTuning();
+    if (this.activeTrackVisible !== false) {
+      if (!data.pitch) data.pitch = this._pitchInfo();
+      this._drawTuning(data.pitch);
+    }
     if (this.drag && this.drag.mode === 'band') {
       c.fillStyle = T.bandFill; c.strokeStyle = T.bandStroke;
       c.fillRect(this.drag.x0, this.drag.y0, this.drag.x1 - this.drag.x0, this.drag.y1 - this.drag.y0);
       c.strokeRect(this.drag.x0, this.drag.y0, this.drag.x1 - this.drag.x0, this.drag.y1 - this.drag.y0);
     }
     // 音素与异种语言标记作为最上层叠加绘制，不被音符、调教曲线或选框盖住。
-    if (this.activeTrackVisible !== false) this._drawPhones(drawList, resolved, firstForeignLangMap, altT);
+    if (this.activeTrackVisible !== false) this._drawPhones(drawList, resolved, data.firstForeign, altT);
     c.restore();
 
     // 参数窗：逐音参数与连续曲线共用时间轴。
@@ -1276,7 +1292,7 @@
   };
 
   PianoRoll.prototype._notesPitchSig = function () {
-    var phoneSig = this._notesPhoneSig();
+    var phoneSig = this._frameNotes ? this._cachedPhoneSig : this._notesPhoneSig();
     var h1 = this._temposSig(), h2 = 0x27d4eb2d;
     var notes = this.notes || [];
     for (var i = 0; i < notes.length; i++) {
@@ -1659,8 +1675,8 @@
     c.fillStyle = T.pitNodeHi;
     c.beginPath(); c.arc(ptx - 1, pty - 1, 1.25, 0, Math.PI * 2); c.fill();
   }
-  PianoRoll.prototype._drawTuning = function () {
-    var self = this, c = this.ctx, info = this._pitchInfo(), T = this._themePalette();
+  PianoRoll.prototype._drawTuning = function (info) {
+    var self = this, c = this.ctx, T = this._themePalette();
     this._lastPitchInfo = info;
     var nodeStyle = T.nodeStyle || this.theme || NSG.theme || 'aero';
     var model = info._model || null;
@@ -1941,7 +1957,7 @@
         var beat = cur / self.pxBeat;
         if (Math.abs(beat - self.scrollBeat) * self.pxBeat <= 0.5) return;
         self.scrollBeat = Math.max(0, beat);
-        self.requestDraw();
+        self.requestDraw(true);
       });
     }
 
@@ -2163,7 +2179,7 @@
           var nw = Math.max(6, n.dur * self.pxBeat);
           if (nx < x2 && nx + nw > x1 && ny < y2 && ny + self.rowH > y1) self.sel[n.id] = 1;
         });
-        self.requestDraw();
+        self.requestDraw(true);
         return;
       }
       if (d.mode === 'vel') {
@@ -2325,7 +2341,7 @@
       } else {
         self.lowPitch = Math.max(12, Math.min(84, self.lowPitch - Math.sign(e.deltaY) * 2));
       }
-      self.requestDraw();
+      self.requestDraw(true);
     }, { passive: false });
 
     cv.addEventListener('mousemove', function (e) {

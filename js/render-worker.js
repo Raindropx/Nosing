@@ -8,19 +8,8 @@ var DICT_LANGS = { zh: 1, 'zh-x-sichuan': 1, yue: 1, ja: 1, en: 1, de: 1, nan: 1
 var loadedScripts = Object.create(null);
 var wasmReady = NSG.WASM.init('../assets/dsp/fft.wasm');
 wasmReady.then(function () { self.postMessage({ ready: true }); }, function () { self.postMessage({ ready: true }); });
-function jobLanguages(type, data) {
-  if (!data) return [];
-  if (type === 'accomp' || type === 'extract' || type === 'analyzeVocal') return [];
-  if (type === 'read') return ['zh', 'en'];
-  var extra = data.options && (data.options.phonemizer || data.options.lang);
-  if (type === 'normalize' && data.imported) {
-    return NSG.collectScoreLanguages ? NSG.collectScoreLanguages(data.imported, extra) : ['zh', 'en', 'ja'];
-  }
-  if (data.score && NSG.collectScoreLanguages) return NSG.collectScoreLanguages(data.score, extra);
-  return ['zh'];
-}
 async function ensureJobDicts(type, data) {
-  var langs = jobLanguages(type, data);
+  var langs = NSG.Renderer.jobDictLangs(type, data);
   for (var i = 0; i < langs.length; i++) {
     var lang = langs[i];
     if (!DICT_LANGS[lang]) continue;
