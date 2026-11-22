@@ -975,7 +975,7 @@
     hifiWaveguide: 1, hifiHighPolish: 1,
     dirty: true, playing: false, ctx: null, src: null,
     playStart: 0, playFromBeat: 0,
-    rawSrc: false, forceSnap: false, bgId: 'a1', theme: 'aero', uiTransparency: 15, harmHi: null,
+    rawSrc: false, forceSnap: false, relativeMotion: false, bgId: 'a1', theme: 'aero', uiTransparency: 15, harmHi: null,
     themeSchemes: {
       '9x': 'standard',
       xp: 'classic-blue',
@@ -1873,6 +1873,8 @@
     roll.forceSnap = !!state.forceSnap;
     var forceSnapChkInit = $('#forceSnapChk');
     if (forceSnapChkInit) forceSnapChkInit.checked = !!roll.forceSnap;
+    var relativeMotionChkInit = $('#relativeMotionChk');
+    if (relativeMotionChkInit) relativeMotionChkInit.checked = !!state.relativeMotion;
     roll.onContextMenu = onRollContextMenu;
     roll.onSelectionChange = syncInspector;
     roll.onTuningInput = syncInspector;
@@ -2274,6 +2276,24 @@
           state.forceSnap
             ? '强制吸附网格已开启 · 拖动音符起点与结尾将严格对齐网格线（按住 Alt 拖动可临时关闭）'
             : '强制吸附网格已关闭 · 拖动音符将保持原有相对偏移（按住 Alt 拖动可临时开启）'));
+      });
+    }
+    var relativeMotionChk = $('#relativeMotionChk');
+    if (relativeMotionChk) {
+      relativeMotionChk.addEventListener('change', function () {
+        state.relativeMotion = !!this.checked;
+        try {
+          if (state.relativeMotion) localStorage.setItem('nsg.relativeMotion', '1');
+          else localStorage.removeItem('nsg.relativeMotion');
+        } catch (e) { }
+        if (state.relativeMotion && state.playing && roll) {
+          applyRelativeMotionScroll(roll.playPos);
+          roll.draw();
+        }
+        setStatus(t(state.relativeMotion ? 'ui.relativeMotionOnStatus' : 'ui.relativeMotionOffStatus', null,
+          state.relativeMotion
+            ? '相对运动已开启 · 播放时指针停在第一小节位置，由钢琴窗向左滚动'
+            : '相对运动已关闭 · 播放时恢复常规翻页跟随'));
       });
     }
     bindRollControls();
@@ -4036,6 +4056,13 @@
     setStatus(t('ui.panic', null, 'Panic · 已停止所有音频'));
   }
 
+  function applyRelativeMotionScroll(beat) {
+    var viewBeats = Math.max(0.5, (roll.w - roll.kbW) / roll.pxBeat);
+    // 播放指针固定在第一小节末尾（4 拍）处；指针在第一小节前面时先向右走至该处再滚动钢琴窗
+    var anchorBeats = Math.min(4, viewBeats * 0.8);
+    roll.scrollBeat = Math.max(0, beat - anchorBeats);
+  }
+
   function animPlayhead() {
     if (!state.playing) return;
     var t = state.ctx.currentTime - state.playStart;
@@ -4043,10 +4070,14 @@
     var beat = state.tm.beatOf(t);
     roll.playPos = beat;
     syncCursor();
-    var viewBeats = (roll.w - roll.kbW) / roll.pxBeat;   // 键区不占时间轴，可视拍数要扣掉
-    if (beat > roll.scrollBeat + viewBeats * 0.82) roll.scrollBeat = beat - viewBeats * 0.5;
-    else if (beat < roll.scrollBeat) roll.scrollBeat = Math.max(0, beat - 2);
-    // 只有翻页时才整屏重画，其余帧只移动播放头
+    if (state.relativeMotion) {
+      applyRelativeMotionScroll(beat);
+    } else {
+      var viewBeats = (roll.w - roll.kbW) / roll.pxBeat;   // 键区不占时间轴，可视拍数要扣掉
+      if (beat > roll.scrollBeat + viewBeats * 0.82) roll.scrollBeat = beat - viewBeats * 0.5;
+      else if (beat < roll.scrollBeat) roll.scrollBeat = Math.max(0, beat - 2);
+    }
+    // 只有翻页或滚屏时才整屏重画，其余帧只移动播放头
     if (roll.drawCursor) roll.drawCursor(); else roll.draw();
     updateMetersAt(t);
     if (t >= state.playDuration) { stopPlay(); return; }
@@ -8133,6 +8164,7 @@
       savedTheme = localStorage.getItem('nsg.theme') || 'aero';
       savedTransparency = localStorage.getItem('nsg.uiTransparency');
       state.forceSnap = localStorage.getItem('nsg.forceSnap') === '1';
+      state.relativeMotion = localStorage.getItem('nsg.relativeMotion') === '1';
       if (localStorage.getItem('nsg.legacySound') === '1' && NSG.setLegacySound) NSG.setLegacySound(true);
       var savedSchemesRaw = localStorage.getItem('nsg.themeSchemes');
       if (savedSchemesRaw) {

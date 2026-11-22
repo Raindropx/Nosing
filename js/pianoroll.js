@@ -637,7 +637,10 @@
     // Keep the current view reachable when wheel scrolling beyond the last note.
     end = Math.max(end, this.scrollBeat + width / this.pxBeat);
     var prevScrollLeft = this.scrollbar.scrollLeft;
-    this.scrollbar.firstElementChild.style.width = Math.ceil(end * this.pxBeat) + 'px';
+    var widthPx = Math.ceil(end * this.pxBeat) + 'px';
+    if (this.scrollbar.firstElementChild.style.width !== widthPx) {
+      this.scrollbar.firstElementChild.style.width = widthPx;
+    }
     var left = Math.max(0, this.scrollBeat * this.pxBeat);
     if (Math.abs(this.scrollbar.scrollLeft - left) > 0.5) this.scrollbar.scrollLeft = left;
     if (this.scrollbar.scrollLeft !== prevScrollLeft) {

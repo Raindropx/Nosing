@@ -1698,6 +1698,7 @@
     this.trail = [];
     this.snakeChomp = 0;
     this.prevPlayPos = null;
+    this.prevScrollBeat = null;
     this.elapsed = 0;
     this.lastTs = 0;
     this.rafId = 0;
@@ -1754,6 +1755,27 @@
     this.trail = [];
     this.snakeChomp = 0;
     this.prevPlayPos = null;
+    this.prevScrollBeat = this.roll ? this.roll.scrollBeat : null;
+  };
+
+  EyeFx.prototype._syncScrollShift = function () {
+    var roll = this.roll;
+    if (!roll) return;
+    if (this.prevScrollBeat === null || this.prevScrollBeat === undefined) {
+      this.prevScrollBeat = roll.scrollBeat;
+      return;
+    }
+    var dBeat = roll.scrollBeat - this.prevScrollBeat;
+    this.prevScrollBeat = roll.scrollBeat;
+    if (!dBeat) return;
+    var dx = dBeat * roll.pxBeat;
+    if (!isFinite(dx)) return;
+    if (Math.abs(dx) > roll.w) {
+      this.trail = [];
+      return;
+    }
+    for (var ti = 0; ti < this.trail.length; ti++) this.trail[ti].x -= dx;
+    for (var pi = 0; pi < this.particles.length; pi++) this.particles[pi].x -= dx;
   };
 
   EyeFx.prototype.enter = function (forceModeId) {
@@ -1829,6 +1851,7 @@
 
     var roll = this.roll;
     if (!roll || !this.mode) return;
+    this._syncScrollShift();
     var T = roll._themePalette();
     var A = getAccents(T, roll.theme || NSG.theme || 'aero');
     var playPos = roll.playPos;
@@ -1986,6 +2009,7 @@
 
   EyeFx.prototype.renderUnderPlayhead = function (c, T) {
     if (!this.active || !this.mode) return;
+    this._syncScrollShift();
     var roll = this.roll, gridH = roll.gridBottom();
     var A = getAccents(T, roll.theme || NSG.theme || 'aero');
     this._frameItems = this._collectItems();
