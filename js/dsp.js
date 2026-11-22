@@ -1348,7 +1348,27 @@
       }
       var noteEv0 = ev.length;
 
-      var cur = start - pre;
+      // Work in seconds so the same performed gap behaves alike at every tempo.
+      // An onset consonant already borrows time; a bare vowel can use a little
+      // of the empty interval before its beat, without moving later phones.
+      var joinWindow = 0.024, joinStrength = 0, vowelPickup = 0;
+      if (prevChain && !manualTimes && !(tail && tail.locked) && !geminateRole[0] &&
+          notes[n - 1].lyricGroup === note.lyricGroup) {
+        var scoreGap = start - prevChain.endSec;
+        if (scoreGap > -1e-4 && scoreGap < joinWindow) {
+          var joinSpan = joinWindow;
+          if (notePhone(phones[0]).t === 'V' && lastEv && lastEv.av > 0 &&
+              lastEv.kind !== 'F' && lastEv.kind !== 'VB') {
+            // Meet the previous voice for gaps up to half the window. Beyond
+            // that, return the pickup to zero as the audible silence grows.
+            vowelPickup = Math.min(gap, joinWindow - Math.max(0, scoreGap));
+            joinSpan *= 0.5;
+          }
+          var proximity = Math.max(0, 1 - Math.max(0, scoreGap) / joinSpan);
+          joinStrength = proximity * proximity * (3 - 2 * proximity);
+        }
+      }
+      var cur = start - pre - vowelPickup;
       function singingJoin(firstEvent, phoneIndex) {
         if (manualTimes || !firstEvent) return;
         if (isMandarinLike && phoneIndex > 0 && phoneIndex === nuc && notePhone(phones[phoneIndex]).t === 'V') {
@@ -1386,8 +1406,7 @@
             return;
           }
         }
-        if (phoneIndex !== 0 || geminateRole[0] || !prevChain ||
-            Math.abs(prevChain.endSec - start) >= 1e-4 || (tail && tail.locked)) return;
+        if (phoneIndex !== 0 || joinStrength <= 0) return;
         var ph0 = notePhone(phones[0]), voiced0 = ph0.na && ph0.na.v;
         var lead = ph0.t === 'V' ? 0.024 : /^(N|L|G)$/.test(ph0.t) ? 0.020 :
           ph0.t === 'F' ? (voiced0 ? 0.026 : 0.030) : ph0.t === 'A' ? 0.012 :
@@ -1422,6 +1441,7 @@
           firstEvent.singingLeadFrac = leadFrac;
           firstEvent.singingFadeFrac = fadeFrac;
           firstEvent.singingPrevFrac = 0.25;
+          firstEvent.singingStrength = joinStrength;
         }
       }
       var vowelBudget = dur - inRaw * f - late;
@@ -1455,6 +1475,7 @@
           var tph = notePhone(phones[tc2]);
           var td = nuclei.indexOf(tc2) < 0 ? (tc2 < preN ? onsetDurs[tc2] : segmentDur(tc2) * f)
             : nucDurs && nucDurs[tc2] !== undefined ? nucDurs[tc2] : tc2 === nuc ? vowelBudget - earlyVowel * (nuclei.length - 1) : earlyVowel;
+          if (tc2 === 0) td += vowelPickup;
           var tt0 = manualTimes ? manualTimes[tc2] : cur, tt1 = manualTimes ? manualTimes[tc2 + 1] : cur + td;
           if (manualTimes) td = tt1 - tt0;
           if (tph.t === 'V') {
@@ -1536,7 +1557,7 @@
           NSG.phoneOf(phones[tLastIdx]).t !== 'V' && geminateRole[tLastIdx] === 'first' ? phones[tLastIdx] : '';
         prevChain = { endSec: endSec, codaId: tLastCoda };
         note._start = start;
-        note._pre = Math.min(start, Math.max(start - pre, soundEnd));
+        note._pre = Math.min(start, Math.max(start - pre - vowelPickup, soundEnd));
         soundEnd = tm.secOf(endNote.start + endNote.dur);
         note._end = tm.secOf(note.start + note.dur);
         note._legato = start;
@@ -1626,6 +1647,7 @@
         // cap 已为主元音保留至少 45%；另设 45ms 下限会让短音符越过下一起音。
         var d = nuclei.indexOf(c2) < 0 ? (c2 < preN ? onsetDurs[c2] : segmentDur(c2) * f)
           : nucDurs && nucDurs[c2] !== undefined ? nucDurs[c2] : c2 === nuc ? vowelBudget - earlyVowel * (nuclei.length - 1) : earlyVowel;
+        if (c2 === 0) d += vowelPickup;
         var t0 = manualTimes ? manualTimes[c2] : cur, t1 = manualTimes ? manualTimes[c2 + 1] : cur + d;
         if (manualTimes) d = t1 - t0;
 
@@ -1992,7 +2014,7 @@
       note._start = start;
       // 前置声母落在空白（或被借走的呼吸）里的部分归本音符：音高、力度取本音符；
       // 与上一个字相接的部分仍归上一个字，力度在节拍处切换，和以前的连音边界一样。
-      note._pre = Math.min(start, Math.max(start - pre, soundEnd));
+      note._pre = Math.min(start, Math.max(start - pre - vowelPickup, soundEnd));
       soundEnd = tm.secOf(endNote.start + endNote.dur);
       note._end = tm.secOf(note.start + note.dur);
       note._legato = start;          // 新起音：颤音延迟从这一刻重新算
@@ -2032,12 +2054,14 @@
       var leadFrac = event.singingLeadFrac !== undefined ? event.singingLeadFrac : 0.40;
       var fadeFrac = event.singingFadeFrac !== undefined ? event.singingFadeFrac : 0.30;
       var prevFrac = event.singingPrevFrac !== undefined ? event.singingPrevFrac : 0.25;
-      if (autoJoin) event.xf = Math.min(event.singingFade, (event.t1 - event.t0) * fadeFrac, previous.t1 - previous.t0);
-      var requestedLead = autoJoin ? Math.min(event.singingLead,
+      var strength = event.singingStrength === undefined ? 1 : event.singingStrength;
+      if (autoJoin) event.xf = strength * Math.min(event.singingFade, (event.t1 - event.t0) * fadeFrac, previous.t1 - previous.t0);
+      var requestedLead = autoJoin ? strength * Math.min(event.singingLead,
         (previous.t1 - previous.t0) * prevFrac, (event.t1 - event.t0) * leadFrac) : event.anticipationRequest || 0;
       var lead = Math.min(available, Math.max(0, 0.2 - (event.xf || 0)), requestedLead);
       delete event.anticipationRequest;
       delete event.singingLead; delete event.singingFade;
+      delete event.singingStrength;
       delete event.singingLeadFrac; delete event.singingFadeFrac; delete event.singingPrevFrac;
       if (!(lead > 0)) { if (autoJoin) delete event.xf; return; }
       event.nominalT0 = event.t0; previous.nominalT1 = previous.t1;
