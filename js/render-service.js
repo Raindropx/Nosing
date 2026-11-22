@@ -97,7 +97,8 @@
     });
     return { peak: peak, env: env };
   }
-  var dryTrackCache = Object.create(null), dryTrackOrder = [];
+  var MAX_DRY_TRACK_BYTES = 256 * 1024 * 1024;
+  var dryTrackCache = new Map(), dryTrackBytes = 0;
   function renderVocalWithCache(score, timbre, opt) {
     if (!NSG.DSP.renderTrack || !NSG.DSP.mixVocalTracks) return NSG.DSP.render(score, timbre, opt);
     var tracks = (score && score.tracks) || [];
@@ -119,24 +120,30 @@
         modeBHighPolish: opt.modeBHighPolish
       };
       var k = JSON.stringify(keyObj);
-      var hit = dryTrackCache[k];
+      var hit = dryTrackCache.get(k);
       if (hit) {
-        var idx = dryTrackOrder.indexOf(k);
-        if (idx >= 0) { dryTrackOrder.splice(idx, 1); dryTrackOrder.push(k); }
+        dryTrackCache.delete(k);
+        dryTrackCache.set(k, hit);
       } else {
         hit = NSG.DSP.renderTrack(score, trk, timbre, opt);
-        dryTrackCache[k] = hit;
-        dryTrackOrder.push(k);
-        while (dryTrackOrder.length > 24) {
-          var oldest = dryTrackOrder.shift();
-          delete dryTrackCache[oldest];
+        var bytes = hit.pcm.buffer.byteLength;
+        if (bytes <= MAX_DRY_TRACK_BYTES) {
+          while (dryTrackCache.size >= 24 || dryTrackBytes + bytes > MAX_DRY_TRACK_BYTES) {
+            var oldest = dryTrackCache.keys().next().value;
+            dryTrackBytes -= dryTrackCache.get(oldest).pcm.buffer.byteLength;
+            dryTrackCache.delete(oldest);
+          }
+          dryTrackCache.set(k, hit);
+          dryTrackBytes += bytes;
         }
       }
       return { pcm: hit.pcm, sr: hit.sr, vol: trk.vol, pan: trk.pan };
     });
     var sr = items[0] && items[0].sr ? items[0].sr : (opt.hd === true ? 48000 : 16000);
     var mixed = NSG.DSP.mixVocalTracks(items, sr, { headroom: opt.headroom === true });
-    if (!mixed.channels && items.length === 1 && mixed.pcm === items[0].pcm) {
+    // A Worker transfers the output buffer. Copy only when the cache retains the dry PCM.
+    if (!mixed.channels && items.length === 1 && mixed.pcm === items[0].pcm &&
+        mixed.pcm.buffer.byteLength <= MAX_DRY_TRACK_BYTES) {
       return { pcm: new Float32Array(mixed.pcm), sr: mixed.sr };
     }
     return mixed;

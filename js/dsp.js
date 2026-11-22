@@ -3738,10 +3738,7 @@
     var tailPad = spaceProfile ? 0.9 + spaceProfile.tailSec : 0.9;
     var total = Math.ceil(end * SR) + Math.round(SR * tailPad);
     var left = new Float32Array(total), right = new Float32Array(total);
-    var hallL = spaceProfile ? new Float32Array(total) : null, hallR = spaceProfile ? new Float32Array(total) : null;
-    var plateL = spaceProfile ? new Float32Array(total) : null, plateR = spaceProfile ? new Float32Array(total) : null;
-    var delayL = spaceProfile ? new Float32Array(total) : null, delayR = spaceProfile ? new Float32Array(total) : null;
-    var chorusL = spaceProfile ? new Float32Array(total) : null, chorusR = spaceProfile ? new Float32Array(total) : null;
+    var hallL, hallR, plateL, plateR, delayL, delayR, chorusL, chorusR;
     function sendFor(orig, knd, nt) {
       if (/^chip/.test(knd) || knd === 'bass' || knd === 'tuba' || knd === 'kick') return null;
       var rp = Math.round(nt.pitch);
@@ -4657,6 +4654,13 @@
       var rg = Math.sin((pan + 1) * Math.PI / 4) * Math.SQRT2;
       var hasGainCurve = !!(note.gainPoints && note.gainPoints.length);
       var snd = spaceProfile ? sendFor(originalKind, kind, note) : null;
+      // Allocate each stereo bus on its first send, outside the sample loop.
+      if (snd) {
+        if (snd.h && !hallL) { hallL = new Float32Array(total); hallR = new Float32Array(total); }
+        if (snd.p && !plateL) { plateL = new Float32Array(total); plateR = new Float32Array(total); }
+        if (snd.d && !delayL) { delayL = new Float32Array(total); delayR = new Float32Array(total); }
+        if (snd.c && !chorusL) { chorusL = new Float32Array(total); chorusR = new Float32Array(total); }
+      }
       if (hasGainCurve) {
         var singleSeg = tm.count === 1, beat0 = tm.beatOf(startS / SR), beatStep = singleSeg ? (tm.segs[0].bpm / 60 / SR) : 0;
         var gVal = 1;
@@ -4700,6 +4704,7 @@
 
     if (spaceProfile) {
       var hasSig = function (a, b) {
+        if (!a) return false;
         for (var k = 0; k < total; k++) if (a[k] !== 0 || b[k] !== 0) return true;
         return false;
       };
