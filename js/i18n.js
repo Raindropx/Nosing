@@ -1872,7 +1872,7 @@
     'help.d.f1': 'Open this reference',
 
     'about.title': 'About NSG Singing Synthesizer',
-    'about.heading': 'NSG Singing Synthesizer V8',
+    'about.heading': 'NSG Singing Synthesizer V9',
     'about.p1': 'Synthesis Engine: Generates an unfiltered glottal excitation from up to 64 harmonic partials (16 explicit + −12 dB/oct roll-off with fixed random phases), routed through a 6-stage cascaded oral formant filter (F1–F6 with F4/F5/F6 from timbre blocks) in parallel with a pole-zero nasal branch. Voiceless fricatives run on a parallel noise branch before lip radiation (+6 dB/oct).',
     'about.p2': 'Default vocal output is 16kHz mono; toggle "HiFi" in the toolbar for native 48kHz Mode B synthesis.',
     'about.legacySound': 'Legacy timbre compatibility (revert subtle engine timbre refinements)',
@@ -3377,7 +3377,7 @@
     'help.k.f1': '<kbd>F1</kbd> · <kbd>?</kbd>',
     'help.d.f1': '当一覧を開く',
     'about.title': 'NSG 歌声合成器 概要',
-    'about.heading': 'NSG 歌声合成器 V8',
+    'about.heading': 'NSG 歌声合成器 V9',
     'about.p1': '発声原理：最大 64 次倍音振幅重畳（表内 16 次指定、表外 −12 dB/oct 減衰、各次固定無作為位相）により無濾波声帯原音を生成し、口腔六段直列共振峰濾波器（F1–F6、F4/F5/F6 は音色塊指定）及び並列極零鼻腔分岐へ通す。無声摩擦音は並列雑音分岐を通過後、唇放射微分（+6 dB/oct）を経て出力。',
     'about.p2': '歌声既定出力は 16kHz 単声道；上部「HiFi」切替で原生 48kHz 模式B合成。',
     'about.legacySound': '旧版音色互換（音響微調整を撤回し最適化前の聴感を復元）',
