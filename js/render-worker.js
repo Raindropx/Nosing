@@ -3,10 +3,13 @@
 self.window = self;
 self.global = self;
 importScripts('phonemes.js', 'timbre.js', 'g2p.js', 'tempo.js', 'tuning.js', 'instruments.js',
-  'fft-wasm.js', 'dsp.js', 'analyze.js', 'compose.js', 'fzstd.js', 'fflate.js', 'project-imports.js', 'io.js', 'render-service.js');
+  'fft-wasm.js', 'vocal-wasm.js', 'dsp.js', 'analyze.js', 'compose.js', 'fzstd.js', 'fflate.js', 'project-imports.js', 'io.js', 'render-service.js');
 var DICT_LANGS = { zh: 1, 'zh-x-sichuan': 1, yue: 1, ja: 1, en: 1, de: 1, nan: 1, hak: 1, 'nan-x-teochew': 1, th: 1, xdi8: 1 };
 var loadedScripts = Object.create(null);
-var wasmReady = NSG.WASM.init('../assets/dsp/fft.wasm');
+var wasmReady = Promise.all([
+  NSG.WASM.init('../assets/dsp/fft.wasm'),
+  NSG.VOCAL_WASM && NSG.VOCAL_WASM.init ? NSG.VOCAL_WASM.init('../assets/dsp/vocal-core.wasm') : Promise.resolve(false)
+]);
 wasmReady.then(function () { self.postMessage({ ready: true }); }, function () { self.postMessage({ ready: true }); });
 async function ensureJobDicts(type, data) {
   var langs = NSG.Renderer.jobDictLangs(type, data);

@@ -5,6 +5,7 @@
 
 # 依赖与缓存
 node_modules/
+/wasm/*/target/
 __pycache__/
 *.pyc
 *.log

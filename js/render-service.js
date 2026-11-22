@@ -325,7 +325,10 @@
   }
   function portableWorkerMain() {
     self.NSG_DICT = self.NSG_DICT || {};
-    var ready = NSG.WASM && NSG.WASM.init ? NSG.WASM.init() : Promise.resolve(false);
+    var ready = Promise.all([
+      NSG.WASM && NSG.WASM.init ? NSG.WASM.init() : Promise.resolve(false),
+      NSG.VOCAL_WASM && NSG.VOCAL_WASM.init ? NSG.VOCAL_WASM.init() : Promise.resolve(false)
+    ]);
     function transfers(value, buffers) {
       if (!value || typeof value !== 'object') return;
       if (ArrayBuffer.isView(value)) {
@@ -360,7 +363,7 @@
   Client.prototype._ensurePortableBlobUrl = function () {
     if (this.portableBlobUrl) return this.portableBlobUrl;
     var modules = root.NSG_WORKER_MODULES;
-    var names = ['phonemes', 'timbre', 'g2p', 'tempo', 'tuning', 'instruments', 'fft-wasm',
+    var names = ['phonemes', 'timbre', 'g2p', 'tempo', 'tuning', 'instruments', 'fft-wasm', 'vocal-wasm',
       'dsp', 'analyze', 'compose', 'fzstd', 'fflate', 'project-imports', 'io', 'render-service'];
     var parts = ['self.window = self; self.global = self;\n'];
     names.forEach(function (name) {

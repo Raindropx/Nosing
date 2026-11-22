@@ -3605,20 +3605,21 @@
     var endFrame = r0.endFrame || ctrl.length;
     var sampleOffset = startFrame * HOP;
     var sliceTotal = ctrl.length * HOP;
-    var out = new Float32Array(sliceTotal);
-    var bodyStage = refine ? new Float32Array(sliceTotal) : null;
-    var fricStage = refine ? new Float32Array(sliceTotal) : null;
-    var bodyMask = refine ? new Float32Array(sliceTotal) : null;
+    var useWasmVocal = !!(NSG.VOCAL_WASM && NSG.VOCAL_WASM.enabled && NSG.VOCAL_WASM.ready);
+    var out = useWasmVocal ? null : new Float32Array(sliceTotal);
+    var bodyStage = (!useWasmVocal && refine) ? new Float32Array(sliceTotal) : null;
+    var fricStage = (!useWasmVocal && refine) ? new Float32Array(sliceTotal) : null;
+    var bodyMask = (!useWasmVocal && refine) ? new Float32Array(sliceTotal) : null;
     var bodyPrev = 0, fricPrev = 0, maskPrev = 0;
     var maskAlpha = 1 - Math.exp(-1 / (SR * 0.012));
     var rawSrc = !!opt.rawSource;
 
-    var res = [];
-    for (var i = 0; i < 6; i++) res.push(new Resonator(true));
-    var nas = nasalTract ? new HiFiNasalBranch() : new NasalBranch();
+    var res = useWasmVocal ? null : [];
+    if (res) for (var i = 0; i < 6; i++) res.push(new Resonator(true));
+    var nas = useWasmVocal ? null : (nasalTract ? new HiFiNasalBranch() : new NasalBranch());
     var nasScale = nasalScale(timbre), nasBwScale = Math.max(0.7, Math.min(1.5, timbre.bwScale || 1));
-    var nPole = new Resonator(), nZero = new AntiResonator();
-    var fricRes = new Resonator(), fricHp = new Resonator();
+    var nPole = useWasmVocal ? null : new Resonator(), nZero = useWasmVocal ? null : new AntiResonator();
+    var fricRes = useWasmVocal ? null : new Resonator(), fricHp = useWasmVocal ? null : new Resonator();
     var wgRaw = opt.modeBFricWaveguide;
     var wgProfile = 'off';
     if (modeB && !opt.rawSource && wgRaw !== false && wgRaw !== 'off') {
@@ -3639,20 +3640,20 @@
       return NSG.outEqDbAt(timbre.outEq, hz) + refineDb(modeBSelectedD.friction, hz);
     });
 
-    var src = makeSource(timbre, wideband, organicAmt, humanizeAmt);
+    var src = useWasmVocal ? null : makeSource(timbre, wideband, organicAmt, humanizeAmt);
     var useOrganic = organicAmt > 0;
     var useHumanize = humanizeAmt > 0;
     var seedSalt = startFrame ? ((startFrame * 2654435761) >>> 0) : 0;
-    var orgCycleRnd = useOrganic ? mulberry32((0x94d049bb ^ seedSalt) >>> 0) : null;
+    var orgCycleRnd = (!useWasmVocal && useOrganic) ? mulberry32((0x94d049bb ^ seedSalt) >>> 0) : null;
     var orgCycleAlpha = 1 - Math.exp(-1 / (SR * 0.0015));
     var orgShimCur = 1, orgShimTgt = 1, orgJitCur = 1, orgJitTgt = 1;
     var prevOrgAir = 1;
-    var glottalNoise = useHumanize ? mulberry32((0x3c6ef372 ^ seedSalt) >>> 0) : null;
+    var glottalNoise = (!useWasmVocal && useHumanize) ? mulberry32((0x3c6ef372 ^ seedSalt) >>> 0) : null;
     var midLp = 0, midHp = 0;
     var midLpCoef = Math.exp(-2 * Math.PI * 4800 / SR), midHpCoef = Math.exp(-2 * Math.PI * 1600 / SR);
     // Normalize 1-pole LP(4800) - LP(1600) white-noise band to ~unit RMS regardless of SR.
     var midNorm = HD ? 3.2 : 2.1;
-    var subNotch = useHumanize && !rawSrc ? new DynamicNotch() : null;
+    var subNotch = (!useWasmVocal && useHumanize && !rawSrc) ? new DynamicNotch() : null;
     var pharynxNotch = null;
     var humPfRef = useHumanize ? NSG.formantsOf(NSG.PHONES.a, timbre).pairs[5][0] : 5200;
     var fryParity = 0, fryGainCur = 1, fryGainTgt = 1, fryAlpha = 1 - Math.exp(-1 / (SR * 0.0012));
@@ -3660,7 +3661,7 @@
     var velvetRem = 0, velvetPos = 0, velvetSign = 1, velvetLen = 5, airApZ = 0;
     var air = voicedHigh && wideband && timbre.breath > 0 ?
       makeVoicedAir(timbre, compensateHighEq, opt.modeBAirSoftness !== false, refine, tractJoin, smoothBlend, perturbBlend) : null;
-    var upperAir = air ? new Float32Array(sliceTotal) : null, airNoise = air ? mulberry32((0x73e91a45 ^ seedSalt) >>> 0) : null;
+    var upperAir = (!useWasmVocal && air) ? new Float32Array(sliceTotal) : null, airNoise = (!useWasmVocal && air) ? mulberry32((0x73e91a45 ^ seedSalt) >>> 0) : null;
     // Piriform fossa anti-resonance (~4.2-5.4 kHz spectral dip) for HiFi voices
     // that lack an extracted speaker outEq (which already encodes recording dips).
     var piriform = null;
@@ -3725,7 +3726,140 @@
     var aspAir = 0, aspBody = 0;
     // Six symmetric numerators add six samples of delay to the oral branch.
     // Align the parallel nasal/friction branches, then remove the common delay.
-    var modeBDelay = modeB && !rawSrc ? new Float64Array(18) : null, delayIndex = 0;
+    var modeBDelay = (!useWasmVocal && modeB && !rawSrc) ? new Float64Array(18) : null, delayIndex = 0;
+
+    if (useWasmVocal) {
+      var stride = NSG.VOCAL_WASM.FRAME_STRIDE || 37;
+      var frames = new Float64Array(ctrl.length * stride);
+      var prevAmpW = 0, prevCavW = 0, velSW = velS, cavGainW = 1;
+      for (var wfr = 0; wfr < ctrl.length; wfr++) {
+        var wc = ctrl[wfr], wfb = wc.fb, wFirst = wfr === 0;
+        var wFricHz = wc.jaFricF || wc.fricF || 5000, wFricBw = wc.jaFricB || wc.fricB || 1200;
+        if (frontCavity) {
+          var wCavFc = Math.round(wFricHz / 25) * 25, wCavBw = Math.round(wFricBw / 25) * 25;
+          frontCavity.set(wCavFc, wFirst);
+          if (wc.frontCavity > 0 || prevCavW > 0) {
+            var wCavKey = wCavFc + ':' + wCavBw;
+            cavGainW = cavityCache[wCavKey];
+            if (cavGainW === undefined) cavityCache[wCavKey] = cavGainW = Math.max(0.25, Math.min(4,
+              Math.sqrt(frictionPower(wCavFc, wCavBw, consonantSoftness, SR, cavityEq) /
+                Math.max(1e-18, frictionPower(wCavFc, wCavBw, consonantSoftness, SR, cavityEq, frontCavity)))));
+          }
+          frontCavity.snap();
+        }
+        var wvNow = wc.vel > 0 ? wc.vel : 1;
+        velSW = prevAmpW < 0.02 * velSW ? wvNow : velSW + (wvNow - velSW) * aVelS;
+        var wvk = velSW / wvNow;
+        var wcAv = wc.av * wvk, wcAh = wc.ah || 0, wcFric = wc.fric * wvk, wcTn = (wc.tn || 0) * wvk;
+        if (modeB && !rawSrc && wcFric > 0) {
+          var wfc = Math.round((wc.fricF || 5000) / 25) * 25, wbw = Math.round((wc.fricB || 1200) / 25) * 25;
+          var wfKey = wfc + ':' + wbw, wfGain = frictionCache[wfKey];
+          if (wfGain === undefined) {
+            wfGain = Math.sqrt(frictionReference * frictionPower(wfc, wbw, consonantSoftness, 16000) /
+              Math.max(1e-18, frictionPower(wfc, wbw, consonantSoftness, SR)));
+            frictionCache[wfKey] = wfGain = Math.max(0.25, Math.min(4, wfGain));
+          }
+          wcFric *= wfGain;
+          if (wc.jaFricF) {
+            var wJaFc = Math.round(wFricHz / 25) * 25, wJaBw = Math.round(wFricBw / 25) * 25;
+            var wJaKey = wfKey + ':' + wJaFc + ':' + wJaBw, wJaGain = frictionCache[wJaKey];
+            if (wJaGain === undefined) {
+              wJaGain = Math.sqrt(frictionPower(wfc, wbw, consonantSoftness, SR, timbre.outEq) /
+                Math.max(1e-18, frictionPower(wJaFc, wJaBw, consonantSoftness, SR, timbre.outEq)));
+              frictionCache[wJaKey] = wJaGain = Math.max(0.25, Math.min(4, wJaGain));
+            }
+            wcFric *= wJaGain;
+          }
+        }
+        var wf0 = wc.f0 > 0 ? wc.f0 : 100;
+        if (jrnd) wf0 *= 1 + jit * (jrnd() * 2 - 1);
+        var wEffTilt = pitchTiltAt(timbre, wf0);
+        var wSrcTilt = wc.sourceTilt || 0;
+        var wb = wfr * stride;
+        frames[wb] = wfb[0][0]; frames[wb + 1] = wfb[0][1];
+        frames[wb + 2] = wfb[1][0]; frames[wb + 3] = wfb[1][1];
+        frames[wb + 4] = wfb[2][0]; frames[wb + 5] = wfb[2][1];
+        frames[wb + 6] = wfb[3][0]; frames[wb + 7] = wfb[3][1];
+        frames[wb + 8] = wfb[4][0]; frames[wb + 9] = wfb[4][1];
+        frames[wb + 10] = wfb[5][0]; frames[wb + 11] = wfb[5][1];
+        frames[wb + 12] = wf0;
+        frames[wb + 13] = wcAv;
+        frames[wb + 14] = wcAh;
+        frames[wb + 15] = wcFric;
+        frames[wb + 16] = wcTn;
+        frames[wb + 17] = wc.tnLpHz || 0;
+        frames[wb + 18] = wc.nasal || 0;
+        frames[wb + 19] = wc.np || 270;
+        frames[wb + 20] = wc.nzf || 1700;
+        frames[wb + 21] = wc.nmix || 0;
+        frames[wb + 22] = wFricHz;
+        frames[wb + 23] = wFricBw;
+        frames[wb + 24] = wc.frontCavity || 0;
+        frames[wb + 25] = cavGainW;
+        frames[wb + 26] = useHumanize && wc.rd !== undefined ? wc.rd : 1.05;
+        frames[wb + 27] = useHumanize && wc.oq !== undefined ? wc.oq : 0.65;
+        frames[wb + 28] = useHumanize && wc.ta !== undefined ? wc.ta : 0.04;
+        frames[wb + 29] = useHumanize && wc.fry > 0 ? wc.fry : 0;
+        frames[wb + 30] = useOrganic ? (wc.organicGate || 0) : 0;
+        frames[wb + 31] = useOrganic && wc.organicAirMod !== undefined ? wc.organicAirMod : 1;
+        frames[wb + 32] = (timbre.pitchTilt ? wEffTilt : tiltDb) + wSrcTilt;
+        frames[wb + 33] = wc.voicedHighGate || 0;
+        frames[wb + 34] = wEffTilt;
+        frames[wb + 35] = wSrcTilt;
+        prevAmpW = wcAv;
+        prevCavW = wc.frontCavity || 0;
+      }
+      var glObj = gl ? ('gl' in gl ? gl.gl : gl) : null;
+      var srcEqArr = gl && 'eq' in gl ? gl.eq : null;
+      var outEqArr = Array.isArray(timbre.outEq) ? timbre.outEq : null;
+      var harmArr = timbre.harm || NSG.defaultHarm();
+      var tailDbW = gl && gl.tailDb !== undefined ? gl.tailDb : TAIL_DB_OCT;
+      var flags = (HD ? 1 : 0) | (modeB ? 2 : 0) | (rawSrc ? 4 : 0) | (research ? 8 : 0) |
+        (refine ? 16 : 0) | (voicedHigh ? 32 : 0) | (wideband ? 64 : 0) | (tractJoin ? 128 : 0) |
+        (compensateHighEq ? 256 : 0) | (nasalTract ? 512 : 0) | (useOrganic ? 1024 : 0) |
+        (useHumanize ? 2048 : 0) | (frontCavity ? 4096 : 0) | (air ? 8192 : 0) |
+        (piriform ? 16384 : 0) | (NSG.LEGACY_SOUND ? 32768 : 0) | (glObj ? 65536 : 0) |
+        (srcEqArr ? 131072 : 0) | (outEqArr ? 262144 : 0);
+      var lfTabW = useHumanize ? getLfTable() : null;
+      var cfg = new Float64Array(37);
+      cfg[0] = SR; cfg[1] = HOP; cfg[2] = flags >>> 0; cfg[3] = seedSalt >>> 0;
+      cfg[4] = nasScale; cfg[5] = nasBwScale; cfg[6] = nasalLowpassHz;
+      cfg[7] = consonantSoftness; cfg[8] = highStrength; cfg[9] = smoothBlend; cfg[10] = perturbBlend;
+      cfg[11] = aspAirMix; cfg[12] = organicAmt; cfg[13] = humanizeAmt; cfg[14] = humPfRef;
+      cfg[15] = air ? air.power : 0; cfg[16] = air ? air.fraction : 0; cfg[17] = air ? air.trimGain : 1;
+      cfg[18] = fricTrim; cfg[19] = tailDbW; cfg[20] = frontCavity ? frontCavity.amount : 0;
+      cfg[21] = glObj ? glObj.f : 0; cfg[22] = glObj ? glObj.bw : 0; cfg[23] = glObj ? glObj.db : 0;
+      cfg[24] = piriform ? piriform.b0 : 0; cfg[25] = piriform ? piriform.b1 : 0;
+      cfg[26] = piriform ? piriform.b2 : 0; cfg[27] = piriform ? piriform.a1 : 0; cfg[28] = piriform ? piriform.a2 : 0;
+      cfg[29] = lfTabW ? lfTabW.nrd : 0; cfg[30] = lfTabW ? lfTabW.nh : 0;
+      cfg[31] = lfTabW ? lfTabW.rdMin : 0; cfg[32] = lfTabW ? lfTabW.rdStep : 0;
+      cfg[33] = outEqArr ? outEqArr.length : 0; cfg[34] = air && air.eq ? air.eq.length : 0;
+      cfg[35] = harmArr.length; cfg[36] = sliceTotal;
+      var wasmOut = NSG.VOCAL_WASM.render(cfg, harmArr, srcEqArr, outEqArr, air ? air.eq : null, lfTabW, frames, ctrl.length);
+      if (wasmOut) {
+        if (sliceRange) {
+          return {
+            offset: sampleOffset, pcm: wasmOut, total: Math.max(r0.total, sampleOffset + sliceTotal),
+            sr: SR, startFrame: startFrame, endFrame: endFrame, mixGains: extractMixGains(ctrl)
+          };
+        }
+        return finalizeVocalOut(wasmOut, extractMixGains(ctrl));
+      }
+      // Fallback to JS path if WASM render returned null
+      out = new Float32Array(sliceTotal);
+      if (refine) { bodyStage = new Float32Array(sliceTotal); fricStage = new Float32Array(sliceTotal); bodyMask = new Float32Array(sliceTotal); }
+      res = []; for (var ri = 0; ri < 6; ri++) res.push(new Resonator(true));
+      nas = nasalTract ? new HiFiNasalBranch() : new NasalBranch();
+      nPole = new Resonator(); nZero = new AntiResonator();
+      fricRes = new Resonator(); fricHp = new Resonator();
+      src = makeSource(timbre, wideband, organicAmt, humanizeAmt);
+      if (useOrganic) orgCycleRnd = mulberry32((0x94d049bb ^ seedSalt) >>> 0);
+      if (useHumanize) glottalNoise = mulberry32((0x3c6ef372 ^ seedSalt) >>> 0);
+      if (useHumanize && !rawSrc) subNotch = new DynamicNotch();
+      if (air) { upperAir = new Float32Array(sliceTotal); airNoise = mulberry32((0x73e91a45 ^ seedSalt) >>> 0); }
+      if (modeB && !rawSrc) modeBDelay = new Float64Array(18);
+      if (jit > 0) jrnd = mulberry32((0x5bf03635 ^ seedSalt) >>> 0);
+    }
 
     for (var fr = 0; fr < ctrl.length; fr++) {
       var c = ctrl[fr];
