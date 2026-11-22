@@ -1404,9 +1404,10 @@
     return !!(phones && phones.length && NSG.phoneOf(phones[0]).t !== 'V');
   }
 
-  function balanceVelocity(notes, score, timbre, style, targets, rawSource, hd, waveguide, highPolish) {
+  function prepareBalanceState(notes, score, style, targets, hd) {
     var allVoiced = notes.filter(hasPitch);
-    if (!allVoiced.length) return;
+    if (!allVoiced.length) return null;
+    var workNotes = notes, workScore = score, workTargets = targets, origMap = null, forceWholeTrack;
     // Fast local window when retuning a small selection inside a large (>48 voiced notes) track:
     // include +/-2 neighbour context around selected notes plus up to 24 evenly spaced reference notes,
     // packed into a compact timeline so selecting 2 notes on a 3,000-note song renders ~35 notes instead of 9,000.
@@ -1444,77 +1445,104 @@
       packedTempos[0].beat = 0;
       var packedTargets = new Set();
       packedNotes.forEach(function (cn) { if (targets.has(packedMap.get(cn))) packedTargets.add(cn); });
-      var packedScore = Object.assign({}, score, {
+      workNotes = packedNotes;
+      workTargets = packedTargets;
+      origMap = packedMap;
+      forceWholeTrack = false;
+      workScore = Object.assign({}, score, {
         tempo: packedTempos[0].bpm,
         tempos: packedTempos.length > 1 ? packedTempos : undefined,
         tracks: [{ type: 'vocal', notes: packedNotes }]
       });
-      balanceVelocityFull(packedNotes, packedScore, timbre, style, packedTargets, rawSource, hd, waveguide, highPolish, false);
-      packedNotes.forEach(function (cn) {
-        var orig = packedMap.get(cn);
-        if (targets.has(orig)) orig.vel = cn.vel;
-      });
-      return;
     }
-    balanceVelocityFull(notes, score, timbre, style, targets, rawSource, hd, waveguide, highPolish, undefined);
-  }
-
-  function balanceVelocityFull(notes, score, timbre, style, targets, rawSource, hd, waveguide, highPolish, forceWholeTrack) {
-    // Measure a neutral-velocity copy, so reapplying never accumulates corrections.
-    var probe = Object.assign({}, score, { tracks: [{ type: 'vocal', notes: notes.map(function (n) {
-      return Object.assign({}, n, { vel: 96 });
-    }) }] });
     // Measure every voiced note, including syllabic m/毋 and ng (no vowel required).
     // Their nasal-tract output must participate in both the reference and headroom.
-    var tm = NSG.TEMPO.map(score), voiced = notes.filter(hasPitch);
-    var contour = voiced.map(function (n) { return targets && !targets.has(n) ? 1 : n.vel / style.vel; });
-    // Re-measure the listening signal after correction: saturation and breath gain
-    // are nonlinear, so a single ratio can overcorrect a bright vowel or consonant.
-    for (var pass = 0; pass < 3; pass++) {
-      if (pass) probe.tracks[0].notes = notes.map(function (n) { return Object.assign({}, n); });
-      var audio = NSG.DSP.render(probe, timbre, { rawSource: !!rawSource, hd: hd === true,
+    var voiced = workNotes.filter(hasPitch);
+    var contour = voiced.map(function (n) { return workTargets && !workTargets.has(n) ? 1 : n.vel / style.vel; });
+    // Pass 0 uses fast 16 kHz neutral probe to equalize vowel/pitch loudness;
+    // Pass 1 renders at the target quality (48 kHz HD if enabled) to lock in nonlinear saturation & contour.
+    var passes = hd === true
+      ? [{ hd: false, contour: false, damp: 0.9 }, { hd: true, contour: true, damp: 0.9 }]
+      : [{ hd: false, contour: false, damp: 0.9 }, { hd: false, contour: true, damp: 0.85 }];
+    return {
+      workNotes: workNotes, workScore: workScore, workTargets: workTargets, origMap: origMap,
+      targets: targets, tm: NSG.TEMPO.map(workScore), voiced: voiced, contour: contour,
+      forceWholeTrack: forceWholeTrack, passes: passes
+    };
+  }
+
+  function buildBalanceProbe(state, passIndex) {
+    var notes = passIndex === 0
+      ? state.workNotes.map(function (n) { return Object.assign({}, n, { vel: 96 }); })
+      : state.workNotes.map(function (n) { return Object.assign({}, n); });
+    return Object.assign({}, state.workScore, { tracks: [{ type: 'vocal', notes: notes }] });
+  }
+
+  function applyBalancePass(state, passIndex, audio) {
+    var pass = state.passes[passIndex];
+    var tm = state.tm, voiced = state.voiced, score = state.workScore;
+    var targets = state.workTargets, contour = state.contour;
+    var block = Math.round(audio.sr * 0.02);
+    var bleed = Math.round(audio.sr * 0.03);
+    var records = voiced.map(function (n, index) {
+      var begin = Math.max(0, Math.round(tm.secOf(n.start) * audio.sr));
+      var end = Math.min(audio.pcm.length, Math.round(tm.secOf(n.start + n.dur) * audio.sr));
+      var prev = voiced[index - 1];
+      var follows = prev && Math.abs(tm.secOf(prev.start + prev.dur) - tm.secOf(n.start)) < 1e-6;
+      var from = follows && consonantOnset(n, score.lang, score.phonemizer) && end - begin > bleed * 4 ? begin + bleed : begin;
+      var sum = 0, windows = [];
+      for (var i = from; i < end; i += block) {
+        var stop = Math.min(end, i + block), sq = 0;
+        for (var j = i; j < stop; j++) sq += audio.pcm[j] * audio.pcm[j];
+        sum += sq; windows.push(Math.sqrt(sq / Math.max(1, stop - i)));
+      }
+      windows.sort(function (a, b) { return a - b; });
+      var rms = Math.sqrt(sum / Math.max(1, end - from));
+      // Sustained level plus a short-window guard catches conspicuous consonants.
+      var body = windows.length ? windows[Math.floor((windows.length - 1) * 0.7)] : 0;
+      var peak = windows.length ? windows[windows.length - 1] : 0;
+      return { note: n, level: Math.max(rms, body, peak * 0.65) };
+    });
+    var levels = records.map(function (r) { return r.level; }).filter(function (v) { return v > 1e-9; })
+      .sort(function (a, b) { return a - b; });
+    if (!levels.length) return false;
+    var reference = levels[Math.floor((levels.length - 1) / 2)];
+    var maxRequested = 0;
+    records.forEach(function (r, index) {
+      var n = r.note;
+      if ((targets && !targets.has(n)) || r.level < 1e-9) return;
+      var target = reference * (pass.contour ? contour[index] : 1);
+      var correction = clamp(20 * Math.log10(target / r.level) * pass.damp, -18, 12);
+      r.requested = n.vel * Math.pow(10, correction / 20);
+      maxRequested = Math.max(maxRequested, r.requested);
+    });
+    var wholeTrack = state.forceWholeTrack !== undefined ? state.forceWholeTrack : records.every(function (r) { return !targets || targets.has(r.note); });
+    var trim = wholeTrack && maxRequested > 127 ? 127 / maxRequested : 1;
+    records.forEach(function (r) {
+      if (r.requested === undefined) return;
+      r.note.vel = Math.round(clamp(r.requested * trim, 8, 127));
+    });
+    return true;
+  }
+
+  function commitBalanceState(state) {
+    if (!state || !state.origMap) return;
+    state.workNotes.forEach(function (cn) {
+      var orig = state.origMap.get(cn);
+      if (!state.targets || state.targets.has(orig)) orig.vel = cn.vel;
+    });
+  }
+
+  function balanceVelocity(notes, score, timbre, style, targets, rawSource, hd, waveguide, highPolish) {
+    var state = prepareBalanceState(notes, score, style, targets, hd);
+    if (!state) return;
+    for (var pass = 0; pass < state.passes.length; pass++) {
+      var probe = buildBalanceProbe(state, pass);
+      var audio = NSG.DSP.render(probe, timbre, { rawSource: !!rawSource, hd: state.passes[pass].hd === true,
         modeBFricWaveguide: waveguide, modeBHighPolish: highPolish });
-      var block = Math.round(audio.sr * 0.02);
-      var bleed = Math.round(audio.sr * 0.03);
-      var records = voiced.map(function (n, index) {
-        var begin = Math.max(0, Math.round(tm.secOf(n.start) * audio.sr));
-        var end = Math.min(audio.pcm.length, Math.round(tm.secOf(n.start + n.dur) * audio.sr));
-        var prev = voiced[index - 1];
-        var follows = prev && Math.abs(tm.secOf(prev.start + prev.dur) - tm.secOf(n.start)) < 1e-6;
-        var from = follows && consonantOnset(n, score.lang, score.phonemizer) && end - begin > bleed * 4 ? begin + bleed : begin;
-        var sum = 0, windows = [];
-        for (var i = from; i < end; i += block) {
-          var stop = Math.min(end, i + block), sq = 0;
-          for (var j = i; j < stop; j++) sq += audio.pcm[j] * audio.pcm[j];
-          sum += sq; windows.push(Math.sqrt(sq / Math.max(1, stop - i)));
-        }
-        windows.sort(function (a, b) { return a - b; });
-        var rms = Math.sqrt(sum / Math.max(1, end - from));
-        // Sustained level plus a short-window guard catches conspicuous consonants.
-        var body = windows.length ? windows[Math.floor((windows.length - 1) * 0.7)] : 0;
-        var peak = windows.length ? windows[windows.length - 1] : 0;
-        return { note: n, level: Math.max(rms, body, peak * 0.65) };
-      });
-      var levels = records.map(function (r) { return r.level; }).filter(function (v) { return v > 1e-9; })
-        .sort(function (a, b) { return a - b; });
-      if (!levels.length) return;
-      var reference = levels[Math.floor((levels.length - 1) / 2)];
-      var maxRequested = 0;
-      records.forEach(function (r, index) {
-        var n = r.note;
-        if ((targets && !targets.has(n)) || r.level < 1e-9) return;
-        var target = reference * (pass ? contour[index] : 1);
-        var correction = clamp(20 * Math.log10(target / r.level) * (pass ? 0.7 : 0.9), -18, 12);
-        r.requested = n.vel * Math.pow(10, correction / 20);
-        maxRequested = Math.max(maxRequested, r.requested);
-      });
-      var wholeTrack = forceWholeTrack !== undefined ? forceWholeTrack : records.every(function (r) { return !targets || targets.has(r.note); });
-      var trim = wholeTrack && maxRequested > 127 ? 127 / maxRequested : 1;
-      records.forEach(function (r) {
-        if (r.requested === undefined) return;
-        r.note.vel = Math.round(clamp(r.requested * trim, 8, 127));
-      });
+      if (!applyBalancePass(state, pass, audio)) break;
     }
+    commitBalanceState(state);
   }
   // Mutate only requested fields on the supplied target notes. All notes provide
   // phrase/transition context, including unselected notes and rests.
@@ -1725,7 +1753,7 @@
       if (trackPit.length) track.pit = trackPit;
       else delete track.pit;
     }
-    if (vel && count && NSG.DSP && NSG.DSP.render) {
+    if (vel && count && !options.skipVelocityBalance && NSG.DSP && NSG.DSP.render) {
       var tuneScore = (options.lang || options.phonemizer !== undefined)
         ? Object.assign({}, score, { lang: options.lang || score.lang,
             phonemizer: options.phonemizer !== undefined ? options.phonemizer : score.phonemizer })
@@ -1739,6 +1767,8 @@
     gainPoints: gainPoints, noteGain: noteGain, replaceNoteGainSpan: replaceNoteGainSpan, fitNoteGain: fitNoteGain,
     consonantSpeed: consonantSpeed, speedFromLength: speedFromLength, consonantScale: consonantScale,
     autoStyles: autoStyles, autoTune: autoTune, fitPitch: fitPitch, simplifyPitch: simplifyPitch,
+    prepareBalance: prepareBalanceState, buildBalanceProbe: buildBalanceProbe,
+    applyBalancePass: applyBalancePass, commitBalance: commitBalanceState,
     vibCents: vibCents, connected: connected, adjacent: adjacent, isRest: isRest, isBreath: isBreath, hasPitch: hasPitch,
     junctionPoints: junctionPoints, pitchModel: pitchModel,
     capturePitBindings: capturePitBindings, restorePitBindings: restorePitBindings, moveNotePit: moveNotePit,

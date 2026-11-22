@@ -76,7 +76,9 @@
     return JSON.stringify(key);
   }
   function jobDictLangs(type, data) {
-    if (!data || type === 'accomp' || type === 'extract' || type === 'analyzeVocal') return [];
+    if (!data || type === 'accomp' || type === 'accompSlice' || type === 'accompSpace' ||
+        type === 'accompFinalize' || type === 'vocalFinalizeTrack' || type === 'vocalMixAnalyze' ||
+        type === 'tuneStep' || type === 'extract' || type === 'analyzeVocal') return [];
     if (type === 'read') return data.kind === 'nsg' ? [] : ['zh', 'en'];
     var extra = data.options && (data.options.phonemizer || data.options.lang);
     if (type === 'normalize' && data.imported) {
@@ -84,6 +86,37 @@
     }
     if (data.score && NSG.collectScoreLanguages) return NSG.collectScoreLanguages(data.score, extra);
     return ['zh'];
+  }
+  function collectTransfers(value, buffers) {
+    if (!value || typeof value !== 'object') return;
+    if (ArrayBuffer.isView(value)) {
+      if (buffers.indexOf(value.buffer) < 0) buffers.push(value.buffer);
+    } else if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) collectTransfers(value[i], buffers);
+    } else {
+      var keys = Object.keys(value);
+      for (var k = 0; k < keys.length; k++) collectTransfers(value[keys[k]], buffers);
+    }
+  }
+  function activeVocalTracksOf(score) {
+    var tracks = (score && score.tracks) || [];
+    var hasVocalType = tracks.some(function (t) { return t && t.type === 'vocal'; });
+    return hasVocalType
+      ? tracks.filter(function (t) { return t && t.type === 'vocal' && !t.muted && t.notes && t.notes.length; })
+      : (tracks[0] && !tracks[0].muted && tracks[0].notes && tracks[0].notes.length ? [tracks[0]] : []);
+  }
+  function dryTrackKeyOf(score, trk, timbre, opt) {
+    return JSON.stringify({
+      tempo: score.tempo, tempos: score.tempos, notes: trk.notes,
+      pit: trk.pit && trk.pit.length ? trk.pit : undefined,
+      lang: trk.lang || score.lang,
+      phonemizer: trk.phonemizer !== undefined ? trk.phonemizer : score.phonemizer,
+      timbre: trk.timbre || timbre,
+      rawSource: !!opt.rawSource, hd: opt.hd === true,
+      legacySound: !!(opt.legacySound || NSG.LEGACY_SOUND),
+      modeBFricWaveguide: opt.modeBFricWaveguide,
+      modeBHighPolish: opt.modeBHighPolish
+    });
   }
   function meter(channels, sr) {
     var block = Math.round(sr * 0.02), peak = 0;
@@ -99,27 +132,13 @@
   }
   var MAX_DRY_TRACK_BYTES = 256 * 1024 * 1024;
   var dryTrackCache = new Map(), dryTrackBytes = 0;
+  var tuneSessions = new Map(), tuneSessionSerial = 0;
   function renderVocalWithCache(score, timbre, opt) {
     if (!NSG.DSP.renderTrack || !NSG.DSP.mixVocalTracks) return NSG.DSP.render(score, timbre, opt);
-    var tracks = (score && score.tracks) || [];
-    var hasVocalType = tracks.some(function (t) { return t && t.type === 'vocal'; });
-    var vocalTracks = hasVocalType
-      ? tracks.filter(function (t) { return t && t.type === 'vocal' && !t.muted && t.notes && t.notes.length; })
-      : (tracks[0] && !tracks[0].muted && tracks[0].notes && tracks[0].notes.length ? [tracks[0]] : []);
+    var vocalTracks = activeVocalTracksOf(score);
     if (!vocalTracks.length) return NSG.DSP.render(score, timbre, opt);
     var items = vocalTracks.map(function (trk) {
-      var keyObj = {
-        tempo: score.tempo, tempos: score.tempos, notes: trk.notes,
-        pit: trk.pit && trk.pit.length ? trk.pit : undefined,
-        lang: trk.lang || score.lang,
-        phonemizer: trk.phonemizer !== undefined ? trk.phonemizer : score.phonemizer,
-        timbre: trk.timbre || timbre,
-        rawSource: !!opt.rawSource, hd: opt.hd === true,
-        legacySound: !!(opt.legacySound || NSG.LEGACY_SOUND),
-        modeBFricWaveguide: opt.modeBFricWaveguide,
-        modeBHighPolish: opt.modeBHighPolish
-      };
-      var k = JSON.stringify(keyObj);
+      var k = dryTrackKeyOf(score, trk, timbre, opt);
       var hit = dryTrackCache.get(k);
       if (hit) {
         dryTrackCache.delete(k);
@@ -170,6 +189,25 @@
       result = { pcm: audio.pcm, sr: audio.sr, peak: levels.peak, env: levels.env,
         grid: grid, harmonics: harmonics };
       if (audio.channels) result.channels = audio.channels;
+    } else if (type === 'vocalPlan') {
+      result = NSG.DSP.planVocalSlices(data.score, data.trk, data.timbre, data.opt, data.maxSlices);
+    } else if (type === 'vocalSlice') {
+      result = NSG.DSP.renderVocalSlice(data.score, data.trk, data.timbre, data.opt, data.sliceRange);
+    } else if (type === 'vocalTrack') {
+      result = NSG.DSP.renderTrack(data.score, data.trk, data.timbre, data.opt);
+    } else if (type === 'vocalFinalizeTrack') {
+      result = NSG.DSP.finalizeVocalSlices(data.chunks, data.total, data.mixGains, data.opt);
+    } else if (type === 'vocalMixAnalyze') {
+      var mixedAudio = NSG.DSP.mixVocalTracks(data.items, data.sr, { headroom: data.headroom === true });
+      var mLevels = meter(mixedAudio.channels || [mixedAudio.pcm], mixedAudio.sr);
+      var mGrid = null, mHarmonics = null;
+      if (data.includeAnalysis !== false) {
+        mGrid = NSG.AN.spectrumGrid(mixedAudio.pcm, { hop: 512, sampleRate: mixedAudio.sr });
+        mHarmonics = data.harmF0 > 0 ? NSG.AN.harmonics(mixedAudio.pcm, data.harmF0, 16, mixedAudio.sr) : null;
+      }
+      result = { pcm: mixedAudio.pcm, sr: mixedAudio.sr, peak: mLevels.peak, env: mLevels.env,
+        grid: mGrid, harmonics: mHarmonics };
+      if (mixedAudio.channels) result.channels = mixedAudio.channels;
     } else if (type === 'analyzeVocal') {
       result = {
         grid: NSG.AN.spectrumGrid(data.pcm, { hop: 512, sampleRate: data.sr }),
@@ -179,9 +217,24 @@
       var acc = NSG.DSP.renderAccomp(data.score, { legacySound: data.legacySound, space: data.space });
       var accLevels = acc ? meter(acc.channels, acc.sr) : { peak: 0, env: null };
       result = { audio: acc, peak: accLevels.peak, env: accLevels.env };
+    } else if (type === 'accompSlice') {
+      result = NSG.DSP.renderAccomp(data.score, {
+        legacySound: data.legacySound, space: data.space, noteRange: data.noteRange
+      }) || { empty: true };
+    } else if (type === 'accompSpace') {
+      result = NSG.DSP.runAccompSpace(data.effect, data.left, data.right, data.sr, data.spaceName, data.spb0);
+    } else if (type === 'accompFinalize') {
+      var leftF = data.left, rightF = data.right, wetList = data.wetList || [];
+      for (var wi = 0; wi < wetList.length; wi++) {
+        var wl = wetList[wi].left, wr = wetList[wi].right;
+        for (var si = 0; si < leftF.length; si++) { leftF[si] += wl[si]; rightF[si] += wr[si]; }
+      }
+      var accF = NSG.DSP.finalizeAccomp(leftF, rightF, data.sr, data.spaceName, data.legacySound);
+      var accFLevels = accF ? meter(accF.channels, accF.sr) : { peak: 0, env: null };
+      result = { audio: accF, peak: accFLevels.peak, env: accFLevels.env };
     } else if (type === 'extract') {
       result = NSG.AN.extractFormants(data.pcm, data.sr, data.widePcm ? { widePcm: data.widePcm, wideRate: data.wideRate } : undefined);
-    } else if (type === 'tune' || type === 'fit') {
+    } else if (type === 'tune' || type === 'fit' || type === 'tuneStart') {
       var trackIdx = Number.isInteger(data.trackIndex) && data.score.tracks[data.trackIndex] ? data.trackIndex : 0;
       var tr = data.score.tracks[trackIdx];
       var notes = tr.notes;
@@ -201,7 +254,47 @@
           phonemizer: trScore.phonemizer
         });
         result = { count: NSG.TUNING.autoTune(notes, trScore, options), notes: notes, pit: tr.pit || [] };
+      } else if (type === 'tuneStart') {
+        var startOpts = Object.assign({}, data.options, {
+          targets: targets,
+          track: tr,
+          timbre: (tr && tr.timbre) || (data.options && data.options.timbre),
+          lang: trScore.lang,
+          phonemizer: trScore.phonemizer,
+          skipVelocityBalance: true
+        });
+        var tCount = NSG.TUNING.autoTune(notes, trScore, startOpts);
+        var styleObj = NSG.TUNING.autoStyles.filter(function (s) { return s.id === startOpts.style; })[0] || NSG.TUNING.autoStyles[0];
+        var sortedNotes = notes.slice().sort(function (a, b) { return a.start - b.start; });
+        var targetSet = new Set(targets);
+        var balState = (startOpts.vel !== false && tCount && NSG.TUNING.prepareBalance)
+          ? NSG.TUNING.prepareBalance(sortedNotes, trScore, styleObj, targetSet, startOpts.hd)
+          : null;
+        if (!balState || !balState.passes.length) {
+          result = { done: true, count: tCount, notes: notes, pit: tr.pit || [] };
+        } else {
+          var sid = ++tuneSessionSerial;
+          while (tuneSessions.size >= 4) tuneSessions.delete(tuneSessions.keys().next().value);
+          tuneSessions.set(sid, { count: tCount, notes: notes, track: tr, state: balState });
+          result = {
+            done: false, tuneId: sid, passes: balState.passes,
+            probe: NSG.TUNING.buildBalanceProbe(balState, 0),
+            timbre: startOpts.timbre || NSG.defaultTimbre()
+          };
+        }
       } else result = { fit: NSG.TUNING.simplifyPitch(targets, data.tolerance === undefined ? 1 : data.tolerance, { score: trScore, track: tr }), notes: notes, pit: tr.pit || [] };
+    } else if (type === 'tuneStep') {
+      var sess = tuneSessions.get(data.tuneId);
+      if (!sess) throw Error('自动调教会话已失效');
+      var ok = NSG.TUNING.applyBalancePass(sess.state, data.passIndex, { pcm: data.pcm, sr: data.sr });
+      var nextPass = data.passIndex + 1;
+      if (!ok || nextPass >= sess.state.passes.length) {
+        NSG.TUNING.commitBalance(sess.state);
+        tuneSessions.delete(data.tuneId);
+        result = { done: true, count: sess.count, notes: sess.notes, pit: sess.track.pit || [] };
+      } else {
+        result = { done: false, probe: NSG.TUNING.buildBalanceProbe(sess.state, nextPass) };
+      }
     } else if (type === 'arrange') {
       var arranged = NSG.COMPOSE.arrange(data.score, data.options), meta = {};
       Object.keys(arranged).forEach(function (key) { if (!/^\d+$/.test(key)) meta[key] = arranged[key]; });
@@ -218,7 +311,17 @@
   function Client(options) {
     this.options = options || {}; this.worker = null; this.disabled = false; this.closed = false;
     this.active = null; this.queue = []; this.cache = {}; this.vocalByMode = { std: null, hd: null }; this.serial = 0;
-    this.sentDicts = Object.create(null);
+    this.reqSerial = 0; this.sentDicts = Object.create(null);
+    this.pool = []; this.portableBlobUrl = null;
+    this.dryTrackCache = new Map(); this.dryTrackBytes = 0;
+    if (Number.isInteger(this.options.maxWorkers)) {
+      this.maxWorkers = Math.max(1, Math.min(8, this.options.maxWorkers));
+    } else if (this.options.workerFactory || typeof root.Worker !== 'function') {
+      this.maxWorkers = 1;
+    } else {
+      var cores = root.navigator && root.navigator.hardwareConcurrency ? root.navigator.hardwareConcurrency : 4;
+      this.maxWorkers = Math.min(6, Math.max(1, cores - 1));
+    }
   }
   function portableWorkerMain() {
     self.NSG_DICT = self.NSG_DICT || {};
@@ -254,7 +357,8 @@
       } catch (e) { self.postMessage({ id: message.id, error: e.message || String(e) }); }
     };
   }
-  Client.prototype._portableWorker = function () {
+  Client.prototype._ensurePortableBlobUrl = function () {
+    if (this.portableBlobUrl) return this.portableBlobUrl;
     var modules = root.NSG_WORKER_MODULES;
     var names = ['phonemes', 'timbre', 'g2p', 'tempo', 'tuning', 'instruments', 'fft-wasm',
       'dsp', 'analyze', 'compose', 'fzstd', 'fflate', 'project-imports', 'io', 'render-service'];
@@ -264,92 +368,368 @@
       parts.push('(' + modules[name].toString() + ')(self);\n');
     });
     parts.push('(' + portableWorkerMain.toString() + ')();');
-    var url = root.URL.createObjectURL(new root.Blob(parts, { type: 'text/javascript' }));
-    var worker;
-    try {
-      worker = new root.Worker(url);
-      this.sentDicts = Object.create(null);
-      worker.postMessage({ initialize: true, dictionaries: {} });
-      this.workerUrl = url;
-      return worker;
-    } catch (e) { if (worker) worker.terminate(); root.URL.revokeObjectURL(url); throw e; }
+    this.portableBlobUrl = root.URL.createObjectURL(new root.Blob(parts, { type: 'text/javascript' }));
+    return this.portableBlobUrl;
+  };
+  Client.prototype._spawnRawWorker = function () {
+    if (this.options.workerFactory) return this.options.workerFactory();
+    if (this.portable) {
+      var url = this._ensurePortableBlobUrl();
+      var w = new root.Worker(url);
+      w.postMessage({ initialize: true, dictionaries: {} });
+      return w;
+    }
+    return new root.Worker('js/render-worker.js');
   };
   Client.prototype._releaseWorker = function () {
-    if (this.worker) this.worker.terminate();
+    for (var i = 0; i < this.pool.length; i++) {
+      var slot = this.pool[i];
+      if (!slot) continue;
+      if (slot.worker) { try { slot.worker.terminate(); } catch (e) {} }
+      slot.pending.forEach(function (p) { p.reject(cancelled()); });
+      slot.pending.clear();
+    }
+    this.pool = [];
     this.worker = null;
     this.sentDicts = Object.create(null);
-    if (this.workerUrl) { root.URL.revokeObjectURL(this.workerUrl); this.workerUrl = null; }
+    if (this.portableBlobUrl) { root.URL.revokeObjectURL(this.portableBlobUrl); this.portableBlobUrl = null; }
   };
-  Client.prototype._worker = function () {
-    if (this.worker || this.disabled) return this.worker;
+  Client.prototype._slot = function (index) {
+    if (this.disabled) return null;
+    if (this.pool[index] && this.pool[index].worker) return this.pool[index];
     var self = this;
     try {
       if (!this.options.workerFactory && root.location && root.location.protocol === 'file:') this.portable = true;
-      this.worker = this.options.workerFactory ? this.options.workerFactory() :
-        this.portable ? this._portableWorker() : new root.Worker('js/render-worker.js');
-      this.worker.onmessage = function (event) {
-        var message = event.data, job = self.active;
+      var raw = this._spawnRawWorker();
+      var slot = { index: index, worker: raw, sentDicts: Object.create(null), started: false, pending: new Map() };
+      raw.onmessage = function (event) {
+        var message = event.data;
         if (message.ready) {
-          self.started = true; clearTimeout(self.startupTimer);
-          if (self.workerUrl) { root.URL.revokeObjectURL(self.workerUrl); self.workerUrl = null; }
+          slot.started = true;
+          if (index === 0) { self.started = true; clearTimeout(self.startupTimer); }
           return;
         }
-        if (!job || message.id !== job.id) return;
-        clearTimeout(self.startupTimer);
-        if (message.error) self._finish(job, new Error(message.error));
-        else { message.result.mode = 'worker'; self._finish(job, null, message.result); }
+        var p = slot.pending.get(message.id);
+        if (!p) return;
+        slot.pending.delete(message.id);
+        if (index === 0) clearTimeout(self.startupTimer);
+        slot.started = true;
+        if (message.error) p.reject(new Error(message.error));
+        else p.resolve(message.result);
       };
-      this.worker.onerror = function (event) {
+      raw.onerror = function (event) {
         if (event.preventDefault) event.preventDefault();
-        self._fallback();
+        if (index === 0) self._fallback();
+        else {
+          slot.pending.forEach(function (p) { p.reject(new Error('工作线程错误')); });
+          slot.pending.clear();
+          try { raw.terminate(); } catch (e) {}
+          self.pool[index] = null;
+        }
       };
-      this.worker.onmessageerror = function () { self._fallback(); };
+      raw.onmessageerror = function () {
+        if (index === 0) self._fallback();
+        else {
+          slot.pending.forEach(function (p) { p.reject(new Error('工作线程消息错误')); });
+          slot.pending.clear();
+          try { raw.terminate(); } catch (e) {}
+          self.pool[index] = null;
+        }
+      };
+      this.pool[index] = slot;
+      if (index === 0) this.worker = raw;
+      return slot;
     } catch (e) {
-      this._releaseWorker();
-      if (!this.options.workerFactory && !this.portable && root.NSG_WORKER_MODULES) {
-        this.portable = true; return this._worker();
+      if (index === 0) {
+        this._releaseWorker();
+        if (!this.options.workerFactory && !this.portable && root.NSG_WORKER_MODULES) {
+          this.portable = true; return this._slot(0);
+        }
+        this.disabled = true;
       }
-      this.disabled = true;
+      return null;
     }
-    return this.worker;
+  };
+  Client.prototype._callSlot = async function (slotIndex, type, data, transferInput) {
+    var slot = this._slot(slotIndex) || this._slot(0);
+    if (!slot) throw new Error('Worker unavailable');
+    var needed = null;
+    if (this.portable) {
+      needed = jobDictLangs(type, data);
+      if (needed.length) await Promise.all(needed.map(function (lang) { return NSG.loadDict(lang); }));
+      if (this.closed || this.pool[slot.index] !== slot) throw cancelled();
+    }
+    var reqId = ++this.reqSerial;
+    var payload = { id: reqId, type: type, data: data };
+    if (this.portable && root.NSG_DICT && needed && needed.length) {
+      var unsent = null;
+      for (var i = 0; i < needed.length; i++) {
+        var L = needed[i];
+        if (!slot.sentDicts[L] && root.NSG_DICT[L] !== undefined) {
+          if (!unsent) unsent = {};
+          unsent[L] = root.NSG_DICT[L];
+          slot.sentDicts[L] = true;
+        }
+      }
+      if (unsent) payload.dicts = unsent;
+    }
+    var inBuffers = [];
+    if (transferInput) collectTransfers(data, inBuffers);
+    var self = this;
+    return new Promise(function (resolve, reject) {
+      slot.pending.set(reqId, { resolve: resolve, reject: reject });
+      try {
+        if (slot.index === 0 && !self.started && !self.startupTimer) {
+          self.startupTimer = setTimeout(function () { self._fallback(); }, 30000);
+        }
+        if (inBuffers.length) slot.worker.postMessage(payload, inBuffers);
+        else slot.worker.postMessage(payload);
+      } catch (e) {
+        slot.pending.delete(reqId);
+        reject(e);
+      }
+    });
+  };
+  Client.prototype._cacheDryTrack = function (key, hit) {
+    var bytes = hit.pcm.buffer.byteLength;
+    if (bytes > MAX_DRY_TRACK_BYTES) return;
+    while (this.dryTrackCache.size >= 24 || this.dryTrackBytes + bytes > MAX_DRY_TRACK_BYTES) {
+      var oldest = this.dryTrackCache.keys().next().value;
+      this.dryTrackBytes -= this.dryTrackCache.get(oldest).pcm.buffer.byteLength;
+      this.dryTrackCache.delete(oldest);
+    }
+    this.dryTrackCache.set(key, hit);
+    this.dryTrackBytes += bytes;
+  };
+  Client.prototype._renderTrackParallel = async function (job, score, trk, timbre, opt) {
+    var allowSlice = opt.hd === true || (trk.notes && trk.notes.length >= 80);
+    if (!allowSlice || this.maxWorkers <= 1 || !NSG.DSP || !NSG.DSP.planVocalSlices) {
+      return this._callSlot(0, 'vocalTrack', { score: score, trk: trk, timbre: timbre, opt: opt }, false);
+    }
+    var plan = NSG.DSP.planVocalSlices(score, trk, timbre, opt, this.maxWorkers);
+    if (!plan.slices || plan.slices.length <= 1) {
+      return this._callSlot(0, 'vocalTrack', { score: score, trk: trk, timbre: timbre, opt: opt }, false);
+    }
+    var self = this;
+    var chunks = await Promise.all(plan.slices.map(function (spec, idx) {
+      return self._callSlot(idx % self.maxWorkers, 'vocalSlice', {
+        score: score, trk: trk, timbre: timbre, opt: opt, sliceRange: spec
+      }, false);
+    }));
+    if (this.closed || this.active !== job) throw cancelled();
+    return this._callSlot(0, 'vocalFinalizeTrack', {
+      chunks: chunks, total: 0, mixGains: null, opt: opt
+    }, true);
+  };
+  Client.prototype._runVocalParallel = async function (job) {
+    var start = performance.now(), data = job.data;
+    var opt = {
+      rawSource: data.rawSource, hd: data.hd, legacySound: data.legacySound,
+      modeBFricWaveguide: data.modeBFricWaveguide, modeBHighPolish: data.modeBHighPolish,
+      headroom: data.headroom === true
+    };
+    var vocalTracks = activeVocalTracksOf(data.score);
+    if (!vocalTracks.length) {
+      var emptyRes = await this._callSlot(0, 'vocal', data, false);
+      emptyRes.mode = 'worker';
+      return emptyRes;
+    }
+    var entries = vocalTracks.map(function (trk) {
+      var k = dryTrackKeyOf(data.score, trk, data.timbre, opt);
+      var hit = this.dryTrackCache.get(k);
+      if (hit) { this.dryTrackCache.delete(k); this.dryTrackCache.set(k, hit); }
+      return { trk: trk, key: k, hit: hit || null };
+    }, this);
+    var uncached = entries.filter(function (e) { return !e.hit; });
+    if (uncached.length === 1) {
+      var one = uncached[0];
+      one.hit = await this._renderTrackParallel(job, data.score, one.trk, data.timbre, opt);
+      if (this.closed || this.active !== job) throw cancelled();
+      this._cacheDryTrack(one.key, one.hit);
+    } else if (uncached.length > 1) {
+      var self = this, nextIdx = 0;
+      var concurrency = Math.min(this.maxWorkers, uncached.length);
+      var workers = [];
+      for (var w = 0; w < concurrency; w++) {
+        (function (slotIdx) {
+          workers.push((async function () {
+            while (nextIdx < uncached.length) {
+              var e = uncached[nextIdx++];
+              var res = await self._callSlot(slotIdx, 'vocalTrack', {
+                score: data.score, trk: e.trk, timbre: data.timbre, opt: opt
+              }, false);
+              if (self.closed || self.active !== job) throw cancelled();
+              e.hit = res;
+              self._cacheDryTrack(e.key, res);
+            }
+          })());
+        })(w);
+      }
+      await Promise.all(workers);
+      if (this.closed || this.active !== job) throw cancelled();
+    }
+    var items = entries.map(function (e) {
+      // Clone if retained in cache so transferring to Worker 0 does not detach the cached buffer.
+      var pcmCopy = this.dryTrackCache.has(e.key) ? new Float32Array(e.hit.pcm) : e.hit.pcm;
+      return { pcm: pcmCopy, sr: e.hit.sr, vol: e.trk.vol, pan: e.trk.pan };
+    }, this);
+    var sr = items[0] && items[0].sr ? items[0].sr : (opt.hd === true ? 48000 : 16000);
+    var vNotes = vocalTracks[0] ? vocalTracks[0].notes : [];
+    var harmF0 = data.includeAnalysis !== false && vNotes.length
+      ? NSG.mtof(vNotes[Math.min(vNotes.length - 1, Math.floor(vNotes.length * 0.4))].pitch) : 0;
+    var out = await this._callSlot(0, 'vocalMixAnalyze', {
+      items: items, sr: sr, headroom: opt.headroom === true,
+      includeAnalysis: data.includeAnalysis !== false, harmF0: harmF0
+    }, true);
+    out.milliseconds = performance.now() - start;
+    out.mode = 'worker-pool';
+    return out;
+  };
+  Client.prototype._runAccompParallel = async function (job) {
+    var start = performance.now(), data = job.data;
+    var tracks = (data.score && data.score.tracks) || [];
+    var instTrk = null;
+    for (var i = 0; i < tracks.length; i++) if (tracks[i] && tracks[i].type === 'inst') { instTrk = tracks[i]; break; }
+    var noteCount = instTrk && Array.isArray(instTrk.notes) ? instTrk.notes.length : 0;
+    if (noteCount < 48 || this.maxWorkers <= 1) {
+      var singleRes = await this._callSlot(0, 'accomp', data, false);
+      singleRes.mode = 'worker';
+      return singleRes;
+    }
+    var W = Math.min(this.maxWorkers, Math.max(2, Math.floor(noteCount / 40)));
+    var self = this, slicePromises = [];
+    for (var w = 0; w < W; w++) {
+      var a = Math.floor(noteCount * w / W), b = Math.floor(noteCount * (w + 1) / W);
+      if (b <= a) continue;
+      slicePromises.push(this._callSlot(w, 'accompSlice', {
+        score: data.score, legacySound: data.legacySound, space: data.space, noteRange: [a, b]
+      }, false));
+    }
+    var slices = await Promise.all(slicePromises);
+    if (this.closed || this.active !== job) throw cancelled();
+    var valid = slices.filter(function (s) { return s && !s.empty && s.total > 0; });
+    if (!valid.length) {
+      return { audio: null, peak: 0, env: null, milliseconds: performance.now() - start, backend: 'wasm', mode: 'worker-pool' };
+    }
+    var total = valid[0].total, sr = valid[0].sr, spaceName = valid[0].spaceName, spb0 = valid[0].spb0;
+    var legacySound = !!valid[0].legacySound;
+    var left = new Float32Array(total), right = new Float32Array(total);
+    var busNames = ['hall', 'plate', 'delay', 'chorus'];
+    var buses = {};
+    for (var bi = 0; bi < busNames.length; bi++) {
+      var bn = busNames[bi];
+      if (spaceName && valid.some(function (s) { return !!s[bn + 'L']; })) {
+        buses[bn] = [new Float32Array(total), new Float32Array(total)];
+      }
+    }
+    for (var si = 0; si < valid.length; si++) {
+      var ch = valid[si], off = ch.offset, len = ch.length, cL = ch.left, cR = ch.right;
+      for (var k = 0; k < len; k++) { left[off + k] += cL[k]; right[off + k] += cR[k]; }
+      for (var bj = 0; bj < busNames.length; bj++) {
+        var bName = busNames[bj], pair = buses[bName];
+        if (!pair) continue;
+        var sL = ch[bName + 'L'], sR = ch[bName + 'R'];
+        if (!sL) continue;
+        var dL = pair[0], dR = pair[1];
+        for (var k2 = 0; k2 < len; k2++) { dL[off + k2] += sL[k2]; dR[off + k2] += sR[k2]; }
+      }
+    }
+    var wetList = [];
+    if (spaceName) {
+      var activeEffects = [];
+      for (var bk = 0; bk < busNames.length; bk++) {
+        var eName = busNames[bk], bPair = buses[eName];
+        if (!bPair) continue;
+        var nonZero = false, a0 = bPair[0], b0 = bPair[1];
+        for (var z = 0; z < total; z++) { if (a0[z] !== 0 || b0[z] !== 0) { nonZero = true; break; } }
+        if (nonZero) activeEffects.push({ effect: eName, left: a0, right: b0 });
+      }
+      if (activeEffects.length) {
+        wetList = await Promise.all(activeEffects.map(function (ef, idx) {
+          return self._callSlot(idx % self.maxWorkers, 'accompSpace', {
+            effect: ef.effect, left: ef.left, right: ef.right, sr: sr, spaceName: spaceName, spb0: spb0
+          }, true);
+        }));
+        if (this.closed || this.active !== job) throw cancelled();
+      }
+    }
+    var out = await this._callSlot(0, 'accompFinalize', {
+      left: left, right: right, wetList: wetList, sr: sr, spaceName: spaceName, legacySound: legacySound
+    }, true);
+    out.milliseconds = performance.now() - start;
+    out.mode = 'worker-pool';
+    return out;
+  };
+  Client.prototype._runTuneParallel = async function (job) {
+    var start = performance.now(), data = job.data;
+    if ((data.options && data.options.vel === false) || this.maxWorkers <= 1) {
+      var singleRes = await this._callSlot(0, 'tune', data, false);
+      singleRes.mode = 'worker';
+      return singleRes;
+    }
+    var init = await this._callSlot(0, 'tuneStart', data, false);
+    if (this.closed || this.active !== job) throw cancelled();
+    if (init.done) {
+      init.milliseconds = performance.now() - start;
+      init.mode = 'worker-pool';
+      return init;
+    }
+    var probe = init.probe, passes = init.passes, timbre = init.timbre;
+    var baseOpt = data.options || {};
+    for (var p = 0; p < passes.length; p++) {
+      var passOpt = {
+        rawSource: !!baseOpt.rawSource,
+        hd: passes[p].hd === true,
+        modeBFricWaveguide: baseOpt.modeBFricWaveguide,
+        modeBHighPolish: baseOpt.modeBHighPolish
+      };
+      var rendered = await this._renderTrackParallel(job, probe, probe.tracks[0], timbre, passOpt);
+      if (this.closed || this.active !== job) throw cancelled();
+      var step = await this._callSlot(0, 'tuneStep', {
+        tuneId: init.tuneId, passIndex: p, pcm: rendered.pcm, sr: rendered.sr
+      }, true);
+      if (this.closed || this.active !== job) throw cancelled();
+      if (step.done) {
+        step.milliseconds = performance.now() - start;
+        step.mode = 'worker-pool';
+        return step;
+      }
+      probe = step.probe;
+    }
+    throw new Error('自动调教未正常完成');
   };
   Client.prototype._fallback = function () {
-    if (this.disabled && !this.worker) return;
-    clearTimeout(this.startupTimer);
+    if (this.disabled && !this.pool.length) return;
+    clearTimeout(this.startupTimer); this.startupTimer = null;
     this._releaseWorker(); this.started = false;
     if (!this.options.workerFactory && !this.portable && root.NSG_WORKER_MODULES) this.portable = true;
     else this.disabled = true;
     if (this.active) this._dispatch(this.active);
   };
   Client.prototype._dispatch = async function (job) {
-    var self = this, worker = this._worker();
-    if (worker) {
-      var needed;
-      if (this.portable) {
-        needed = jobDictLangs(job.type, job.data);
-        try { await Promise.all(needed.map(function (lang) { return NSG.loadDict(lang); })); }
-        catch (e) { if (this.worker === worker) this._finish(job, e); return; }
-        if (this.worker !== worker || this.active !== job) return;
-      }
+    var self = this, slot = this._slot(0);
+    if (slot) {
       try {
-        // Only the first response has a startup deadline; long songs may take longer.
-        if (!this.started) this.startupTimer = setTimeout(function () { self._fallback(); }, 30000);
-        var payload = { id: job.id, type: job.type, data: job.data };
-        if (this.portable && root.NSG_DICT) {
-          var unsent = null;
-          for (var i = 0; i < needed.length; i++) {
-            var L = needed[i];
-            if (!this.sentDicts[L] && root.NSG_DICT[L] !== undefined) {
-              if (!unsent) unsent = {};
-              unsent[L] = root.NSG_DICT[L];
-              this.sentDicts[L] = true;
-            }
-          }
-          if (unsent) payload.dicts = unsent;
+        var result;
+        if (this.maxWorkers > 1 && job.type === 'vocal') {
+          result = await this._runVocalParallel(job);
+        } else if (this.maxWorkers > 1 && job.type === 'accomp') {
+          result = await this._runAccompParallel(job);
+        } else if (this.maxWorkers > 1 && job.type === 'tune') {
+          result = await this._runTuneParallel(job);
+        } else {
+          result = await this._callSlot(0, job.type, job.data, false);
+          result.mode = 'worker';
         }
-        worker.postMessage(payload);
-        return;
-      } catch (e) { this._fallback(); return; }
+        if (this.closed || this.active !== job) return;
+        this._finish(job, null, result);
+      } catch (e) {
+        if (this.closed || this.active !== job) return;
+        if (e && e.name === 'AbortError') return;
+        if (!this.started) { this._fallback(); return; }
+        this._finish(job, e);
+      }
+      return;
     }
     // When every Worker is denied, fail visibly instead of freezing the browser.
     // Keep the synchronous route for Node tools and explicit fallback diagnostics.
@@ -367,7 +747,7 @@
   };
   Client.prototype._finish = function (job, error, result) {
     if (this.active !== job) return;
-    this.started = true; this.active = null;
+    this.started = true; clearTimeout(this.startupTimer); this.startupTimer = null; this.active = null;
     if (error) job.reject(error);
     else {
       if (job.key !== null) {
@@ -448,11 +828,12 @@
     return this._submit(type, snapshot, type === 'arrange' ? stableKey(data) : null);
   };
   Client.prototype.close = function () {
-    this.closed = true; clearTimeout(this.startupTimer);
+    this.closed = true; clearTimeout(this.startupTimer); this.startupTimer = null;
     this._releaseWorker();
     if (this.active) this.active.reject(cancelled());
     this.queue.forEach(function (job) { job.reject(cancelled()); });
     this.active = null; this.queue = []; this.cache = {}; this.vocalByMode = { std: null, hd: null };
+    this.dryTrackCache.clear(); this.dryTrackBytes = 0;
   };
   NSG.Renderer = { create: function (options) { return new Client(options); },
     vocalKey: vocalKey, accompKey: accompKey, jobDictLangs: jobDictLangs, execute: execute };

@@ -2278,11 +2278,11 @@
   }
 
   /* ---------- 乐谱 → 控制帧 ---------- */
-  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening, organicAmt, humanizeAmt) {
+  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening, organicAmt, humanizeAmt, frameRange) {
     var built = buildEvents(score, timbre, tm, lang, japaneseFriction, japaneseVoicedFriction, undefined, nasalRelease, nasalTract);
     var ev = built.ev, notes = built.notes;
     var pitchModel = NSG.TUNING.pitchModel(notes, built.pit);
-    if (!notes.length) return { ctrl: [], total: 0 };
+    if (!notes.length) return { ctrl: [], total: 0, startFrame: 0, endFrame: 0 };
 
     var tEnd = 0;
     for (var i = 0; i < ev.length; i++) if (ev[i].t1 > tEnd) tEnd = ev[i].t1;
@@ -2290,7 +2290,9 @@
     tEnd += 0.35;
     var dt = HOP / SR;
     var nFrames = Math.ceil(tEnd / dt) + 2;
-    var ctrl = new Array(nFrames);
+    var frStart = frameRange ? Math.max(0, frameRange[0] | 0) : 0;
+    var frEnd = (frameRange && frameRange[1] > 0) ? Math.max(frStart, frameRange[1] | 0) : nFrames;
+    var ctrl = new Array(frEnd - frStart);
 
     var cur = [[500, 90], [1500, 100], [2500, 130], [3300, 190], [4200, 240], [5200, 300]];
     var curFric = 0, curTn = 0, curTnLpHz = 0, curFricF = 5000, curFricB = 1200, curNasal = 0, curAv = 0, curMidi = notes.length ? notes[0].pitch : 60;
@@ -2363,7 +2365,8 @@
         pn._phraseEnd = !nextV || nextV._rest || nextV._breath || (nextV._start - pn._end >= 0.06);
       }
     }
-    for (var fr = 0; fr < nFrames; fr++) {
+    for (var fr = frStart; fr < frEnd; fr++) {
+      var ctrlIdx = fr - frStart;
       var t = fr * dt;
       while (ci < ev.length && t >= ev[ci].t1) ci++;
       var e = (ci < ev.length && t >= ev[ci].t0) ? ev[ci] : null;
@@ -2829,7 +2832,7 @@
         fricFOut = curFricF + (bFreq - curFricF) * humAmt;
         fricBOut = curFricB + (1450 - curFricB) * humAmt;
       }
-      ctrl[fr] = {
+      ctrl[ctrlIdx] = {
         t: t, f0: f0, av: curAv * 0.92 * velocity * guard * orgTremolo * humTremolo * humEndTaper,
         ah: (balanceAspiration ? (timbre.breath || 0) * aspirationScale : (timbre.breath || 0) * (0.5 + curAv * 0.5)) * orgAirMod * humBreathBoost,
         /* 必须逐帧复制：cur 是不断被改写的同一组数组，直接引用会让整首歌
@@ -2839,38 +2842,38 @@
         nasal: Math.min(1, curNasal * (timbre.nasal || 0.4) * 2.4),
         np: poleHz, nzf: curZ, nmix: curMix, mixGain: mixGain
       };
-      if (curTnLpHz > 0) ctrl[fr].tnLpHz = curTnLpHz;
+      if (curTnLpHz > 0) ctrl[ctrlIdx].tnLpHz = curTnLpHz;
       if ((curTn < 1e-6 && (!e || !e.tnLpHz)) || (active && active._rest)) curTnLpHz = 0;
-      if (research || org || humAmt > 0) ctrl[fr].sourceTilt = sourceTilt;
+      if (research || org || humAmt > 0) ctrl[ctrlIdx].sourceTilt = sourceTilt;
       if (org) {
-        ctrl[fr].organicGate = orgGate;
-        ctrl[fr].organicAirMod = orgAirMod;
+        ctrl[ctrlIdx].organicGate = orgGate;
+        ctrl[ctrlIdx].organicAirMod = orgAirMod;
       }
       if (humAmt > 0) {
-        ctrl[fr].rd = humRdOut;
-        ctrl[fr].oq = humOqOut;
-        ctrl[fr].ta = humTaOut;
-        ctrl[fr].fry = humFry;
+        ctrl[ctrlIdx].rd = humRdOut;
+        ctrl[ctrlIdx].oq = humOqOut;
+        ctrl[ctrlIdx].ta = humTaOut;
+        ctrl[ctrlIdx].fry = humFry;
       }
       if (modeB) {
         var frontTarget = e && e.frontCavity ? 1 : 0;
         if (inXf && e.anticipation) frontTarget = (prevEv && prevEv.frontCavity ? 1 : 0) * (1 - xr) + frontTarget * xr;
         curFrontCavity += (frontTarget - curFrontCavity) * aFric;
         if (curFrontCavity < 1e-8) curFrontCavity = 0;
-        ctrl[fr].frontCavity = curFrontCavity;
+        ctrl[ctrlIdx].frontCavity = curFrontCavity;
         if (e) {
           lastVoicedHighGate = e.kind === 'F' || e.kind === 'S' ? 0 : 1;
-          ctrl[fr].voicedHighGate = /^(V|G|L)$/.test(e.kind) ? 1 : 0;
+          ctrl[ctrlIdx].voicedHighGate = /^(V|G|L)$/.test(e.kind) ? 1 : 0;
         } else {
           if (curAv < 1e-6) lastVoicedHighGate = 1;
-          ctrl[fr].voicedHighGate = lastVoicedHighGate;
+          ctrl[ctrlIdx].voicedHighGate = lastVoicedHighGate;
         }
       }
       if (modeB && (curJaFricF !== curFricF || curJaFricB !== curFricB)) {
-        ctrl[fr].jaFricF = curJaFricF; ctrl[fr].jaFricB = curJaFricB;
+        ctrl[ctrlIdx].jaFricF = curJaFricF; ctrl[ctrlIdx].jaFricB = curJaFricB;
       }
     }
-    return { ctrl: ctrl, total: nFrames * HOP, events: ev };
+    return { ctrl: ctrl, total: nFrames * HOP, startFrame: frStart, endFrame: frEnd, events: ev };
   }
 
   /* ---------- 声带音：倍频振幅叠加 ---------- */
@@ -3307,33 +3310,66 @@
     var n = pcm.length;
     if (!n) return pcm;
     var tail = new Float64Array(overlap);
-    var re = new Float64Array(EQ_FFT), im = new Float64Array(EQ_FFT);
-    for (var s = 0; s < n; s += B) {
-      var blockLen = Math.min(B, n - s);
-      var nonZero = false;
-      for (var z = 0; z < blockLen; z++) if (pcm[s + z] !== 0) { nonZero = true; break; }
-      var isLast = s + B >= n;
-      var writeStart = s < c ? c - s : 0;
-      var writeEnd = isLast ? n + c - s : B;
-      if (!nonZero) {
-        for (var zi = writeStart; zi < writeEnd; zi++) pcm[s + zi - c] = zi < overlap ? tail[zi] : 0;
-        if (!isLast) tail.fill(0);
+    var wasmRaw = NSG.WASM && NSG.WASM.raw && EQ_FFT <= 8192 ? NSG.WASM.raw() : null;
+    var re = wasmRaw ? wasmRaw.real : new Float64Array(EQ_FFT);
+    var im = wasmRaw ? wasmRaw.imag : new Float64Array(EQ_FFT);
+    var kr = K.re, ki = K.im, invFft = 1 / EQ_FFT;
+    var s = 0;
+    while (s < n) {
+      var lenA = Math.min(B, n - s);
+      var nonZeroA = false;
+      for (var z = 0; z < lenA; z++) if (pcm[s + z] !== 0) { nonZeroA = true; break; }
+      var isLastA = s + B >= n;
+      var wsA = s < c ? c - s : 0;
+      var weA = isLastA ? n + c - s : B;
+      if (!nonZeroA) {
+        for (var zi = wsA; zi < weA; zi++) pcm[s + zi - c] = zi < overlap ? tail[zi] : 0;
+        if (!isLastA) tail.fill(0);
+        s += B;
         continue;
       }
-      re.fill(0, blockLen); im.fill(0);
-      for (var i = 0; i < blockLen; i++) re[i] = pcm[s + i];
-      fft(re, im);
-      for (var k = 0; k < EQ_FFT; k++) {
-        var r = re[k] * K.re[k] - im[k] * K.im[k];
-        im[k] = -(re[k] * K.im[k] + im[k] * K.re[k]);   // 共轭后再正变换 = 逆变换
-        re[k] = r;
+      // Pack two consecutive non-zero real blocks into one complex FFT (Re = block A, Im = block B).
+      // Because the FIR kernel is real, circular convolution is linear:
+      // IFFT(FFT(A + jB) * H) = conv(A, h) + j * conv(B, h); conjugate-FFT yields Re = conv(A), -Im = conv(B).
+      var sB = s + B, hasB = false, lenB = 0;
+      if (!isLastA) {
+        lenB = Math.min(B, n - sB);
+        for (var zb = 0; zb < lenB; zb++) if (pcm[sB + zb] !== 0) { hasB = true; break; }
       }
-      fft(re, im);
-      var invFft = 1 / EQ_FFT;
-      for (var wi = writeStart; wi < writeEnd; wi++) {
+      for (var ia = 0; ia < lenA; ia++) re[ia] = pcm[s + ia];
+      re.fill(0, lenA, EQ_FFT);
+      if (hasB) {
+        for (var ib = 0; ib < lenB; ib++) im[ib] = pcm[sB + ib];
+        im.fill(0, lenB, EQ_FFT);
+      } else {
+        im.fill(0, 0, EQ_FFT);
+      }
+      if (wasmRaw) wasmRaw.fft(EQ_FFT); else fft(re, im);
+      for (var k = 0; k < EQ_FFT; k++) {
+        var rk = re[k], ik = im[k], krk = kr[k], kik = ki[k];
+        re[k] = rk * krk - ik * kik;
+        im[k] = -(rk * kik + ik * krk);
+      }
+      if (wasmRaw) wasmRaw.fft(EQ_FFT); else fft(re, im);
+      for (var wi = wsA; wi < weA; wi++) {
         pcm[s + wi - c] = (wi < overlap ? tail[wi] : 0) + re[wi] * invFft;
       }
-      if (!isLast) for (var j = 0; j < overlap; j++) tail[j] = re[B + j] * invFft;
+      if (!isLastA) {
+        for (var ja = 0; ja < overlap; ja++) tail[ja] = re[B + ja] * invFft;
+      }
+      if (hasB) {
+        var isLastB = sB + B >= n;
+        var weB = isLastB ? n + c - sB : B;
+        for (var wb = 0; wb < weB; wb++) {
+          pcm[sB + wb - c] = (wb < overlap ? tail[wb] : 0) - im[wb] * invFft;
+        }
+        if (!isLastB) {
+          for (var jb = 0; jb < overlap; jb++) tail[jb] = -im[B + jb] * invFft;
+        }
+        s += B + B;
+      } else {
+        s += B;
+      }
     }
     return pcm;
   }
@@ -3341,12 +3377,111 @@
     return applyOutEqCore(pcm, eq, sampleRate, frequencyScale, false);
   };
 
-  function renderSingleVocal(score, timbre, opt) {
+  function extractMixGains(ctrl) {
+    var unit = true;
+    for (var mg = 0; mg < ctrl.length; mg++) {
+      if (ctrl[mg] && Number.isFinite(ctrl[mg].mixGain) && ctrl[mg].mixGain !== 1) { unit = false; break; }
+    }
+    if (unit) return null;
+    var arr = new Float32Array(ctrl.length);
+    for (var i = 0; i < ctrl.length; i++) {
+      arr[i] = ctrl[i] && Number.isFinite(ctrl[i].mixGain) ? ctrl[i].mixGain : 1;
+    }
+    return arr;
+  }
+
+  function finalizeVocalOut(out, mixGains) {
+    /* 电平：按 RMS 归一，不再按峰值。
+       按峰值归一时，低音的谐波密、波峰因数大，高音的谐波稀、波峰因数小；
+       同样“唱得多响”，峰值一样而 RMS 能差近 20dB——低音区整段被压低，
+       听起来就是“有的字听不见”。改按 RMS 定标，峰值交给 tanh 软限幅。 */
+    var peak = 0, sq = 0;
+    for (var q = 0; q < out.length; q++) {
+      var aa = Math.abs(out[q]);
+      if (aa > peak) peak = aa;
+      sq += out[q] * out[q];
+    }
+    var rms = Math.sqrt(sq / Math.max(1, out.length));
+    var g = rms > 1e-9 ? 0.20 / rms : 1;
+    /* 峰值守卫看 99.5% 分位，而不是单个最大样本。
+       共振峰扫过某阶谐波、颤音相位凑巧对齐时可能出现短时尖峰；
+       单按最大样本压增益会让整首歌被一个瞬态牵动，
+       而且越亮的音色（共振峰越高）越容易中招——八个歌手的电平就被拉不齐了。
+       孤立尖峰交给后面的限幅器处理，守卫只约束"整段最响的那一片"。
+       守卫线与限幅阈值一致：99.5% 的样本保持线性，限幅器只接住零星尖峰；
+       若仍按旧 tanh 的 1.10 定线，限幅器会在响亮的音上频繁压增益，
+       整音被压低，自动 VEL 的补偿也随之失准。 */
+    var LIM_T = 0.92, LIM_SMALL = 1.0185;   // 小信号增益与旧版 tanh(x·1.05)×0.97 一致
+    if (peak > 1e-9) {
+      var NB = 128, hist = new Uint32Array(NB + 1), n2 = out.length;
+      for (var h1 = 0; h1 < n2; h1++) {
+        var av = Math.abs(out[h1]) / peak;
+        hist[Math.min(NB, (av * NB) | 0)]++;
+      }
+      var want = n2 * 0.005, acc = 0, p995 = peak;
+      for (var hb = NB; hb >= 0; hb--) {
+        acc += hist[hb];
+        if (acc >= want) { p995 = ((hb + 1) / NB) * peak; break; }
+      }
+      if (p995 * g * LIM_SMALL > LIM_T) g = LIM_T / (p995 * LIM_SMALL);
+      else if (peak * g < 0.45) g = 0.45 / peak;
+    }
+    /* 限幅：3ms 预读的峰值限幅器，阈值以下完全线性。
+       旧版对整段做 tanh(x·g·1.05)：tanh 处处弯曲，RMS 0.2 的人声也有约 −27dB 的
+       谐波/互调失真，在 16k 采样下折成毛刺，是“刺”的来源之一。
+       这里只在峰值越过 0.92 时压增益：req 是每个样本允许的增益，
+       先取前方 L 个样本内的最小值，再做 L 点滑动平均（起音平滑且保证不越限），
+       最后 50ms 释放。 */
+    var LA = HD ? 144 : 48, gLin = g * LIM_SMALL;
+    // Only the lookahead window and its preceding LA minima are live. Ring
+    // buffers retain the original Float32 rounding and queue tie handling,
+    // without three song-length temporary arrays or separate full-song passes.
+    var nOut = out.length, queueSize = LA + 2;
+    var dq = new Int32Array(queueSize), req = new Float32Array(queueSize), dh = 0, dt = 0, queued = 0;
+    var win = new Float32Array(LA), slot = 0;
+    var relA = 1 - Math.exp(-1 / (SR * 0.05)), env = 1, box = LA;
+    var unitMixGain = !mixGains || !mixGains.length;
+    var mgLast = unitMixGain ? 0 : mixGains.length - 1;
+    function mixGainAt(sample) {
+      var frame = sample / HOP, i = frame < mgLast ? Math.floor(frame) : mgLast;
+      var a = mixGains[i];
+      var b = i < mgLast ? mixGains[i + 1] : a;
+      return a + (b - a) * (frame - Math.floor(frame));
+    }
+    for (var q3 = 0; q3 < nOut + LA; q3++) {
+      var ax = q3 < nOut ? Math.abs(out[q3]) * gLin * (unitMixGain ? 1 : mixGainAt(q3)) : 0;
+      var request = Math.fround(ax > LIM_T ? LIM_T / ax : 1);
+      while (queued > 0) {
+        var back = dt === 0 ? queueSize - 1 : dt - 1;
+        if (req[back] < request) break;
+        dt = back; queued--;
+      }
+      dq[dt] = q3; req[dt] = request;
+      if (++dt === queueSize) dt = 0;
+      queued++;
+      var q5 = q3 - LA;
+      if (q5 < 0) continue;
+      while (dq[dh] < q5) {
+        if (++dh === queueSize) dh = 0;
+        queued--;
+      }
+      var minimum = req[dh];
+      // box = 窗口 [q5-LA+1, q5] 内 win 之和；窗口外视为 1。
+      box += minimum - (q5 >= LA ? win[slot] : 1);
+      win[slot] = minimum;
+      if (++slot === LA) slot = 0;
+      var gTarget = Math.min(1, box / LA);
+      env = gTarget < env ? gTarget : env + (gTarget - env) * relA;
+      if (env > gTarget) env = gTarget;
+      var yv = out[q5] * gLin * env * (unitMixGain ? 1 : mixGainAt(q5));
+      out[q5] = yv > 0.97 ? 0.97 : yv < -0.97 ? -0.97 : yv;
+    }
+    return { pcm: out, sr: SR };
+  }
+
+  function buildVocalControl(score, timbre, opt) {
     opt = opt || {};
-    // Reference switch is for reproducible A/B measurements; the toolbar HD mode
-    // enables this profile by default. It has no effect in the legacy engine.
     var research = HD && opt.modeBSource !== false && opt.hdResearch !== false;
-    // Diagnostic bypass reproduces the pre-D renderer; no project/UI flag.
     var refine = modeB && !opt.rawSource && opt.modeBRefinement !== false ? modeBRefinementOf(timbre) : null;
     var nasalRelease = !opt.rawSource && opt.modeBRefinement !== false && opt.modeBNasalRelease !== false;
     var balanceAspiration = modeB && !opt.rawSource && opt.modeBAspiration !== false;
@@ -3367,9 +3502,6 @@
       }
     }
     var aspAirMix = research ? (0.18 + (0.04 - 0.18) * smoothBlend) : 0;
-    // Diagnostic A/B bypass only; existing project/timbre fields need no change.
-    // Select from the steady timbre reference, not the transitional first-frame
-    // tract, so high-F6 voices retain their original attack as well as sustain.
     var tractJoin = voicedHigh && opt.modeBTractJoin !== false &&
       NSG.formantsOf(NSG.PHONES.a, timbre).pairs[5][0] < 6150;
     var compensateHighEq = false;
@@ -3382,19 +3514,101 @@
     var nasalTract = modeB && !opt.rawSource && opt.modeBNasalTract !== false && opt.modeBNasalTract !== 'off';
     var organicAmt = opt.rawSource ? 0 : resolveOrganicMicroVar(opt);
     var humanizeAmt = opt.rawSource ? 0 : resolveHumanizeCore(opt);
+    var sliceRange = Array.isArray(opt.sliceRange) && opt.sliceRange.length === 2 ? opt.sliceRange : null;
     var r0 = scoreToControl(score, timbre, tm, score.lang, research, balanceAspiration,
       !opt.rawSource && opt.modeBJapaneseFriction !== false,
       !opt.rawSource && opt.modeBJapaneseVoicedFriction !== false, nasalRelease, aspAirMix, nasalTract,
       modeB && !opt.rawSource && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0,
-      organicAmt, humanizeAmt);
-    if (!r0.ctrl.length) return { pcm: new Float32Array(Math.round(SR * 0.4)), sr: SR };
+      organicAmt, humanizeAmt, sliceRange);
+    return {
+      r0: r0, timbre: timbre, research: research, refine: refine, nasalRelease: nasalRelease,
+      balanceAspiration: balanceAspiration, highStrength: highStrength, voicedHigh: voicedHigh,
+      wideband: wideband, perturbBlend: perturbBlend, smoothBlend: smoothBlend, aspAirMix: aspAirMix,
+      tractJoin: tractJoin, compensateHighEq: compensateHighEq, nasalTract: nasalTract,
+      organicAmt: organicAmt, humanizeAmt: humanizeAmt
+    };
+  }
+
+  function planVocalSlicesForScore(score, timbre, opt, maxSlices) {
+    var trk = (score && score.tracks && score.tracks[0]) || null;
+    var rawNotes = (trk && Array.isArray(trk.notes)) ? trk.notes : [];
+    if (!rawNotes.length) return { slices: [], sr: SR };
+    maxSlices = Math.max(1, Math.min(8, maxSlices | 0 || 4));
+    var sorted = rawNotes.slice().sort(function (a, b) { return a.start - b.start; });
+    var tm = NSG.TEMPO.map(score), dt = HOP / SR;
+    var gaps = [], maxEnd = 0;
+    for (var i = 0; i < sorted.length; i++) {
+      var n = sorted[i];
+      var eSec = tm.secOf(n.start + n.dur);
+      if (eSec > maxEnd) maxEnd = eSec;
+      if (i + 1 < sorted.length) {
+        var nextStart = tm.secOf(sorted[i + 1].start);
+        var gapSec = nextStart - maxEnd;
+        // >= 450 ms gap guarantees >= 180 ms decay tail + >= 270 ms consonant anticipation/FIR margin.
+        if (gapSec >= 0.45) {
+          var cutSec = maxEnd + Math.min(0.22, Math.max(0.18, gapSec * 0.4));
+          gaps.push({ noteIdx: i + 1, frame: Math.round(cutSec / dt), sec: cutSec });
+        }
+      }
+    }
+    var totalSec = maxEnd + 0.35;
+    var cuts = [{ noteIdx: 0, frame: 0 }];
+    if (maxSlices > 1 && gaps.length && totalSec > 4) {
+      var used = Object.create(null);
+      for (var k = 1; k < maxSlices; k++) {
+        var ideal = totalSec * k / maxSlices;
+        var best = null, bestDist = Infinity;
+        for (var g = 0; g < gaps.length; g++) {
+          var cand = gaps[g];
+          if (used[cand.noteIdx]) continue;
+          var dist = Math.abs(cand.sec - ideal);
+          if (dist < bestDist && dist < totalSec / (maxSlices * 1.35)) {
+            bestDist = dist; best = cand;
+          }
+        }
+        if (best) { used[best.noteIdx] = true; cuts.push(best); }
+      }
+      cuts.sort(function (a, b) { return a.noteIdx - b.noteIdx; });
+    }
+    cuts.push({ noteIdx: sorted.length, frame: 0 });
+    var slices = [];
+    for (var s = 0; s < cuts.length - 1; s++) {
+      var a = cuts[s], b = cuts[s + 1];
+      if (b.noteIdx > a.noteIdx) {
+        slices.push({
+          noteRange: [a.noteIdx, b.noteIdx],
+          frameRange: [a.frame, s === cuts.length - 2 ? 0 : b.frame]
+        });
+      }
+    }
+    return { slices: slices, sr: SR };
+  }
+
+  function renderSingleVocal(score, timbre, opt) {
+    opt = opt || {};
+    var prep = buildVocalControl(score, timbre, opt);
+    timbre = prep.timbre;
+    var research = prep.research, refine = prep.refine;
+    var highStrength = prep.highStrength, voicedHigh = prep.voicedHigh, wideband = prep.wideband;
+    var perturbBlend = prep.perturbBlend, smoothBlend = prep.smoothBlend, aspAirMix = prep.aspAirMix;
+    var tractJoin = prep.tractJoin, compensateHighEq = prep.compensateHighEq, nasalTract = prep.nasalTract;
+    var organicAmt = prep.organicAmt, humanizeAmt = prep.humanizeAmt;
+    var r0 = prep.r0;
+    var sliceRange = Array.isArray(opt.sliceRange) && opt.sliceRange.length === 2 ? opt.sliceRange : null;
+    if (!r0.ctrl.length) {
+      if (sliceRange) return { offset: 0, pcm: new Float32Array(0), total: Math.round(SR * 0.4), sr: SR, startFrame: 0, endFrame: 0, mixGains: null };
+      return { pcm: new Float32Array(Math.round(SR * 0.4)), sr: SR };
+    }
 
     var ctrl = r0.ctrl;
-    var total = r0.total;
-    var out = new Float32Array(total);
-    var bodyStage = refine ? new Float32Array(total) : null;
-    var fricStage = refine ? new Float32Array(total) : null;
-    var bodyMask = refine ? new Float32Array(total) : null;
+    var startFrame = r0.startFrame || 0;
+    var endFrame = r0.endFrame || ctrl.length;
+    var sampleOffset = startFrame * HOP;
+    var sliceTotal = ctrl.length * HOP;
+    var out = new Float32Array(sliceTotal);
+    var bodyStage = refine ? new Float32Array(sliceTotal) : null;
+    var fricStage = refine ? new Float32Array(sliceTotal) : null;
+    var bodyMask = refine ? new Float32Array(sliceTotal) : null;
     var bodyPrev = 0, fricPrev = 0, maskPrev = 0;
     var maskAlpha = 1 - Math.exp(-1 / (SR * 0.012));
     var rawSrc = !!opt.rawSource;
@@ -3428,11 +3642,12 @@
     var src = makeSource(timbre, wideband, organicAmt, humanizeAmt);
     var useOrganic = organicAmt > 0;
     var useHumanize = humanizeAmt > 0;
-    var orgCycleRnd = useOrganic ? mulberry32(0x94d049bb) : null;
+    var seedSalt = startFrame ? ((startFrame * 2654435761) >>> 0) : 0;
+    var orgCycleRnd = useOrganic ? mulberry32((0x94d049bb ^ seedSalt) >>> 0) : null;
     var orgCycleAlpha = 1 - Math.exp(-1 / (SR * 0.0015));
     var orgShimCur = 1, orgShimTgt = 1, orgJitCur = 1, orgJitTgt = 1;
     var prevOrgAir = 1;
-    var glottalNoise = useHumanize ? mulberry32(0x3c6ef372) : null;
+    var glottalNoise = useHumanize ? mulberry32((0x3c6ef372 ^ seedSalt) >>> 0) : null;
     var midLp = 0, midHp = 0;
     var midLpCoef = Math.exp(-2 * Math.PI * 4800 / SR), midHpCoef = Math.exp(-2 * Math.PI * 1600 / SR);
     // Normalize 1-pole LP(4800) - LP(1600) white-noise band to ~unit RMS regardless of SR.
@@ -3445,7 +3660,7 @@
     var velvetRem = 0, velvetPos = 0, velvetSign = 1, velvetLen = 5, airApZ = 0;
     var air = voicedHigh && wideband && timbre.breath > 0 ?
       makeVoicedAir(timbre, compensateHighEq, opt.modeBAirSoftness !== false, refine, tractJoin, smoothBlend, perturbBlend) : null;
-    var upperAir = air ? new Float32Array(total) : null, airNoise = air ? mulberry32(0x73e91a45) : null;
+    var upperAir = air ? new Float32Array(sliceTotal) : null, airNoise = air ? mulberry32((0x73e91a45 ^ seedSalt) >>> 0) : null;
     // Piriform fossa anti-resonance (~4.2-5.4 kHz spectral dip) for HiFi voices
     // that lack an extracted speaker outEq (which already encodes recording dips).
     var piriform = null;
@@ -3462,13 +3677,13 @@
     if (useHumanize && !rawSrc && !piriform) {
       pharynxNotch = new DynamicNotch();
     }
-    var noise = mulberry32(0x1234567);
-    var tnoise = mulberry32(0x2545f491);   // 声道送气噪声单独取随机数，不扰动原有噪声序列
+    var noise = mulberry32((0x1234567 ^ seedSalt) >>> 0);
+    var tnoise = mulberry32((0x2545f491 ^ seedSalt) >>> 0);   // 声道送气噪声单独取随机数，不扰动原有噪声序列
     /* 微扰：逐帧基频抖动。真实嗓音的周期不是等长的，这种 0.2%–1% 的
        随机扰动就是"沙、粗、有人味"的来源；0 时整条分支不执行，
        输出与加这个参数之前逐字节相同。 */
     var jit = timbre.jitter || 0;
-    var jrnd = jit > 0 ? mulberry32(0x5bf03635) : null;
+    var jrnd = jit > 0 ? mulberry32((0x5bf03635 ^ seedSalt) >>> 0) : null;
     var gl = NSG.sourceFilterOf(timbre);
     var hfY = 0, radPrev = 0, lastF0 = -1;
     // 男声1试听选定的 G：只柔化两条辅音噪声，不经过声带谐波或元音气声。
@@ -3611,7 +3826,7 @@
       var masterPh = src.masterPhase;
       for (var n = 0; n < HOP; n++) {
         var idx = fr * HOP + n;
-        if (idx >= total) break;
+        if (idx >= sliceTotal) break;
         var lastSample = n === HOP - 1;
         var mix = (n + 1) / HOP;
         var sampleF0 = lastF0 + (f0 - lastF0) * mix;
@@ -4086,98 +4301,13 @@
       for (var ua = 0; ua < out.length; ua++) out[ua] += upperAir[ua];
     }
     if (!rawSrc && Array.isArray(timbre.outEq)) NSG.DSP.applyOutEq(out, timbre.outEq);
-
-    /* 电平：按 RMS 归一，不再按峰值。
-       按峰值归一时，低音的谐波密、波峰因数大，高音的谐波稀、波峰因数小；
-       同样“唱得多响”，峰值一样而 RMS 能差近 20dB——低音区整段被压低，
-       听起来就是“有的字听不见”。改按 RMS 定标，峰值交给 tanh 软限幅。 */
-    var peak = 0, sq = 0;
-    for (var q = 0; q < out.length; q++) {
-      var aa = Math.abs(out[q]);
-      if (aa > peak) peak = aa;
-      sq += out[q] * out[q];
+    if (sliceRange) {
+      return {
+        offset: sampleOffset, pcm: out, total: Math.max(r0.total, sampleOffset + sliceTotal),
+        sr: SR, startFrame: startFrame, endFrame: endFrame, mixGains: extractMixGains(ctrl)
+      };
     }
-    var rms = Math.sqrt(sq / Math.max(1, out.length));
-    var g = rms > 1e-9 ? 0.20 / rms : 1;
-    /* 峰值守卫看 99.5% 分位，而不是单个最大样本。
-       共振峰扫过某阶谐波、颤音相位凑巧对齐时可能出现短时尖峰；
-       单按最大样本压增益会让整首歌被一个瞬态牵动，
-       而且越亮的音色（共振峰越高）越容易中招——八个歌手的电平就被拉不齐了。
-       孤立尖峰交给后面的限幅器处理，守卫只约束"整段最响的那一片"。
-       守卫线与限幅阈值一致：99.5% 的样本保持线性，限幅器只接住零星尖峰；
-       若仍按旧 tanh 的 1.10 定线，限幅器会在响亮的音上频繁压增益，
-       整音被压低，自动 VEL 的补偿也随之失准。 */
-    var LIM_T = 0.92, LIM_SMALL = 1.0185;   // 小信号增益与旧版 tanh(x·1.05)×0.97 一致
-    if (peak > 1e-9) {
-      var NB = 128, hist = new Uint32Array(NB + 1), n2 = out.length;
-      for (var h1 = 0; h1 < n2; h1++) {
-        var av = Math.abs(out[h1]) / peak;
-        hist[Math.min(NB, (av * NB) | 0)]++;
-      }
-      var want = n2 * 0.005, acc = 0, p995 = peak;
-      for (var hb = NB; hb >= 0; hb--) {
-        acc += hist[hb];
-        if (acc >= want) { p995 = ((hb + 1) / NB) * peak; break; }
-      }
-      if (p995 * g * LIM_SMALL > LIM_T) g = LIM_T / (p995 * LIM_SMALL);
-      else if (peak * g < 0.45) g = 0.45 / peak;
-    }
-    /* 限幅：3ms 预读的峰值限幅器，阈值以下完全线性。
-       旧版对整段做 tanh(x·g·1.05)：tanh 处处弯曲，RMS 0.2 的人声也有约 −27dB 的
-       谐波/互调失真，在 16k 采样下折成毛刺，是“刺”的来源之一。
-       这里只在峰值越过 0.92 时压增益：req 是每个样本允许的增益，
-       先取前方 L 个样本内的最小值，再做 L 点滑动平均（起音平滑且保证不越限），
-       最后 50ms 释放。 */
-    var LA = HD ? 144 : 48, gLin = g * LIM_SMALL;
-    // Only the lookahead window and its preceding LA minima are live. Ring
-    // buffers retain the original Float32 rounding and queue tie handling,
-    // without three song-length temporary arrays or separate full-song passes.
-    var nOut = out.length, queueSize = LA + 2;
-    var dq = new Int32Array(queueSize), req = new Float32Array(queueSize), dh = 0, dt = 0, queued = 0;
-    var win = new Float32Array(LA), slot = 0;
-    var relA = 1 - Math.exp(-1 / (SR * 0.05)), env = 1, box = LA;
-    // Apply authored mix gains AFTER RMS calibration, but BEFORE the limiter.
-    // Otherwise normalization would turn a quiet/muted role back up to full level.
-    function mixGainAt(sample) {
-      var frame = sample / HOP, i = Math.min(ctrl.length - 1, Math.floor(frame));
-      var a = ctrl[i] && Number.isFinite(ctrl[i].mixGain) ? ctrl[i].mixGain : 1;
-      var b = ctrl[Math.min(ctrl.length - 1, i + 1)];
-      return a + ((b && Number.isFinite(b.mixGain) ? b.mixGain : a) - a) * (frame - Math.floor(frame));
-    }
-    var unitMixGain = true;
-    for (var mg = 0; mg < ctrl.length; mg++) {
-      if (ctrl[mg] && Number.isFinite(ctrl[mg].mixGain) && ctrl[mg].mixGain !== 1) { unitMixGain = false; break; }
-    }
-    for (var q3 = 0; q3 < nOut + LA; q3++) {
-      var ax = q3 < nOut ? Math.abs(out[q3]) * gLin * (unitMixGain ? 1 : mixGainAt(q3)) : 0;
-      var request = Math.fround(ax > LIM_T ? LIM_T / ax : 1);
-      while (queued > 0) {
-        var back = dt === 0 ? queueSize - 1 : dt - 1;
-        if (req[back] < request) break;
-        dt = back; queued--;
-      }
-      dq[dt] = q3; req[dt] = request;
-      if (++dt === queueSize) dt = 0;
-      queued++;
-      var q5 = q3 - LA;
-      if (q5 < 0) continue;
-      while (dq[dh] < q5) {
-        if (++dh === queueSize) dh = 0;
-        queued--;
-      }
-      var minimum = req[dh];
-      // box = 窗口 [q5-LA+1, q5] 内 win 之和；窗口外视为 1。
-      box += minimum - (q5 >= LA ? win[slot] : 1);
-      win[slot] = minimum;
-      if (++slot === LA) slot = 0;
-      var gTarget = Math.min(1, box / LA);
-      env = gTarget < env ? gTarget : env + (gTarget - env) * relA;
-      if (env > gTarget) env = gTarget;
-      var yv = out[q5] * gLin * env * (unitMixGain ? 1 : mixGainAt(q5));
-      out[q5] = yv > 0.97 ? 0.97 : yv < -0.97 ? -0.97 : yv;
-    }
-
-    return { pcm: out, sr: SR };
+    return finalizeVocalOut(out, extractMixGains(ctrl));
   }
 
   function trackRenderScore(score, trk) {
@@ -4297,6 +4427,44 @@
   NSG.DSP.renderTrack = function (score, trk, timbre, opt) {
     return renderSingleVocal(trackRenderScore(score, trk), (trk && trk.timbre) || timbre, opt);
   };
+  NSG.DSP.planVocalSlices = function (score, trk, timbre, opt, maxSlices) {
+    return planVocalSlicesForScore(trackRenderScore(score, trk), (trk && trk.timbre) || timbre, opt, maxSlices);
+  };
+  NSG.DSP.renderVocalSlice = function (score, trk, timbre, opt, sliceSpec) {
+    var sliceTrk = trk;
+    var frameRange = sliceSpec;
+    if (sliceSpec && !Array.isArray(sliceSpec) && Array.isArray(sliceSpec.noteRange)) {
+      var sorted = (trk && Array.isArray(trk.notes) ? trk.notes : []).slice().sort(function (a, b) { return a.start - b.start; });
+      sliceTrk = Object.assign({}, trk, { notes: sorted.slice(sliceSpec.noteRange[0], sliceSpec.noteRange[1]) });
+      frameRange = sliceSpec.frameRange;
+    }
+    var sliceOpt = Object.assign({}, opt, { sliceRange: frameRange });
+    return renderSingleVocal(trackRenderScore(score, sliceTrk), (trk && trk.timbre) || timbre, sliceOpt);
+  };
+  NSG.DSP.finalizeVocalSlices = function (chunks, total, mixGains) {
+    var finalTotal = total || 0;
+    var anyMix = !!mixGains;
+    for (var i0 = 0; i0 < chunks.length; i0++) {
+      var c0 = chunks[i0];
+      if (!c0) continue;
+      var endS = (c0.offset || 0) + (c0.pcm ? c0.pcm.length : 0);
+      if (endS > finalTotal) finalTotal = endS;
+      if (c0.mixGains) anyMix = true;
+    }
+    var full = new Float32Array(finalTotal);
+    var fullMix = mixGains || null;
+    if (!fullMix && anyMix) {
+      fullMix = new Float32Array(Math.ceil(finalTotal / HOP));
+      fullMix.fill(1);
+    }
+    for (var i = 0; i < chunks.length; i++) {
+      var ch = chunks[i];
+      if (!ch) continue;
+      if (ch.pcm && ch.pcm.length) full.set(ch.pcm, ch.offset || 0);
+      if (fullMix && ch.mixGains && ch.mixGains.length) fullMix.set(ch.mixGains, ch.startFrame || 0);
+    }
+    return finalizeVocalOut(full, fullMix);
+  };
   NSG.DSP.limitLookahead = limitLookahead;
   NSG.DSP.mixVocalTracks = mixVocalItems;
 
@@ -4365,6 +4533,275 @@
     return { phones: phones, notes: built.notes, tm: tm };
   };
 
+  var ACCOMP_SPACE_PROFILES = {
+    hall: { tailSec: 2.8, hallTime: 2.55, hallDamp: 3900, hallMix: 0.72, plateTime: 1.10, plateMix: 0.46, delayMix: 0.34, delayFb: 0.38, chorusMix: 0.48, pocketDb: -2.0, airDb: 1.3, compRatio: 2.1, compThresh: 0.42, snareHall: 0.34 },
+    studio: { tailSec: 1.9, hallTime: 1.50, hallDamp: 4700, hallMix: 0.48, plateTime: 0.82, plateMix: 0.38, delayMix: 0.24, delayFb: 0.28, chorusMix: 0.34, pocketDb: -1.5, airDb: 1.0, compRatio: 2.2, compThresh: 0.44, snareHall: 0.16 },
+    wide: { tailSec: 1.7, hallTime: 1.35, hallDamp: 5500, hallMix: 0.42, plateTime: 0.72, plateMix: 0.36, delayMix: 0.30, delayFb: 0.32, chorusMix: 0.48, pocketDb: -1.4, airDb: 1.4, compRatio: 2.5, compThresh: 0.38, snareHall: 0.14 },
+    intimate: { tailSec: 1.3, hallTime: 0.95, hallDamp: 3500, hallMix: 0.34, plateTime: 0.60, plateMix: 0.30, delayMix: 0.14, delayFb: 0.20, chorusMix: 0.20, pocketDb: -1.0, airDb: 0.6, compRatio: 1.8, compThresh: 0.48, snareHall: 0.08 }
+  };
+
+  function runAccompSpaceEffect(effect, inBufL, inBufR, outL, outR, SR, spaceProfile, spb0) {
+    var total = inBufL.length;
+    var TWO_PI = Math.PI * 2;
+    var inPlace = outL === inBufL && outR === inBufR;
+    if (effect === 'chorus') {
+      var cBufSz = Math.max(64, Math.ceil(SR * 0.032));
+      var cRingL = new Float32Array(cBufSz), cRingR = new Float32Array(cBufSz), cW = 0;
+      var cBase = 0.011 * SR, cDep = 0.0038 * SR, cWet = spaceProfile.chorusMix;
+      var cStep1 = 0.43 / SR, cStep2 = 0.59 / SR, cPh1 = 0, cPh2 = 0.5;
+      for (var ci = 0; ci < total; ci++) {
+        var inL = inBufL[ci], inR = inBufR[ci];
+        cRingL[cW] = inL; cRingR[cW] = inR;
+        cPh1 += cStep1; if (cPh1 >= 1) cPh1 -= 1;
+        cPh2 += cStep2; if (cPh2 >= 1) cPh2 -= 1;
+        var dL = cBase + cDep * sinT(cPh1), dR = cBase + cDep * sinT(cPh2);
+        var iL = dL | 0, fL = dL - iL, iR = dR | 0, fR = dR - iR;
+        var pL1 = cW - iL; if (pL1 < 0) pL1 += cBufSz;
+        var pL0 = pL1 - 1; if (pL0 < 0) pL0 += cBufSz;
+        var pR1 = cW - iR; if (pR1 < 0) pR1 += cBufSz;
+        var pR0 = pR1 - 1; if (pR0 < 0) pR0 += cBufSz;
+        var tapL = cRingL[pL1] * (1 - fL) + cRingL[pL0] * fL;
+        var tapR = cRingR[pR1] * (1 - fR) + cRingR[pR0] * fR;
+        var wL = (tapL - tapR * 0.22) * cWet;
+        var wR = (tapR - tapL * 0.22) * cWet;
+        if (inPlace) { outL[ci] = wL; outR[ci] = wR; }
+        else { outL[ci] += wL; outR[ci] += wR; }
+        if (++cW === cBufSz) cW = 0;
+      }
+    } else if (effect === 'delay') {
+      var dSec = spb0 * 0.75;
+      while (dSec > 0.62) dSec *= 0.5;
+      while (dSec < 0.18) dSec *= 2;
+      var dS1 = Math.max(16, Math.round(dSec * SR)), dS2 = Math.max(16, Math.round(dSec * 1.006 * SR));
+      var dRingL = new Float32Array(dS1), dRingR = new Float32Array(dS2), dIdxL = 0, dIdxR = 0;
+      var dLpCoef = 1 - Math.exp(-TWO_PI * Math.min(3400, SR * 0.4) / SR);
+      var dHpCoef = 1 - Math.exp(-TWO_PI * 240 / SR);
+      var dLpL = 0, dLpR = 0, dHpL = 0, dHpR = 0, dFb = spaceProfile.delayFb, dWet = spaceProfile.delayMix;
+      for (var di = 0; di < total; di++) {
+        var outDL = dRingL[dIdxL], outDR = dRingR[dIdxR];
+        dLpL += (outDL - dLpL) * dLpCoef; dHpL += (dLpL - dHpL) * dHpCoef;
+        dLpR += (outDR - dLpR) * dLpCoef; dHpR += (dLpR - dHpR) * dHpCoef;
+        var cleanL = dLpL - dHpL, cleanR = dLpR - dHpR;
+        var dIn = (inBufL[di] + inBufR[di]) * 0.55;
+        dRingR[dIdxR] = dIn + cleanL * dFb;
+        dRingL[dIdxL] = cleanR * 0.86;
+        if (inPlace) { outL[di] = cleanL * dWet; outR[di] = cleanR * dWet; }
+        else { outL[di] += cleanL * dWet; outR[di] += cleanR * dWet; }
+        if (++dIdxL === dS1) dIdxL = 0;
+        if (++dIdxR === dS2) dIdxR = 0;
+      }
+    } else if (effect === 'plate') {
+      var pPreN = Math.max(4, Math.round(0.012 * SR)), pPreL = new Float32Array(pPreN), pPreR = new Float32Array(pPreN), pPreI = 0;
+      var pdnL1 = Math.max(4, Math.round(0.0031 * SR)), pdnL2 = Math.max(4, Math.round(0.0053 * SR));
+      var pdnR1 = Math.max(4, Math.round(0.0037 * SR)), pdnR2 = Math.max(4, Math.round(0.0061 * SR));
+      var pdbL1 = new Float32Array(pdnL1), pdbL2 = new Float32Array(pdnL2), pdbR1 = new Float32Array(pdnR1), pdbR2 = new Float32Array(pdnR2);
+      var pdiL1 = 0, pdiL2 = 0, pdiR1 = 0, pdiR2 = 0, pDg = 0.55;
+      var pl0 = Math.max(8, Math.round(0.0173 * SR)), pl1 = Math.max(8, Math.round(0.0239 * SR));
+      var pl2 = Math.max(8, Math.round(0.0311 * SR)), pl3 = Math.max(8, Math.round(0.0417 * SR));
+      var pb0 = new Float32Array(pl0), pb1 = new Float32Array(pl1), pb2 = new Float32Array(pl2), pb3 = new Float32Array(pl3);
+      var pg0 = Math.pow(0.001, (pl0 / SR) / spaceProfile.plateTime);
+      var pg1 = Math.pow(0.001, (pl1 / SR) / spaceProfile.plateTime);
+      var pg2 = Math.pow(0.001, (pl2 / SR) / spaceProfile.plateTime);
+      var pg3 = Math.pow(0.001, (pl3 / SR) / spaceProfile.plateTime);
+      var pi0 = 0, pi1 = 0, pi2p = 0, pi3 = 0, plp0 = 0, plp1 = 0, plp2 = 0, plp3 = 0;
+      var pDamp = 1 - Math.exp(-TWO_PI * Math.min(5200, SR * 0.42) / SR), pHpCoef = 1 - Math.exp(-TWO_PI * 180 / SR);
+      var pHpL = 0, pHpR = 0, pWet = spaceProfile.plateMix;
+      for (var pi2 = 0; pi2 < total; pi2++) {
+        var preL = pPreL[pPreI], preR = pPreR[pPreI];
+        pPreL[pPreI] = inBufL[pi2]; pPreR[pPreI] = inBufR[pi2];
+        if (++pPreI === pPreN) pPreI = 0;
+        var pd1L = pdbL1[pdiL1], pv1L = preL - pDg * pd1L, py1L = pd1L + pDg * pv1L;
+        pdbL1[pdiL1] = pv1L; if (++pdiL1 === pdnL1) pdiL1 = 0;
+        var pd2L = pdbL2[pdiL2], pv2L = py1L - pDg * pd2L, inPL = pd2L + pDg * pv2L;
+        pdbL2[pdiL2] = pv2L; if (++pdiL2 === pdnL2) pdiL2 = 0;
+        var pd1R = pdbR1[pdiR1], pv1R = preR - pDg * pd1R, py1R = pd1R + pDg * pv1R;
+        pdbR1[pdiR1] = pv1R; if (++pdiR1 === pdnR1) pdiR1 = 0;
+        var pd2R = pdbR2[pdiR2], pv2R = py1R - pDg * pd2R, inPR = pd2R + pDg * pv2R;
+        pdbR2[pdiR2] = pv2R; if (++pdiR2 === pdnR2) pdiR2 = 0;
+        var x0 = pb0[pi0], x1 = pb1[pi1], x2 = pb2[pi2p], x3 = pb3[pi3];
+        plp0 += (x0 - plp0) * pDamp; plp1 += (x1 - plp1) * pDamp;
+        plp2 += (x2 - plp2) * pDamp; plp3 += (x3 - plp3) * pDamp;
+        var sumP = (plp0 + plp1 + plp2 + plp3) * 0.5;
+        pb0[pi0] = inPL + (plp0 - sumP) * pg0;
+        pb1[pi1] = -inPR + (plp1 - sumP) * pg1;
+        pb2[pi2p] = inPR * 0.85 + (plp2 - sumP) * pg2;
+        pb3[pi3] = -inPL * 0.85 + (plp3 - sumP) * pg3;
+        if (++pi0 === pl0) pi0 = 0;
+        if (++pi1 === pl1) pi1 = 0;
+        if (++pi2p === pl2) pi2p = 0;
+        if (++pi3 === pl3) pi3 = 0;
+        var outPL = (x0 + x1 - x2 + x3) * 0.45, outPR = (x0 - x1 + x2 + x3) * 0.45;
+        pHpL += (outPL - pHpL) * pHpCoef; pHpR += (outPR - pHpR) * pHpCoef;
+        if (inPlace) { outL[pi2] = (outPL - pHpL) * pWet; outR[pi2] = (outPR - pHpR) * pWet; }
+        else { outL[pi2] += (outPL - pHpL) * pWet; outR[pi2] += (outPR - pHpR) * pWet; }
+      }
+    } else if (effect === 'hall') {
+      var hPreN = Math.max(4, Math.round(0.026 * SR)), hPreL = new Float32Array(hPreN), hPreR = new Float32Array(hPreN), hPreI = 0;
+      var hdnL1 = Math.max(4, Math.round(0.0047 * SR)), hdnL2 = Math.max(4, Math.round(0.0079 * SR));
+      var hdnR1 = Math.max(4, Math.round(0.0053 * SR)), hdnR2 = Math.max(4, Math.round(0.0089 * SR));
+      var hdbL1 = new Float32Array(hdnL1), hdbL2 = new Float32Array(hdnL2), hdbR1 = new Float32Array(hdnR1), hdbR2 = new Float32Array(hdnR2);
+      var hdiL1 = 0, hdiL2 = 0, hdiR1 = 0, hdiR2 = 0, hDg = 0.6;
+      var hl0 = Math.max(8, Math.round(0.0297 * SR)), hl1 = Math.max(8, Math.round(0.0371 * SR));
+      var hl2 = Math.max(8, Math.round(0.0433 * SR)), hl3 = Math.max(8, Math.round(0.0539 * SR));
+      var hl4 = Math.max(8, Math.round(0.0617 * SR)), hl5 = Math.max(8, Math.round(0.0713 * SR));
+      var hl6 = Math.max(8, Math.round(0.0831 * SR)), hl7 = Math.max(8, Math.round(0.0977 * SR));
+      var hb0 = new Float32Array(hl0), hb1 = new Float32Array(hl1), hb2 = new Float32Array(hl2), hb3 = new Float32Array(hl3);
+      var hb4 = new Float32Array(hl4), hb5 = new Float32Array(hl5), hb6 = new Float32Array(hl6), hb7 = new Float32Array(hl7);
+      var hg0 = Math.pow(0.001, (hl0 / SR) / spaceProfile.hallTime), hg1 = Math.pow(0.001, (hl1 / SR) / spaceProfile.hallTime);
+      var hg2 = Math.pow(0.001, (hl2 / SR) / spaceProfile.hallTime), hg3 = Math.pow(0.001, (hl3 / SR) / spaceProfile.hallTime);
+      var hg4 = Math.pow(0.001, (hl4 / SR) / spaceProfile.hallTime), hg5 = Math.pow(0.001, (hl5 / SR) / spaceProfile.hallTime);
+      var hg6 = Math.pow(0.001, (hl6 / SR) / spaceProfile.hallTime), hg7 = Math.pow(0.001, (hl7 / SR) / spaceProfile.hallTime);
+      var hi0 = 0, hi1 = 0, hi2p = 0, hi3 = 0, hi4 = 0, hi5 = 0, hi6 = 0, hi7 = 0;
+      var hlp0 = 0, hlp1 = 0, hlp2 = 0, hlp3 = 0, hlp4 = 0, hlp5 = 0, hlp6 = 0, hlp7 = 0;
+      var hDamp = 1 - Math.exp(-TWO_PI * Math.min(spaceProfile.hallDamp, SR * 0.42) / SR);
+      var hHpCoef = 1 - Math.exp(-TWO_PI * 160 / SR);
+      var hHpL = 0, hHpR = 0, hWet = spaceProfile.hallMix, hNorm = 0.35355339059327373;
+      for (var hi2 = 0; hi2 < total; hi2++) {
+        var preHL = hPreL[hPreI], preHR = hPreR[hPreI];
+        hPreL[hPreI] = inBufL[hi2]; hPreR[hPreI] = inBufR[hi2];
+        if (++hPreI === hPreN) hPreI = 0;
+        var hd1L = hdbL1[hdiL1], hv1L = preHL - hDg * hd1L, hy1L = hd1L + hDg * hv1L;
+        hdbL1[hdiL1] = hv1L; if (++hdiL1 === hdnL1) hdiL1 = 0;
+        var hd2L = hdbL2[hdiL2], hv2L = hy1L - hDg * hd2L, inHL = hd2L + hDg * hv2L;
+        hdbL2[hdiL2] = hv2L; if (++hdiL2 === hdnL2) hdiL2 = 0;
+        var hd1R = hdbR1[hdiR1], hv1R = preHR - hDg * hd1R, hy1R = hd1R + hDg * hv1R;
+        hdbR1[hdiR1] = hv1R; if (++hdiR1 === hdnR1) hdiR1 = 0;
+        var hd2R = hdbR2[hdiR2], hv2R = hy1R - hDg * hd2R, inHR = hd2R + hDg * hv2R;
+        hdbR2[hdiR2] = hv2R; if (++hdiR2 === hdnR2) hdiR2 = 0;
+        var y0 = hb0[hi0], y1 = hb1[hi1], y2 = hb2[hi2p], y3 = hb3[hi3];
+        var y4 = hb4[hi4], y5 = hb5[hi5], y6 = hb6[hi6], y7 = hb7[hi7];
+        hlp0 += (y0 - hlp0) * hDamp; hlp1 += (y1 - hlp1) * hDamp;
+        hlp2 += (y2 - hlp2) * hDamp; hlp3 += (y3 - hlp3) * hDamp;
+        hlp4 += (y4 - hlp4) * hDamp; hlp5 += (y5 - hlp5) * hDamp;
+        hlp6 += (y6 - hlp6) * hDamp; hlp7 += (y7 - hlp7) * hDamp;
+        // 8-point Walsh-Hadamard transform (3 butterfly stages)
+        var a0 = hlp0 + hlp1, a1 = hlp0 - hlp1, a2 = hlp2 + hlp3, a3 = hlp2 - hlp3;
+        var a4 = hlp4 + hlp5, a5 = hlp4 - hlp5, a6 = hlp6 + hlp7, a7 = hlp6 - hlp7;
+        var b0 = a0 + a2, b1 = a1 + a3, b2 = a0 - a2, b3 = a1 - a3;
+        var b4 = a4 + a6, b5 = a5 + a7, b6 = a4 - a6, b7 = a5 - a7;
+        var w0 = (b0 + b4) * hNorm, w1 = (b1 + b5) * hNorm, w2 = (b2 + b6) * hNorm, w3 = (b3 + b7) * hNorm;
+        var w4 = (b0 - b4) * hNorm, w5 = (b1 - b5) * hNorm, w6 = (b2 - b6) * hNorm, w7 = (b3 - b7) * hNorm;
+        hb0[hi0] = inHL * 0.65 + w0 * hg0;
+        hb1[hi1] = inHR * 0.65 + w1 * hg1;
+        hb2[hi2p] = -inHL * 0.65 + w2 * hg2;
+        hb3[hi3] = -inHR * 0.65 + w3 * hg3;
+        hb4[hi4] = inHR * 0.65 + w4 * hg4;
+        hb5[hi5] = -inHL * 0.65 + w5 * hg5;
+        hb6[hi6] = -inHR * 0.65 + w6 * hg6;
+        hb7[hi7] = inHL * 0.65 + w7 * hg7;
+        if (++hi0 === hl0) hi0 = 0; if (++hi1 === hl1) hi1 = 0;
+        if (++hi2p === hl2) hi2p = 0; if (++hi3 === hl3) hi3 = 0;
+        if (++hi4 === hl4) hi4 = 0; if (++hi5 === hl5) hi5 = 0;
+        if (++hi6 === hl6) hi6 = 0; if (++hi7 === hl7) hi7 = 0;
+        var outHL = (y0 + y1 - y2 - y3 + y4 + y5 - y6 - y7) * 0.42;
+        var outHR = (y0 - y1 + y2 - y3 - y4 + y5 - y6 + y7) * 0.42;
+        hHpL += (outHL - hHpL) * hHpCoef; hHpR += (outHR - hHpR) * hHpCoef;
+        if (inPlace) { outL[hi2] = (outHL - hHpL) * hWet; outR[hi2] = (outHR - hHpR) * hWet; }
+        else { outL[hi2] += (outHL - hHpL) * hWet; outR[hi2] += (outHR - hHpR) * hWet; }
+      }
+    }
+  }
+
+  function finalizeAccompMix(left, right, SR, spaceProfile, legacySound) {
+    var total = left.length, TWO_PI = Math.PI * 2;
+    if (spaceProfile) {
+      // 5. Master Bus Vocal-Pocket EQ + Stereo-Linked Soft-Knee Glue Compressor
+      var makeBiquad = function (kindEq, fc, qOrS, dbGain) {
+        var w0 = TWO_PI * Math.max(15, Math.min(fc, SR * 0.42)) / SR;
+        var cw = Math.cos(w0), sw = Math.sin(w0), A = Math.pow(10, (dbGain || 0) / 40), b0, b1, b2, a0, a1, a2;
+        if (kindEq === 'hpf') {
+          var alphaH = sw / (2 * (qOrS || 0.707));
+          b0 = (1 + cw) * 0.5; b1 = -(1 + cw); b2 = (1 + cw) * 0.5;
+          a0 = 1 + alphaH; a1 = -2 * cw; a2 = 1 - alphaH;
+        } else if (kindEq === 'peak') {
+          var alphaP = sw / (2 * (qOrS || 0.9));
+          b0 = 1 + alphaP * A; b1 = -2 * cw; b2 = 1 - alphaP * A;
+          a0 = 1 + alphaP / A; a1 = -2 * cw; a2 = 1 - alphaP / A;
+        } else {
+          var alphaS = sw / 2 * Math.sqrt((A + 1 / A) * (1 / (qOrS || 0.7) - 1) + 2);
+          var sq = 2 * Math.sqrt(A) * alphaS;
+          b0 = A * ((A + 1) + (A - 1) * cw + sq); b1 = -2 * A * ((A - 1) + (A + 1) * cw); b2 = A * ((A + 1) + (A - 1) * cw - sq);
+          a0 = (A + 1) - (A - 1) * cw + sq; a1 = 2 * ((A - 1) - (A + 1) * cw); a2 = (A + 1) - (A - 1) * cw - sq;
+        }
+        return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+      };
+      var eqHp = makeBiquad('hpf', 28, 0.707, 0);
+      var eqDip = makeBiquad('peak', Math.min(2200, SR * 0.36), 0.9, spaceProfile.pocketDb);
+      var eqAir = makeBiquad('hshelf', Math.min(9200, SR * 0.36), 0.707, spaceProfile.airDb);
+      var hpB0 = eqHp.b0, hpB1 = eqHp.b1, hpB2 = eqHp.b2, hpA1 = eqHp.a1, hpA2 = eqHp.a2;
+      var dpB0 = eqDip.b0, dpB1 = eqDip.b1, dpB2 = eqDip.b2, dpA1 = eqDip.a1, dpA2 = eqDip.a2;
+      var arB0 = eqAir.b0, arB1 = eqAir.b1, arB2 = eqAir.b2, arA1 = eqAir.a1, arA2 = eqAir.a2;
+      var hpZ1L = 0, hpZ2L = 0, hpZ1R = 0, hpZ2R = 0;
+      var dpZ1L = 0, dpZ2L = 0, dpZ1R = 0, dpZ2R = 0;
+      var arZ1L = 0, arZ2L = 0, arZ1R = 0, arZ2R = 0;
+      var compEnv = 0, cAtt = 1 - Math.exp(-1 / (SR * 0.015)), cRel = 1 - Math.exp(-1 / (SR * 0.15));
+      var cThresh = spaceProfile.compThresh, cSlope = 1 - 1 / spaceProfile.compRatio, cMakeup = 1.12;
+      for (var mi = 0; mi < total; mi++) {
+        var l = left[mi], r = right[mi];
+        var yl1 = hpB0 * l + hpZ1L; hpZ1L = hpB1 * l - hpA1 * yl1 + hpZ2L; hpZ2L = hpB2 * l - hpA2 * yl1;
+        var yr1 = hpB0 * r + hpZ1R; hpZ1R = hpB1 * r - hpA1 * yr1 + hpZ2R; hpZ2R = hpB2 * r - hpA2 * yr1;
+        var yl2 = dpB0 * yl1 + dpZ1L; dpZ1L = dpB1 * yl1 - dpA1 * yl2 + dpZ2L; dpZ2L = dpB2 * yl1 - dpA2 * yl2;
+        var yr2 = dpB0 * yr1 + dpZ1R; dpZ1R = dpB1 * yr1 - dpA1 * yr2 + dpZ2R; dpZ2R = dpB2 * yr1 - dpA2 * yr2;
+        var yl3 = arB0 * yl2 + arZ1L; arZ1L = arB1 * yl2 - arA1 * yl3 + arZ2L; arZ2L = arB2 * yl2 - arA2 * yl3;
+        var yr3 = arB0 * yr2 + arZ1R; arZ1R = arB1 * yr2 - arA1 * yr3 + arZ2R; arZ2R = arB2 * yr2 - arA2 * yr3;
+        var det = Math.max(yl3 < 0 ? -yl3 : yl3, yr3 < 0 ? -yr3 : yr3);
+        compEnv += (det - compEnv) * (det > compEnv ? cAtt : cRel);
+        var compGain = compEnv > cThresh ? Math.pow(compEnv / cThresh, -cSlope) : 1;
+        left[mi] = yl3 * compGain * cMakeup;
+        right[mi] = yr3 * compGain * cMakeup;
+      }
+    }
+    /* Shared gain preserves the stereo balance. pcm remains a mono analysis preview. */
+    var pk = 1e-9;
+    for (var i8 = 0; i8 < total; i8++) {
+      var al = left[i8] < 0 ? -left[i8] : left[i8];
+      var ar = right[i8] < 0 ? -right[i8] : right[i8];
+      if (al > pk) pk = al;
+      if (ar > pk) pk = ar;
+    }
+    var gg = pk > 0.92 ? 0.92 / pk : 1;
+    var gDrive = gg * 1.02;
+    var mono = new Float32Array(total);
+    if (legacySound) {
+      for (var i9L = 0; i9L < total; i9L++) {
+        left[i9L] = Math.tanh(left[i9L] * gDrive) * 0.97;
+        right[i9L] = Math.tanh(right[i9L] * gDrive) * 0.97;
+        mono[i9L] = (left[i9L] + right[i9L]) * 0.5;
+      }
+    } else {
+      for (var i9 = 0; i9 < total; i9++) {
+        var lv = left[i9], rv = right[i9];
+        if (lv === 0 && rv === 0) continue;
+        var xl = lv * gDrive, xl2 = xl * xl;
+        var yl = xl * (945 + (105 + xl2) * xl2) / (945 + (420 + 15 * xl2) * xl2) * 0.97;
+        left[i9] = yl;
+        if (lv === rv) {
+          right[i9] = yl;
+          mono[i9] = yl;
+        } else {
+          var xr = rv * gDrive, xr2 = xr * xr;
+          var yr = xr * (945 + (105 + xr2) * xr2) / (945 + (420 + 15 * xr2) * xr2) * 0.97;
+          right[i9] = yr;
+          mono[i9] = (yl + yr) * 0.5;
+        }
+      }
+    }
+    return { pcm: mono, channels: [left, right], sr: SR };
+  }
+
+  NSG.DSP.runAccompSpace = function (effect, bufL, bufR, sr, spaceName, spb0) {
+    var profile = ACCOMP_SPACE_PROFILES[spaceName];
+    if (profile && bufL && bufR && bufL.length) {
+      runAccompSpaceEffect(effect, bufL, bufR, bufL, bufR, sr, profile, spb0);
+    }
+    return { effect: effect, left: bufL, right: bufR };
+  };
+
+  NSG.DSP.finalizeAccomp = function (left, right, sr, spaceName, legacySound) {
+    var profile = (!legacySound && spaceName) ? ACCOMP_SPACE_PROFILES[spaceName] || null : null;
+    return finalizeAccompMix(left, right, sr, profile, !!legacySound);
+  };
+
   NSG.DSP.renderAccomp = function (score, opt) {
     opt = opt || {};
     var legacySound = opt.legacySound !== undefined ? !!opt.legacySound : !!NSG.LEGACY_SOUND;
@@ -4386,17 +4823,34 @@
     }
     var end = 0;
     notes.forEach(function (n) { end = Math.max(end, tm.secOf(n.start + n.dur)); });
-    var SPACE_PROFILES = {
-      hall: { tailSec: 2.8, hallTime: 2.55, hallDamp: 3900, hallMix: 0.72, plateTime: 1.10, plateMix: 0.46, delayMix: 0.34, delayFb: 0.38, chorusMix: 0.48, pocketDb: -2.0, airDb: 1.3, compRatio: 2.1, compThresh: 0.42, snareHall: 0.34 },
-      studio: { tailSec: 1.9, hallTime: 1.50, hallDamp: 4700, hallMix: 0.48, plateTime: 0.82, plateMix: 0.38, delayMix: 0.24, delayFb: 0.28, chorusMix: 0.34, pocketDb: -1.5, airDb: 1.0, compRatio: 2.2, compThresh: 0.44, snareHall: 0.16 },
-      wide: { tailSec: 1.7, hallTime: 1.35, hallDamp: 5500, hallMix: 0.42, plateTime: 0.72, plateMix: 0.36, delayMix: 0.30, delayFb: 0.32, chorusMix: 0.48, pocketDb: -1.4, airDb: 1.4, compRatio: 2.5, compThresh: 0.38, snareHall: 0.14 },
-      intimate: { tailSec: 1.3, hallTime: 0.95, hallDamp: 3500, hallMix: 0.34, plateTime: 0.60, plateMix: 0.30, delayMix: 0.14, delayFb: 0.20, chorusMix: 0.20, pocketDb: -1.0, airDb: 0.6, compRatio: 1.8, compThresh: 0.48, snareHall: 0.08 }
-    };
+    var SPACE_PROFILES = ACCOMP_SPACE_PROFILES;
     var reqSpace = opt.space !== undefined ? opt.space : (trk.space || 'off');
-    var spaceProfile = (!legacySound && typeof reqSpace === 'string' && SPACE_PROFILES[reqSpace]) ? SPACE_PROFILES[reqSpace] : null;
+    var spaceName = (!legacySound && typeof reqSpace === 'string' && SPACE_PROFILES[reqSpace]) ? reqSpace : null;
+    var spaceProfile = spaceName ? SPACE_PROFILES[spaceName] : null;
     var tailPad = spaceProfile ? 0.9 + spaceProfile.tailSec : 0.9;
     var total = Math.ceil(end * SR) + Math.round(SR * tailPad);
-    var left = new Float32Array(total), right = new Float32Array(total);
+    var noteRange = Array.isArray(opt.noteRange) && opt.noteRange.length === 2 ? opt.noteRange : null;
+    var noteStart = noteRange ? Math.max(0, Math.min(notes.length, noteRange[0] | 0)) : 0;
+    var noteEnd = noteRange ? Math.max(noteStart, Math.min(notes.length, noteRange[1] | 0)) : notes.length;
+    var bufOffset = 0, bufLen = total;
+    if (noteRange) {
+      var minS = total, maxS = 0, eqPad = (EQ_L - 1) >> 1;
+      for (var rn = noteStart; rn < noteEnd; rn++) {
+        var rNote = notes[rn];
+        var rStart = Math.round(tm.secOf(rNote.start) * SR);
+        if (rStart >= total) continue;
+        var rLen = Math.max(24, Math.round((tm.secOf(rNote.start + rNote.dur) - tm.secOf(rNote.start)) * SR));
+        var rGate = Number.isFinite(rNote.harmonyEnd) ? Math.max(0, Math.round(tm.secOf(rNote.harmonyEnd) * SR) - rStart) : Infinity;
+        if (!rGate) continue;
+        rLen = Math.min(rLen, rGate);
+        var rMax = Math.min(total - rStart, rLen + Math.ceil(SR * 1.4) + eqPad);
+        if (rStart < minS) minS = rStart;
+        if (rStart + rMax > maxS) maxS = rStart + rMax;
+      }
+      if (minS < maxS) { bufOffset = minS; bufLen = maxS - minS; }
+      else { bufOffset = 0; bufLen = 0; }
+    }
+    var left = new Float32Array(bufLen), right = new Float32Array(bufLen);
     var hallL, hallR, plateL, plateR, delayL, delayR, chorusL, chorusR;
     function sendFor(orig, knd, nt) {
       if (/^chip/.test(knd) || knd === 'bass' || knd === 'tuba' || knd === 'kick') return null;
@@ -5134,7 +5588,7 @@
     }
 
     var scratch = new Float32Array(Math.min(total, Math.ceil(SR * 4)));
-    for (var n = 0; n < notes.length; n++) {
+    for (var n = noteStart; n < noteEnd; n++) {
       var note = notes[n];
       var startS = Math.round(tm.secOf(note.start) * SR);
       if (startS >= total) continue;
@@ -5315,11 +5769,12 @@
       var snd = spaceProfile ? sendFor(originalKind, kind, note) : null;
       // Allocate each stereo bus on its first send, outside the sample loop.
       if (snd) {
-        if (snd.h && !hallL) { hallL = new Float32Array(total); hallR = new Float32Array(total); }
-        if (snd.p && !plateL) { plateL = new Float32Array(total); plateR = new Float32Array(total); }
-        if (snd.d && !delayL) { delayL = new Float32Array(total); delayR = new Float32Array(total); }
-        if (snd.c && !chorusL) { chorusL = new Float32Array(total); chorusR = new Float32Array(total); }
+        if (snd.h && !hallL) { hallL = new Float32Array(bufLen); hallR = new Float32Array(bufLen); }
+        if (snd.p && !plateL) { plateL = new Float32Array(bufLen); plateR = new Float32Array(bufLen); }
+        if (snd.d && !delayL) { delayL = new Float32Array(bufLen); delayR = new Float32Array(bufLen); }
+        if (snd.c && !chorusL) { chorusL = new Float32Array(bufLen); chorusR = new Float32Array(bufLen); }
       }
+      var localStart = startS - bufOffset;
       if (hasGainCurve) {
         var singleSeg = tm.count === 1, beat0 = tm.beatOf(startS / SR), beatStep = singleSeg ? (tm.segs[0].bpm / 60 / SR) : 0;
         var gVal = 1;
@@ -5329,7 +5784,7 @@
           } else {
             if ((s & 7) === 0) gVal = NSG.TUNING.noteGain(note, (tm.beatOf((startS + s) / SR) - note.start) / note.dur);
           }
-          var lOut = out[s] * lg * gVal, rOut = out[s] * rg * gVal, idxS = startS + s;
+          var lOut = out[s] * lg * gVal, rOut = out[s] * rg * gVal, idxS = localStart + s;
           left[idxS] += lOut; right[idxS] += rOut;
           if (snd) {
             if (snd.h) { hallL[idxS] += lOut * snd.h; hallR[idxS] += rOut * snd.h; }
@@ -5345,7 +5800,7 @@
           var lh = lScale * snd.h, rh = rScale * snd.h, lp = lScale * snd.p, rp2 = rScale * snd.p;
           var ld = lScale * snd.d, rd = rScale * snd.d, lc = lScale * snd.c, rc = rScale * snd.c;
           for (var sc = 0; sc < mixLen; sc++) {
-            var sv = out[sc], idxS2 = startS + sc;
+            var sv = out[sc], idxS2 = localStart + sc;
             left[idxS2] += sv * lScale; right[idxS2] += sv * rScale;
             if (snd.h) { hallL[idxS2] += sv * lh; hallR[idxS2] += sv * rh; }
             if (snd.p) { plateL[idxS2] += sv * lp; plateR[idxS2] += sv * rp2; }
@@ -5355,10 +5810,22 @@
         } else {
           for (var sc0 = 0; sc0 < mixLen; sc0++) {
             var sv0 = out[sc0];
-            left[startS + sc0] += sv0 * lScale; right[startS + sc0] += sv0 * rScale;
+            left[localStart + sc0] += sv0 * lScale; right[localStart + sc0] += sv0 * rScale;
           }
         }
       }
+    }
+
+    if (noteRange) {
+      return {
+        offset: bufOffset, length: bufLen, total: total, sr: SR,
+        spaceName: spaceName, spb0: tm.spbAt(0), legacySound: legacySound,
+        left: left, right: right,
+        hallL: hallL || null, hallR: hallR || null,
+        plateL: plateL || null, plateR: plateR || null,
+        delayL: delayL || null, delayR: delayR || null,
+        chorusL: chorusL || null, chorusR: chorusR || null
+      };
     }
 
     if (spaceProfile) {
@@ -5367,252 +5834,14 @@
         for (var k = 0; k < total; k++) if (a[k] !== 0 || b[k] !== 0) return true;
         return false;
       };
-      // 1. Stereo Chorus
-      if (hasSig(chorusL, chorusR)) {
-        var cBufSz = Math.max(64, Math.ceil(SR * 0.032));
-        var cRingL = new Float32Array(cBufSz), cRingR = new Float32Array(cBufSz), cW = 0;
-        var cBase = 0.011 * SR, cDep = 0.0038 * SR, cWet = spaceProfile.chorusMix;
-        var cStep1 = 0.43 / SR, cStep2 = 0.59 / SR, cPh1 = 0, cPh2 = 0.5;
-        for (var ci = 0; ci < total; ci++) {
-          var inL = chorusL[ci], inR = chorusR[ci];
-          cRingL[cW] = inL; cRingR[cW] = inR;
-          cPh1 += cStep1; if (cPh1 >= 1) cPh1 -= 1;
-          cPh2 += cStep2; if (cPh2 >= 1) cPh2 -= 1;
-          var dL = cBase + cDep * sinT(cPh1), dR = cBase + cDep * sinT(cPh2);
-          var iL = dL | 0, fL = dL - iL, iR = dR | 0, fR = dR - iR;
-          var pL1 = cW - iL; if (pL1 < 0) pL1 += cBufSz;
-          var pL0 = pL1 - 1; if (pL0 < 0) pL0 += cBufSz;
-          var pR1 = cW - iR; if (pR1 < 0) pR1 += cBufSz;
-          var pR0 = pR1 - 1; if (pR0 < 0) pR0 += cBufSz;
-          var tapL = cRingL[pL1] * (1 - fL) + cRingL[pL0] * fL;
-          var tapR = cRingR[pR1] * (1 - fR) + cRingR[pR0] * fR;
-          left[ci] += (tapL - tapR * 0.22) * cWet;
-          right[ci] += (tapR - tapL * 0.22) * cWet;
-          if (++cW === cBufSz) cW = 0;
-        }
-      }
-      // 2. Tempo-synced Stereo Ping-Pong Delay
-      if (hasSig(delayL, delayR)) {
-        var spbD = tm.spbAt(0), dSec = spbD * 0.75;
-        while (dSec > 0.62) dSec *= 0.5;
-        while (dSec < 0.18) dSec *= 2;
-        var dS1 = Math.max(16, Math.round(dSec * SR)), dS2 = Math.max(16, Math.round(dSec * 1.006 * SR));
-        var dRingL = new Float32Array(dS1), dRingR = new Float32Array(dS2), dIdxL = 0, dIdxR = 0;
-        var dLpCoef = 1 - Math.exp(-TWO_PI * Math.min(3400, SR * 0.4) / SR);
-        var dHpCoef = 1 - Math.exp(-TWO_PI * 240 / SR);
-        var dLpL = 0, dLpR = 0, dHpL = 0, dHpR = 0, dFb = spaceProfile.delayFb, dWet = spaceProfile.delayMix;
-        for (var di = 0; di < total; di++) {
-          var outDL = dRingL[dIdxL], outDR = dRingR[dIdxR];
-          dLpL += (outDL - dLpL) * dLpCoef; dHpL += (dLpL - dHpL) * dHpCoef;
-          dLpR += (outDR - dLpR) * dLpCoef; dHpR += (dLpR - dHpR) * dHpCoef;
-          var cleanL = dLpL - dHpL, cleanR = dLpR - dHpR;
-          var dIn = (delayL[di] + delayR[di]) * 0.55;
-          dRingR[dIdxR] = dIn + cleanL * dFb;
-          dRingL[dIdxL] = cleanR * 0.86;
-          left[di] += cleanL * dWet;
-          right[di] += cleanR * dWet;
-          if (++dIdxL === dS1) dIdxL = 0;
-          if (++dIdxR === dS2) dIdxR = 0;
-        }
-      }
-      // 3. 4-Line Householder Plate Reverb
-      if (hasSig(plateL, plateR)) {
-        var pPreN = Math.max(4, Math.round(0.012 * SR)), pPreL = new Float32Array(pPreN), pPreR = new Float32Array(pPreN), pPreI = 0;
-        var pdnL1 = Math.max(4, Math.round(0.0031 * SR)), pdnL2 = Math.max(4, Math.round(0.0053 * SR));
-        var pdnR1 = Math.max(4, Math.round(0.0037 * SR)), pdnR2 = Math.max(4, Math.round(0.0061 * SR));
-        var pdbL1 = new Float32Array(pdnL1), pdbL2 = new Float32Array(pdnL2), pdbR1 = new Float32Array(pdnR1), pdbR2 = new Float32Array(pdnR2);
-        var pdiL1 = 0, pdiL2 = 0, pdiR1 = 0, pdiR2 = 0, pDg = 0.55;
-        var pl0 = Math.max(8, Math.round(0.0173 * SR)), pl1 = Math.max(8, Math.round(0.0239 * SR));
-        var pl2 = Math.max(8, Math.round(0.0311 * SR)), pl3 = Math.max(8, Math.round(0.0417 * SR));
-        var pb0 = new Float32Array(pl0), pb1 = new Float32Array(pl1), pb2 = new Float32Array(pl2), pb3 = new Float32Array(pl3);
-        var pg0 = Math.pow(0.001, (pl0 / SR) / spaceProfile.plateTime);
-        var pg1 = Math.pow(0.001, (pl1 / SR) / spaceProfile.plateTime);
-        var pg2 = Math.pow(0.001, (pl2 / SR) / spaceProfile.plateTime);
-        var pg3 = Math.pow(0.001, (pl3 / SR) / spaceProfile.plateTime);
-        var pi0 = 0, pi1 = 0, pi2p = 0, pi3 = 0, plp0 = 0, plp1 = 0, plp2 = 0, plp3 = 0;
-        var pDamp = 1 - Math.exp(-TWO_PI * Math.min(5200, SR * 0.42) / SR), pHpCoef = 1 - Math.exp(-TWO_PI * 180 / SR);
-        var pHpL = 0, pHpR = 0, pWet = spaceProfile.plateMix;
-        for (var pi2 = 0; pi2 < total; pi2++) {
-          var preL = pPreL[pPreI], preR = pPreR[pPreI];
-          pPreL[pPreI] = plateL[pi2]; pPreR[pPreI] = plateR[pi2];
-          if (++pPreI === pPreN) pPreI = 0;
-          var pd1L = pdbL1[pdiL1], pv1L = preL - pDg * pd1L, py1L = pd1L + pDg * pv1L;
-          pdbL1[pdiL1] = pv1L; if (++pdiL1 === pdnL1) pdiL1 = 0;
-          var pd2L = pdbL2[pdiL2], pv2L = py1L - pDg * pd2L, inPL = pd2L + pDg * pv2L;
-          pdbL2[pdiL2] = pv2L; if (++pdiL2 === pdnL2) pdiL2 = 0;
-          var pd1R = pdbR1[pdiR1], pv1R = preR - pDg * pd1R, py1R = pd1R + pDg * pv1R;
-          pdbR1[pdiR1] = pv1R; if (++pdiR1 === pdnR1) pdiR1 = 0;
-          var pd2R = pdbR2[pdiR2], pv2R = py1R - pDg * pd2R, inPR = pd2R + pDg * pv2R;
-          pdbR2[pdiR2] = pv2R; if (++pdiR2 === pdnR2) pdiR2 = 0;
-          var x0 = pb0[pi0], x1 = pb1[pi1], x2 = pb2[pi2p], x3 = pb3[pi3];
-          plp0 += (x0 - plp0) * pDamp; plp1 += (x1 - plp1) * pDamp;
-          plp2 += (x2 - plp2) * pDamp; plp3 += (x3 - plp3) * pDamp;
-          var sumP = (plp0 + plp1 + plp2 + plp3) * 0.5;
-          pb0[pi0] = inPL + (plp0 - sumP) * pg0;
-          pb1[pi1] = -inPR + (plp1 - sumP) * pg1;
-          pb2[pi2p] = inPR * 0.85 + (plp2 - sumP) * pg2;
-          pb3[pi3] = -inPL * 0.85 + (plp3 - sumP) * pg3;
-          if (++pi0 === pl0) pi0 = 0;
-          if (++pi1 === pl1) pi1 = 0;
-          if (++pi2p === pl2) pi2p = 0;
-          if (++pi3 === pl3) pi3 = 0;
-          var outPL = (x0 + x1 - x2 + x3) * 0.45, outPR = (x0 - x1 + x2 + x3) * 0.45;
-          pHpL += (outPL - pHpL) * pHpCoef; pHpR += (outPR - pHpR) * pHpCoef;
-          left[pi2] += (outPL - pHpL) * pWet;
-          right[pi2] += (outPR - pHpR) * pWet;
-        }
-      }
-      // 4. 8-Line Walsh-Hadamard FDN Hall Reverb
-      if (hasSig(hallL, hallR)) {
-        var hPreN = Math.max(4, Math.round(0.026 * SR)), hPreL = new Float32Array(hPreN), hPreR = new Float32Array(hPreN), hPreI = 0;
-        var hdnL1 = Math.max(4, Math.round(0.0047 * SR)), hdnL2 = Math.max(4, Math.round(0.0079 * SR));
-        var hdnR1 = Math.max(4, Math.round(0.0053 * SR)), hdnR2 = Math.max(4, Math.round(0.0089 * SR));
-        var hdbL1 = new Float32Array(hdnL1), hdbL2 = new Float32Array(hdnL2), hdbR1 = new Float32Array(hdnR1), hdbR2 = new Float32Array(hdnR2);
-        var hdiL1 = 0, hdiL2 = 0, hdiR1 = 0, hdiR2 = 0, hDg = 0.6;
-        var hl0 = Math.max(8, Math.round(0.0297 * SR)), hl1 = Math.max(8, Math.round(0.0371 * SR));
-        var hl2 = Math.max(8, Math.round(0.0433 * SR)), hl3 = Math.max(8, Math.round(0.0539 * SR));
-        var hl4 = Math.max(8, Math.round(0.0617 * SR)), hl5 = Math.max(8, Math.round(0.0713 * SR));
-        var hl6 = Math.max(8, Math.round(0.0831 * SR)), hl7 = Math.max(8, Math.round(0.0977 * SR));
-        var hb0 = new Float32Array(hl0), hb1 = new Float32Array(hl1), hb2 = new Float32Array(hl2), hb3 = new Float32Array(hl3);
-        var hb4 = new Float32Array(hl4), hb5 = new Float32Array(hl5), hb6 = new Float32Array(hl6), hb7 = new Float32Array(hl7);
-        var hg0 = Math.pow(0.001, (hl0 / SR) / spaceProfile.hallTime), hg1 = Math.pow(0.001, (hl1 / SR) / spaceProfile.hallTime);
-        var hg2 = Math.pow(0.001, (hl2 / SR) / spaceProfile.hallTime), hg3 = Math.pow(0.001, (hl3 / SR) / spaceProfile.hallTime);
-        var hg4 = Math.pow(0.001, (hl4 / SR) / spaceProfile.hallTime), hg5 = Math.pow(0.001, (hl5 / SR) / spaceProfile.hallTime);
-        var hg6 = Math.pow(0.001, (hl6 / SR) / spaceProfile.hallTime), hg7 = Math.pow(0.001, (hl7 / SR) / spaceProfile.hallTime);
-        var hi0 = 0, hi1 = 0, hi2p = 0, hi3 = 0, hi4 = 0, hi5 = 0, hi6 = 0, hi7 = 0;
-        var hlp0 = 0, hlp1 = 0, hlp2 = 0, hlp3 = 0, hlp4 = 0, hlp5 = 0, hlp6 = 0, hlp7 = 0;
-        var hDamp = 1 - Math.exp(-TWO_PI * Math.min(spaceProfile.hallDamp, SR * 0.42) / SR);
-        var hHpCoef = 1 - Math.exp(-TWO_PI * 160 / SR);
-        var hHpL = 0, hHpR = 0, hWet = spaceProfile.hallMix, hNorm = 0.35355339059327373;
-        for (var hi2 = 0; hi2 < total; hi2++) {
-          var preHL = hPreL[hPreI], preHR = hPreR[hPreI];
-          hPreL[hPreI] = hallL[hi2]; hPreR[hPreI] = hallR[hi2];
-          if (++hPreI === hPreN) hPreI = 0;
-          var hd1L = hdbL1[hdiL1], hv1L = preHL - hDg * hd1L, hy1L = hd1L + hDg * hv1L;
-          hdbL1[hdiL1] = hv1L; if (++hdiL1 === hdnL1) hdiL1 = 0;
-          var hd2L = hdbL2[hdiL2], hv2L = hy1L - hDg * hd2L, inHL = hd2L + hDg * hv2L;
-          hdbL2[hdiL2] = hv2L; if (++hdiL2 === hdnL2) hdiL2 = 0;
-          var hd1R = hdbR1[hdiR1], hv1R = preHR - hDg * hd1R, hy1R = hd1R + hDg * hv1R;
-          hdbR1[hdiR1] = hv1R; if (++hdiR1 === hdnR1) hdiR1 = 0;
-          var hd2R = hdbR2[hdiR2], hv2R = hy1R - hDg * hd2R, inHR = hd2R + hDg * hv2R;
-          hdbR2[hdiR2] = hv2R; if (++hdiR2 === hdnR2) hdiR2 = 0;
-          var y0 = hb0[hi0], y1 = hb1[hi1], y2 = hb2[hi2p], y3 = hb3[hi3];
-          var y4 = hb4[hi4], y5 = hb5[hi5], y6 = hb6[hi6], y7 = hb7[hi7];
-          hlp0 += (y0 - hlp0) * hDamp; hlp1 += (y1 - hlp1) * hDamp;
-          hlp2 += (y2 - hlp2) * hDamp; hlp3 += (y3 - hlp3) * hDamp;
-          hlp4 += (y4 - hlp4) * hDamp; hlp5 += (y5 - hlp5) * hDamp;
-          hlp6 += (y6 - hlp6) * hDamp; hlp7 += (y7 - hlp7) * hDamp;
-          // 8-point Walsh-Hadamard transform (3 butterfly stages)
-          var a0 = hlp0 + hlp1, a1 = hlp0 - hlp1, a2 = hlp2 + hlp3, a3 = hlp2 - hlp3;
-          var a4 = hlp4 + hlp5, a5 = hlp4 - hlp5, a6 = hlp6 + hlp7, a7 = hlp6 - hlp7;
-          var b0 = a0 + a2, b1 = a1 + a3, b2 = a0 - a2, b3 = a1 - a3;
-          var b4 = a4 + a6, b5 = a5 + a7, b6 = a4 - a6, b7 = a5 - a7;
-          var w0 = (b0 + b4) * hNorm, w1 = (b1 + b5) * hNorm, w2 = (b2 + b6) * hNorm, w3 = (b3 + b7) * hNorm;
-          var w4 = (b0 - b4) * hNorm, w5 = (b1 - b5) * hNorm, w6 = (b2 - b6) * hNorm, w7 = (b3 - b7) * hNorm;
-          hb0[hi0] = inHL * 0.65 + w0 * hg0;
-          hb1[hi1] = inHR * 0.65 + w1 * hg1;
-          hb2[hi2p] = -inHL * 0.65 + w2 * hg2;
-          hb3[hi3] = -inHR * 0.65 + w3 * hg3;
-          hb4[hi4] = inHR * 0.65 + w4 * hg4;
-          hb5[hi5] = -inHL * 0.65 + w5 * hg5;
-          hb6[hi6] = -inHR * 0.65 + w6 * hg6;
-          hb7[hi7] = inHL * 0.65 + w7 * hg7;
-          if (++hi0 === hl0) hi0 = 0; if (++hi1 === hl1) hi1 = 0;
-          if (++hi2p === hl2) hi2p = 0; if (++hi3 === hl3) hi3 = 0;
-          if (++hi4 === hl4) hi4 = 0; if (++hi5 === hl5) hi5 = 0;
-          if (++hi6 === hl6) hi6 = 0; if (++hi7 === hl7) hi7 = 0;
-          var outHL = (y0 + y1 - y2 - y3 + y4 + y5 - y6 - y7) * 0.42;
-          var outHR = (y0 - y1 + y2 - y3 - y4 + y5 - y6 + y7) * 0.42;
-          hHpL += (outHL - hHpL) * hHpCoef; hHpR += (outHR - hHpR) * hHpCoef;
-          left[hi2] += (outHL - hHpL) * hWet;
-          right[hi2] += (outHR - hHpR) * hWet;
-        }
-      }
-      // 5. Master Bus Vocal-Pocket EQ + Stereo-Linked Soft-Knee Glue Compressor
-      var makeBiquad = function (kindEq, fc, qOrS, dbGain) {
-        var w0 = TWO_PI * Math.max(15, Math.min(fc, SR * 0.42)) / SR;
-        var cw = Math.cos(w0), sw = Math.sin(w0), A = Math.pow(10, (dbGain || 0) / 40), b0, b1, b2, a0, a1, a2;
-        if (kindEq === 'hpf') {
-          var alphaH = sw / (2 * (qOrS || 0.707));
-          b0 = (1 + cw) * 0.5; b1 = -(1 + cw); b2 = (1 + cw) * 0.5;
-          a0 = 1 + alphaH; a1 = -2 * cw; a2 = 1 - alphaH;
-        } else if (kindEq === 'peak') {
-          var alphaP = sw / (2 * (qOrS || 0.9));
-          b0 = 1 + alphaP * A; b1 = -2 * cw; b2 = 1 - alphaP * A;
-          a0 = 1 + alphaP / A; a1 = -2 * cw; a2 = 1 - alphaP / A;
-        } else {
-          var alphaS = sw / 2 * Math.sqrt((A + 1 / A) * (1 / (qOrS || 0.7) - 1) + 2);
-          var sq = 2 * Math.sqrt(A) * alphaS;
-          b0 = A * ((A + 1) + (A - 1) * cw + sq); b1 = -2 * A * ((A - 1) + (A + 1) * cw); b2 = A * ((A + 1) + (A - 1) * cw - sq);
-          a0 = (A + 1) - (A - 1) * cw + sq; a1 = 2 * ((A - 1) - (A + 1) * cw); a2 = (A + 1) - (A - 1) * cw - sq;
-        }
-        return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
-      };
-      var eqHp = makeBiquad('hpf', 28, 0.707, 0);
-      var eqDip = makeBiquad('peak', Math.min(2200, SR * 0.36), 0.9, spaceProfile.pocketDb);
-      var eqAir = makeBiquad('hshelf', Math.min(9200, SR * 0.36), 0.707, spaceProfile.airDb);
-      var hpB0 = eqHp.b0, hpB1 = eqHp.b1, hpB2 = eqHp.b2, hpA1 = eqHp.a1, hpA2 = eqHp.a2;
-      var dpB0 = eqDip.b0, dpB1 = eqDip.b1, dpB2 = eqDip.b2, dpA1 = eqDip.a1, dpA2 = eqDip.a2;
-      var arB0 = eqAir.b0, arB1 = eqAir.b1, arB2 = eqAir.b2, arA1 = eqAir.a1, arA2 = eqAir.a2;
-      var hpZ1L = 0, hpZ2L = 0, hpZ1R = 0, hpZ2R = 0;
-      var dpZ1L = 0, dpZ2L = 0, dpZ1R = 0, dpZ2R = 0;
-      var arZ1L = 0, arZ2L = 0, arZ1R = 0, arZ2R = 0;
-      var compEnv = 0, cAtt = 1 - Math.exp(-1 / (SR * 0.015)), cRel = 1 - Math.exp(-1 / (SR * 0.15));
-      var cThresh = spaceProfile.compThresh, cSlope = 1 - 1 / spaceProfile.compRatio, cMakeup = 1.12;
-      for (var mi = 0; mi < total; mi++) {
-        var l = left[mi], r = right[mi];
-        // Cascade biquads (TDF-II)
-        var yl1 = hpB0 * l + hpZ1L; hpZ1L = hpB1 * l - hpA1 * yl1 + hpZ2L; hpZ2L = hpB2 * l - hpA2 * yl1;
-        var yr1 = hpB0 * r + hpZ1R; hpZ1R = hpB1 * r - hpA1 * yr1 + hpZ2R; hpZ2R = hpB2 * r - hpA2 * yr1;
-        var yl2 = dpB0 * yl1 + dpZ1L; dpZ1L = dpB1 * yl1 - dpA1 * yl2 + dpZ2L; dpZ2L = dpB2 * yl1 - dpA2 * yl2;
-        var yr2 = dpB0 * yr1 + dpZ1R; dpZ1R = dpB1 * yr1 - dpA1 * yr2 + dpZ2R; dpZ2R = dpB2 * yr1 - dpA2 * yr2;
-        var yl3 = arB0 * yl2 + arZ1L; arZ1L = arB1 * yl2 - arA1 * yl3 + arZ2L; arZ2L = arB2 * yl2 - arA2 * yl3;
-        var yr3 = arB0 * yr2 + arZ1R; arZ1R = arB1 * yr2 - arA1 * yr3 + arZ2R; arZ2R = arB2 * yr2 - arA2 * yr3;
-        // Linked stereo soft-knee compressor
-        var det = Math.max(yl3 < 0 ? -yl3 : yl3, yr3 < 0 ? -yr3 : yr3);
-        compEnv += (det - compEnv) * (det > compEnv ? cAtt : cRel);
-        var compGain = compEnv > cThresh ? Math.pow(compEnv / cThresh, -cSlope) : 1;
-        left[mi] = yl3 * compGain * cMakeup;
-        right[mi] = yr3 * compGain * cMakeup;
-      }
+      var spbD = tm.spbAt(0);
+      if (hasSig(chorusL, chorusR)) runAccompSpaceEffect('chorus', chorusL, chorusR, left, right, SR, spaceProfile, spbD);
+      if (hasSig(delayL, delayR)) runAccompSpaceEffect('delay', delayL, delayR, left, right, SR, spaceProfile, spbD);
+      if (hasSig(plateL, plateR)) runAccompSpaceEffect('plate', plateL, plateR, left, right, SR, spaceProfile, spbD);
+      if (hasSig(hallL, hallR)) runAccompSpaceEffect('hall', hallL, hallR, left, right, SR, spaceProfile, spbD);
     }
 
-    /* Shared gain preserves the stereo balance. pcm remains a mono analysis preview. */
-    var pk = 1e-9;
-    for (var i8 = 0; i8 < total; i8++) {
-      var al = left[i8] < 0 ? -left[i8] : left[i8];
-      var ar = right[i8] < 0 ? -right[i8] : right[i8];
-      if (al > pk) pk = al;
-      if (ar > pk) pk = ar;
-    }
-    var gg = pk > 0.92 ? 0.92 / pk : 1;
-    var gDrive = gg * 1.02;
-    var mono = new Float32Array(total);
-    if (legacySound) {
-      for (var i9L = 0; i9L < total; i9L++) {
-        left[i9L] = Math.tanh(left[i9L] * gDrive) * 0.97;
-        right[i9L] = Math.tanh(right[i9L] * gDrive) * 0.97;
-        mono[i9L] = (left[i9L] + right[i9L]) * 0.5;
-      }
-    } else {
-      for (var i9 = 0; i9 < total; i9++) {
-        var lv = left[i9], rv = right[i9];
-        if (lv === 0 && rv === 0) continue;
-        var xl = lv * gDrive, xl2 = xl * xl;
-        var yl = xl * (945 + (105 + xl2) * xl2) / (945 + (420 + 15 * xl2) * xl2) * 0.97;
-        left[i9] = yl;
-        if (lv === rv) {
-          right[i9] = yl;
-          mono[i9] = yl;
-        } else {
-          var xr = rv * gDrive, xr2 = xr * xr;
-          var yr = xr * (945 + (105 + xr2) * xr2) / (945 + (420 + 15 * xr2) * xr2) * 0.97;
-          right[i9] = yr;
-          mono[i9] = (yl + yr) * 0.5;
-        }
-      }
-    }
-    return { pcm: mono, channels: [left, right], sr: SR };
+    return finalizeAccompMix(left, right, SR, spaceProfile, legacySound);
   };
 
   return NSG.DSP;
@@ -5622,7 +5851,9 @@
     NSG.LEGACY_SOUND = !!flag;
     return NSG.LEGACY_SOUND;
   };
-  var standard = createEngine(NSG, 16000), legacyRender = standard.render, legacyRenderTrack = standard.renderTrack, highDefinition = null, previousHD = null;
+  var standard = createEngine(NSG, 16000), legacyRender = standard.render, legacyRenderTrack = standard.renderTrack,
+    legacyPlanVocalSlices = standard.planVocalSlices, legacyRenderVocalSlice = standard.renderVocalSlice,
+    legacyFinalizeVocalSlices = standard.finalizeVocalSlices, highDefinition = null, previousHD = null;
   function hdEngine(opt) {
     var calibrated = !opt || opt.modeBCalibration !== false;
     if (calibrated ? !highDefinition : !previousHD) {
@@ -5649,6 +5880,36 @@
     try {
       if (!opt || opt.hd !== true) return legacyRenderTrack(score, trk, timbre, opt);
       return hdEngine(opt).renderTrack(score, trk, timbre, opt);
+    } finally {
+      NSG.LEGACY_SOUND = prev;
+    }
+  };
+  standard.planVocalSlices = function (score, trk, timbre, opt, maxSlices) {
+    var prev = NSG.LEGACY_SOUND;
+    if (opt && opt.legacySound !== undefined) NSG.LEGACY_SOUND = !!opt.legacySound;
+    try {
+      if (!opt || opt.hd !== true) return legacyPlanVocalSlices(score, trk, timbre, opt, maxSlices);
+      return hdEngine(opt).planVocalSlices(score, trk, timbre, opt, maxSlices);
+    } finally {
+      NSG.LEGACY_SOUND = prev;
+    }
+  };
+  standard.renderVocalSlice = function (score, trk, timbre, opt, sliceRange) {
+    var prev = NSG.LEGACY_SOUND;
+    if (opt && opt.legacySound !== undefined) NSG.LEGACY_SOUND = !!opt.legacySound;
+    try {
+      if (!opt || opt.hd !== true) return legacyRenderVocalSlice(score, trk, timbre, opt, sliceRange);
+      return hdEngine(opt).renderVocalSlice(score, trk, timbre, opt, sliceRange);
+    } finally {
+      NSG.LEGACY_SOUND = prev;
+    }
+  };
+  standard.finalizeVocalSlices = function (chunks, total, mixGains, opt) {
+    var prev = NSG.LEGACY_SOUND;
+    if (opt && opt.legacySound !== undefined) NSG.LEGACY_SOUND = !!opt.legacySound;
+    try {
+      if (!opt || opt.hd !== true) return legacyFinalizeVocalSlices(chunks, total, mixGains);
+      return hdEngine(opt).finalizeVocalSlices(chunks, total, mixGains);
     } finally {
       NSG.LEGACY_SOUND = prev;
     }

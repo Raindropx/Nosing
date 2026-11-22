@@ -50,6 +50,10 @@
     }).catch(function (e) { W.error = e.message; return false; });
     return pending;
   };
+  W.raw = function () {
+    if (!W.enabled || !W.ready || !instance) return null;
+    return { real: real, imag: imag, fft: instance.fft, maxN: 8192 };
+  };
   W.fft = function (re, im) {
     var n = re.length;
     // Float32 arrays round every butterfly in the original implementation.
