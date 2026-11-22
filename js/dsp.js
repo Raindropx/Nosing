@@ -2242,12 +2242,12 @@
         if (aOpen + areaRet > 0) lo = mid; else hi = mid;
       }
       var alpha = 0.5 * (lo + hi);
-      var shift = Math.round(te * N), dc = 0;
+      var dc = 0;
       im.fill(0);
       for (var s = 0; s < N; s++) {
         var ts = s / N;
         var v = ts < te ? (-Math.exp(alpha * (ts - te)) * Math.sin(wg * ts) / sinTe) : retBuf[s];
-        re[(s - shift + N) % N] = v;
+        re[s] = v;
         dc += v;
       }
       dc /= N;
@@ -2258,8 +2258,12 @@
       for (var k = 1; k <= NH; k++) {
         var mk = Math.hypot(re[k], im[k]);
         mRow[k - 1] = 20 * Math.log10(Math.max(1e-9, mk / Math.max(1e-12, m1)));
-        var pk = Math.atan2(im[k], re[k]) / (2 * Math.PI) + 0.25;
-        pRow[k - 1] = pk - Math.floor(pk);
+        // Align closure at exactly Te (including its fractional sample). The
+        // oscillator drives the tract with flow; lip radiation differentiates
+        // it downstream. Integration's -1/4 turn cancels cosine-to-sine's +1/4.
+        var pk = Math.atan2(im[k], re[k]) / (2 * Math.PI) + k * te;
+        var anchor = ri ? phase[ri - 1][k - 1] : 0;
+        pRow[k - 1] = pk - Math.round(pk - anchor);
       }
       phase[ri] = pRow; mag[ri] = mRow;
       oqArr[ri] = te; taArr[ri] = ta;
@@ -2278,6 +2282,35 @@
   }
 
   /* ---------- 乐谱 → 控制帧 ---------- */
+  function markPhonationPhrases(notes, events) {
+    var eventIndex = 0;
+    for (var first = 0; first < notes.length;) {
+      if (notes[first]._rest || notes[first]._breath) { first++; continue; }
+      var end = first + 1;
+      while (end < notes.length && !notes[end]._rest && !notes[end]._breath &&
+          notes[end]._start - notes[end - 1]._end < 0.06) end++;
+      var startTime = notes[first]._pre === undefined ? notes[first]._start : notes[first]._pre;
+      var endTime = notes[end - 1]._end;
+      var onset = endTime, release = startTime;
+      while (eventIndex < events.length && events[eventIndex].t1 <= startTime) eventIndex++;
+      for (var j = eventIndex; j < events.length && events[j].t0 < endTime; j++) {
+        var e = events[j];
+        if (e.av > 0) {
+          onset = Math.min(onset, Math.max(startTime, e.t0));
+          release = Math.max(release, Math.min(endTime, e.t1));
+        }
+      }
+      var chainEnd = endTime;
+      for (var i = end - 1; i >= first; i--) {
+        if (i === end - 1 || !notes[i + 1]._slur) chainEnd = notes[i]._end;
+        notes[i]._chainEnd = chainEnd;
+        notes[i]._phonationOnset = onset;
+        notes[i]._phonationEnd = release;
+      }
+      first = end;
+    }
+  }
+
   function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening, organicAmt, humanizeAmt, frameRange) {
     var built = buildEvents(score, timbre, tm, lang, japaneseFriction, japaneseVoicedFriction, undefined, nasalRelease, nasalTract);
     var ev = built.ev, notes = built.notes;
@@ -2348,6 +2381,7 @@
     }
     var humBaseRd = 1.05, humCurRd = 1.05, humRdAlpha = 1 - Math.exp(-dt / 0.022);
     var humPassHz = 320, lfTab = null;
+    var releaseTaper = 1, releaseBreath = 1;
     if (humAmt > 0) {
       lfTab = getLfTable();
       // Base vocal-fold tension from timbre cues: breathier/softer -> higher Rd,
@@ -2356,14 +2390,7 @@
         1.05 + 1.8 * ((timbre.breath || 0) - 0.035) - 0.25 * (timbre.glottal || 0) - 0.015 * (timbre.tiltDb || 0)));
       humCurRd = humBaseRd;
       humPassHz = 310 * Math.pow(nasalScale(timbre), 0.78);
-      for (var pi = 0; pi < notes.length; pi++) {
-        var pn = notes[pi];
-        if (pn._rest || pn._breath) continue;
-        var prevV = pi > 0 ? notes[pi - 1] : null;
-        var nextV = pi + 1 < notes.length ? notes[pi + 1] : null;
-        pn._phraseStart = !prevV || prevV._rest || prevV._breath || (pn._start - prevV._end >= 0.06);
-        pn._phraseEnd = !nextV || nextV._rest || nextV._breath || (nextV._start - pn._end >= 0.06);
-      }
+      markPhonationPhrases(notes, ev);
     }
     for (var fr = frStart; fr < frEnd; fr++) {
       var ctrlIdx = fr - frStart;
@@ -2667,15 +2694,19 @@
         orgTiltMod = 0.55 * orgEff * nTilt + 0.35 * orgAmt * vibNorm;
         orgAirMod = Math.max(0.7, 1 + 0.14 * orgEff * nAir);
       }
-      var humTremolo = 1, humEndTaper = 1, humBreathBoost = 1, humFry = 0;
+      var humTremolo = 1, humEndTaper = releaseTaper, humBreathBoost = releaseBreath, humFry = 0;
       var humRdOut = humBaseRd, humOqOut = 0.65, humTaOut = 0.04;
       if (humAmt > 0) {
-        var tgtRd = humBaseRd;
+        var tgtRd = curAv >= 1e-3 ? humCurRd : humBaseRd;
         if (voicedNote) {
+          tgtRd = humBaseRd;
+          humEndTaper = 1;
+          humBreathBoost = 1;
           var hVel = NSG.TUNING.clamp(Number.isFinite(+active.vel) && active.vel != null ? +active.vel : 96, 1, 127);
           var hVelNorm = (hVel - 96) / 31; // -3..+1
-          var hElapsed = Math.max(0, t - active._start);
-          var hLeft = Math.max(0, active._end - t);
+          var hElapsed = Math.max(0, t - active._legato);
+          var phraseElapsed = Math.max(0, t - active._phonationOnset);
+          var hLeft = Math.max(0, active._phonationEnd - t);
           // 1) Vocal effort (VEL -> lower Rd pressed, softer VEL -> higher Rd breathy)
           tgtRd -= 0.38 * Math.max(-1.2, Math.min(1.0, hVelNorm));
           // 2) Pitch register / passaggio: higher notes gently soften into mixed/head voice unless belted
@@ -2684,20 +2715,21 @@
             tgtRd += 0.42 * reg * (1 - 0.45 * Math.max(0, hVelNorm));
           }
           // 3) Syllable attack micro-engagement
-          if (!active.slur) tgtRd -= 0.12 * Math.exp(-hElapsed / 0.085);
+          tgtRd -= 0.12 * Math.exp(-Math.min(hElapsed, phraseElapsed) / 0.085);
           // 4) Phrase onset soft glottal engagement (first ~70ms)
-          if (active._phraseStart && hElapsed < 0.075) {
-            var uOn = Math.min(1, hElapsed / 0.070);
+          if (phraseElapsed < 0.070) {
+            var uOn = phraseElapsed / 0.070;
             var sOn = 1 - uOn * uOn * (3 - 2 * uOn);
             tgtRd += 0.45 * sOn;
-            humBreathBoost += 0.55 * Math.max(0, 1 - hElapsed / 0.055) * humAmt;
+            humBreathBoost += 0.55 * Math.max(0, 1 - phraseElapsed / 0.055) * humAmt;
             if (f0 < 170) humFry = Math.max(humFry, 0.75 * sOn * Math.min(1, (170 - f0) / 50));
           }
           // 5) Phrase offset breathy glottal relaxation (last ~160ms on sustained phrase ends)
-          var tailLen = Math.min(0.165, duration * 0.36);
-          if (active._phraseEnd && duration >= 0.28 && hLeft < tailLen) {
+          var voicedSpan = active._phonationEnd - active._phonationOnset;
+          var tailLen = Math.min(0.165, voicedSpan * 0.36);
+          if (tailLen > 0 && hLeft < tailLen) {
             var uEnd = Math.max(0, Math.min(1, 1 - hLeft / Math.max(1e-4, tailLen)));
-            var sEnd = uEnd * uEnd * (3 - 2 * uEnd);
+            var sEnd = uEnd * uEnd * (3 - 2 * uEnd) * Math.min(1, voicedSpan / 0.28);
             tgtRd += 0.78 * sEnd;
             humBreathBoost += 0.70 * sEnd * humAmt;
             humEndTaper = 1 - 0.22 * sEnd * humAmt;
@@ -2708,6 +2740,14 @@
             tgtRd -= 0.14 * humAmt * vibNorm;
             humTremolo = 1 + 0.065 * humAmt * vibNorm;
           }
+          // A slow fluctuation in breath support moves level, fold tension and
+          // leakage together; keep the scored pitch and independent jitter intact.
+          var support = org ? humAmt * orgEff * nF0 : 0;
+          humTremolo *= 1 + 0.095 * support;
+          tgtRd -= 0.16 * support;
+          humBreathBoost *= 1 - 0.08 * support;
+          releaseTaper = humEndTaper;
+          releaseBreath = humBreathBoost;
         }
         tgtRd = Math.max(0.35, Math.min(2.65, tgtRd));
         humCurRd += (tgtRd - humCurRd) * humRdAlpha;
@@ -2722,8 +2762,9 @@
       var sourceTilt = 0;
       if (research && voicedNote) {
         var noteVel = NSG.TUNING.clamp(Number.isFinite(+active.vel) && active.vel != null ? +active.vel : 96, 1, 127);
-        var elapsed = Math.max(0, t - active._start);
-        var span = Math.max(0.02, active._end - active._start);
+        var effortStart = humAmt > 0 ? active._legato : active._start;
+        var elapsed = Math.max(0, t - effortStart);
+        var span = Math.max(0.02, (humAmt > 0 ? active._chainEnd : active._end) - effortStart);
         sourceTilt = 2.4 * (noteVel / 96 - 1) + 0.65 * Math.exp(-elapsed / 0.10)
           - 0.35 * Math.min(1, elapsed / Math.max(0.3, span));
       }
@@ -2972,7 +3013,7 @@
       for (var hb2 = 0; hb2 < 32; hb2++) driftOut[hb2] -= driftMean;
     }
     var useLf = humanizeAmt > 0 && !!src.lfTable;
-    var lfP0 = null, lfP1 = null, lfM0 = null, lfM1 = null, lfFr = 0, lfNh = 0, fCoh = 2400;
+    var lfP0 = null, lfP1 = null, lfModal = null, lfM0 = null, lfM1 = null, lfFr = 0, lfNh = 0, fCoh = 2400;
     if (useLf) {
       var lt = src.lfTable;
       var rdClamped = Math.max(lt.rdMin, Math.min(lt.rdMin + (lt.nrd - 1) * lt.rdStep, rd !== undefined ? rd : 1.05));
@@ -2980,6 +3021,7 @@
       var rI = Math.min(lt.nrd - 2, rPos | 0);
       lfFr = rPos - rI;
       lfP0 = lt.phase[rI]; lfP1 = lt.phase[rI + 1];
+      lfModal = lt.phase[Math.round((1 - lt.rdMin) / lt.rdStep)];
       lfM0 = lt.magDelta[rI]; lfM1 = lt.magDelta[rI + 1];
       lfNh = lt.nh;
       // Tighter chest voice stays phase-coherent higher; breathy voice disperses earlier.
@@ -2994,17 +3036,18 @@
       if (useLf) {
         var mIdx = k <= lfNh ? k - 1 : lfNh - 1;
         var mDelta = lfM0[mIdx] + (lfM1[mIdx] - lfM0[mIdx]) * lfFr;
-        db += 0.68 * humanizeAmt * mDelta;
+        // The frame's Rd already blends toward modal at low humanize settings.
+        db += 0.68 * mDelta;
         var wCoh = khz <= fCoh ? 1 : (khz >= fCoh + 2200 ? 0 : 1 - (khz - fCoh) / 2200);
         wCoh = wCoh * wCoh * (3 - 2 * wCoh) * humanizeAmt;
         var rp = src.randPhase[k - 1];
         var tgtOff = rp;
         if (wCoh > 1e-6 && k <= lfNh) {
           var pA = lfP0[k - 1], pB = lfP1[k - 1];
-          var dpAB = pB - pA; dpAB -= Math.round(dpAB);
-          var lfPh = pA + dpAB * lfFr;
-          var dpLR = lfPh - rp; dpLR -= Math.round(dpLR);
-          tgtOff = rp + wCoh * dpLR;
+          // Choose the turn once at modal phonation. Re-selecting the
+          // shortest arc as Rd moves flips the blended partial at half a turn.
+          var lfPh = pA + (pB - pA) * lfFr;
+          tgtOff = rp + wCoh * (lfPh - rp - Math.round(lfModal[k - 1] - rp));
         }
         if (snapPhase) {
           var pSnap = tgtOff - Math.floor(tgtOff);

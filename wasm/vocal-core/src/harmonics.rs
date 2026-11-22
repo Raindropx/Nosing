@@ -508,6 +508,7 @@ impl VocalSource {
         }
 
         let mut lf_ri = 0usize;
+        let mut lf_modal_row = 0usize;
         let mut lf_fr = 0.0_f64;
         let mut lf_nh = 0usize;
         let mut f_coh = 2400.0_f64;
@@ -520,6 +521,7 @@ impl VocalSource {
                 lf_ri = (r_pos as usize).min(lt.nrd - 2);
                 lf_fr = r_pos - (lf_ri as f64);
                 lf_nh = lt.nh;
+                lf_modal_row = (((1.0 - lt.rd_min) / lt.rd_step).round() as usize).min(lt.nrd - 1) * lt.nh;
                 f_coh = (2650.0 - 480.0 * (rd_clamped - 1.0)).clamp(1500.0, 3000.0);
             }
         }
@@ -536,7 +538,7 @@ impl VocalSource {
                 let row0 = lf_ri * lf_nh;
                 let row1 = (lf_ri + 1) * lf_nh;
                 let m_delta = lt.mag_delta[row0 + m_idx] + (lt.mag_delta[row1 + m_idx] - lt.mag_delta[row0 + m_idx]) * lf_fr;
-                db += 0.68 * humanize_amt * m_delta;
+                db += 0.68 * m_delta;
                 let mut w_coh = if khz <= f_coh {
                     1.0
                 } else if khz >= f_coh + 2200.0 {
@@ -550,12 +552,9 @@ impl VocalSource {
                 if w_coh > 1e-6 && k <= lf_nh {
                     let p_a = lt.phase[row0 + k - 1];
                     let p_b = lt.phase[row1 + k - 1];
-                    let mut dp_ab = p_b - p_a;
-                    dp_ab -= dp_ab.round();
-                    let lf_ph = p_a + dp_ab * lf_fr;
-                    let mut dp_lr = lf_ph - rp;
-                    dp_lr -= dp_lr.round();
-                    tgt_off = rp + w_coh * dp_lr;
+                    let lf_ph = p_a + (p_b - p_a) * lf_fr;
+                    let modal_turn = (lt.phase[lf_modal_row + k - 1] - rp).round();
+                    tgt_off = rp + w_coh * (lf_ph - rp - modal_turn);
                 }
                 if snap_phase {
                     let mut p_snap = tgt_off - tgt_off.floor();
