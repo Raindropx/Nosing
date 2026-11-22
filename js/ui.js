@@ -3855,10 +3855,11 @@
   }
 
   var playbackCurve = null;
-  var playbackGuard = null, playbackGuardContext = null;
+  var playbackLimiter = null, playbackScale = null, playbackGuard = null, playbackGuardContext = null;
   function outputGuard(ctx, master) {
-    // 输入先缩到 1/4，曲线在 [-4,4] 上工作；0.90 以下保持线性。
-    // 人声/伴奏最高各 130% 时，混音仍可进入曲线而不在声卡前硬削顶。
+    // 主总线保护链：先经 Web Audio 原生预读压缩器平滑压住超限峰值，
+    // 再缩到 1/4（并补偿压缩器约 +0.57dB 的内置补偿增益）送入 4x 过采样软削波兜底。
+    // 正常电平下透明直通；多音层合唱或大推子时平滑限幅，避免削波破音与混叠。
     if (!playbackCurve) {
       playbackCurve = new Float32Array(4097);
       for (var i = 0; i < playbackCurve.length; i++) {
@@ -3871,12 +3872,33 @@
     if (playbackGuardContext !== ctx) {
       playbackGuard = ctx.createWaveShaper();
       playbackGuard.curve = playbackCurve;
+      playbackGuard.oversample = '4x';
       playbackGuard.connect(ctx.destination);
+      if (typeof ctx.createDynamicsCompressor === 'function') {
+        playbackLimiter = ctx.createDynamicsCompressor();
+        playbackLimiter.threshold.value = -1;
+        playbackLimiter.knee.value = 0;
+        playbackLimiter.ratio.value = 20;
+        playbackLimiter.attack.value = 0.003;
+        playbackLimiter.release.value = 0.08;
+        playbackScale = ctx.createGain();
+        playbackScale.gain.value = 0.235;
+        playbackLimiter.connect(playbackScale);
+        playbackScale.connect(playbackGuard);
+      } else {
+        playbackLimiter = null;
+        playbackScale = null;
+      }
       playbackGuardContext = ctx;
     }
     master.gain.value = 0;
-    master.connect(playbackGuard);
-    rampGain(master.gain, 0.25, 0.008);
+    if (playbackLimiter) {
+      master.connect(playbackLimiter);
+      rampGain(master.gain, 1, 0.008);
+    } else {
+      master.connect(playbackGuard);
+      rampGain(master.gain, 0.25, 0.008);
+    }
   }
 
   function killSrcs(immediate) {
@@ -4049,8 +4071,11 @@
     var ctx = state.ctx;
     stopPlay(true);
     // Close the whole live context: no buffered output or old effect tail can resume.
-    if (playbackGuard && playbackGuardContext === ctx) {
-      playbackGuard.disconnect(); playbackGuard = null; playbackGuardContext = null;
+    if (playbackGuardContext === ctx) {
+      if (playbackLimiter) { playbackLimiter.disconnect(); playbackLimiter = null; }
+      if (playbackScale) { playbackScale.disconnect(); playbackScale = null; }
+      if (playbackGuard) { playbackGuard.disconnect(); playbackGuard = null; }
+      playbackGuardContext = null;
     }
     state.ctx = null;
     if (ctx) ctx.close().catch(function () {});
@@ -4550,7 +4575,7 @@
         var part = { tempo: snapshot.tempo, tempos: snapshot.tempos, lang: snapshot.lang,
           phonemizer: snapshot.phonemizer, tracks: [track] };
         var audio = await client.vocal(part, snapshot.timbre, snapshot.raw, snapshot.hd,
-          snapshot.waveguide, snapshot.highPolish, { includeAnalysis: false });
+          snapshot.waveguide, snapshot.highPolish, { includeAnalysis: false, headroom: false });
         sr = audio.sr;
         setStatus(t('exp.encodingWav', null, '正在编码 WAV…'));
         return NSG.IO.encodeWAVAsync(audio.pcm, sr, bits);

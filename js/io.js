@@ -206,9 +206,14 @@
       if ((i & 4095) === 0) yield;
       peak = Math.max(peak, Math.abs(channels[c][i]));
     }
-    if (peak > 0.99) for (var c = 0; c < count; c++) for (var i = 0; i < length; i++) {
-      if ((i & 4095) === 0) yield;
-      channels[c][i] *= 0.99 / peak;
+    if (peak > 0.92 && NSG.DSP && typeof NSG.DSP.limitLookahead === 'function') {
+      yield;
+      NSG.DSP.limitLookahead(channels, sr, 0.92, 0.97);
+    } else if (peak > 0.99) {
+      for (var c = 0; c < count; c++) for (var i = 0; i < length; i++) {
+        if ((i & 4095) === 0) yield;
+        channels[c][i] *= 0.99 / peak;
+      }
     }
     return { channels: channels, sr: sr };
   }

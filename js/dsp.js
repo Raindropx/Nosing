@@ -3488,8 +3488,72 @@
     return s;
   }
 
-  function mixVocalItems(items, sr) {
+  function limitLookahead(channels, sr, thresh, ceil) {
+    var list = Array.isArray(channels) ? channels : [channels];
+    var nCh = list.length;
+    if (!nCh) return channels;
+    var nOut = list[0].length;
+    if (!nOut) return channels;
+    var t = thresh > 0 ? thresh : 0.92;
+    var cMax = ceil > 0 ? ceil : 0.97;
+    var rate = sr > 0 ? sr : SR;
+    var peak = 0;
+    for (var c0 = 0; c0 < nCh; c0++) {
+      var buf0 = list[c0];
+      for (var i0 = 0; i0 < nOut; i0++) {
+        var av0 = buf0[i0] < 0 ? -buf0[i0] : buf0[i0];
+        if (av0 > peak) peak = av0;
+      }
+    }
+    if (peak <= t) return channels;
+    var LA = Math.max(1, Math.round(rate * 0.003));
+    var queueSize = LA + 2;
+    var dq = new Int32Array(queueSize), req = new Float64Array(queueSize), dh = 0, dt = 0, queued = 0;
+    var win = new Float64Array(LA), slot = 0;
+    var relA = 1 - Math.exp(-1 / (rate * 0.05)), env = 1, box = 0;
+    for (var q3 = 0; q3 < nOut + LA; q3++) {
+      var ax = 0;
+      if (q3 < nOut) {
+        for (var c1 = 0; c1 < nCh; c1++) {
+          var v1 = list[c1][q3];
+          var a1 = v1 < 0 ? -v1 : v1;
+          if (a1 > ax) ax = a1;
+        }
+      }
+      var request = ax > t ? t / ax : 1;
+      while (queued > 0) {
+        var back = dt === 0 ? queueSize - 1 : dt - 1;
+        if (req[back] < request) break;
+        dt = back; queued--;
+      }
+      dq[dt] = q3; req[dt] = request;
+      if (++dt === queueSize) dt = 0;
+      queued++;
+      var q5 = q3 - LA;
+      if (q5 < 0) continue;
+      while (dq[dh] < q5) {
+        if (++dh === queueSize) dh = 0;
+        queued--;
+      }
+      var minimum = req[dh];
+      if (q5 >= LA) box -= win[slot];
+      box += minimum;
+      win[slot] = minimum;
+      if (++slot === LA) slot = 0;
+      var gTarget = Math.min(1, box / (q5 < LA ? q5 + 1 : LA));
+      env = gTarget < env ? gTarget : env + (gTarget - env) * relA;
+      if (env > gTarget) env = gTarget;
+      for (var c2 = 0; c2 < nCh; c2++) {
+        var yv = list[c2][q5] * env;
+        list[c2][q5] = yv > cMax ? cMax : yv < -cMax ? -cMax : yv;
+      }
+    }
+    return channels;
+  }
+
+  function mixVocalItems(items, sr, opt) {
     sr = sr || SR;
+    var keepHeadroom = !!(opt && opt.headroom === true);
     if (!items || !items.length) return { pcm: new Float32Array(Math.round(sr * 0.4)), sr: sr };
     var normalized = items.map(function (it) {
       var v = typeof it.vol === 'number' && isFinite(it.vol) ? Math.max(0, Math.min(4, it.vol)) : 1;
@@ -3502,13 +3566,6 @@
     }
     var maxLen = 0;
     for (var i = 0; i < normalized.length; i++) if (normalized[i].pcm.length > maxLen) maxLen = normalized[i].pcm.length;
-    function limit(buf) {
-      for (var m = 0; m < buf.length; m++) {
-        var x = buf[m], ax = Math.abs(x);
-        if (ax > 0.92) buf[m] = (x < 0 ? -1 : 1) * (0.92 + 0.05 * Math.tanh((ax - 0.92) / 0.05));
-      }
-      return buf;
-    }
     if (!hasStereo) {
       var mix = new Float32Array(maxLen);
       for (var r = 0; r < normalized.length; r++) {
@@ -3516,7 +3573,8 @@
         if (g === 0) continue;
         for (var k = 0; k < pcm.length; k++) mix[k] += pcm[k] * g;
       }
-      return { pcm: limit(mix), sr: sr };
+      if (!keepHeadroom) limitLookahead([mix], sr, 0.92, 0.97);
+      return { pcm: mix, sr: sr };
     }
     var left = new Float32Array(maxLen), right = new Float32Array(maxLen);
     for (var r2 = 0; r2 < normalized.length; r2++) {
@@ -3531,8 +3589,7 @@
         right[k2] += s * rg;
       }
     }
-    limit(left);
-    limit(right);
+    if (!keepHeadroom) limitLookahead([left, right], sr, 0.92, 0.97);
     var mono = new Float32Array(maxLen);
     for (var k3 = 0; k3 < maxLen; k3++) mono[k3] = (left[k3] + right[k3]) * 0.5;
     return { pcm: mono, channels: [left, right], sr: sr };
@@ -3541,6 +3598,7 @@
   NSG.DSP.renderTrack = function (score, trk, timbre, opt) {
     return renderSingleVocal(trackRenderScore(score, trk), (trk && trk.timbre) || timbre, opt);
   };
+  NSG.DSP.limitLookahead = limitLookahead;
   NSG.DSP.mixVocalTracks = mixVocalItems;
 
   NSG.DSP.render = function (score, timbre, opt) {
@@ -3555,7 +3613,7 @@
       var res = renderSingleVocal(trackRenderScore(score, trk), trk.timbre || timbre, opt);
       return { pcm: res.pcm, vol: trk.vol, pan: trk.pan };
     });
-    return mixVocalItems(items, SR);
+    return mixVocalItems(items, SR, { headroom: opt.headroom === true });
   };
 
   /* ---------- 伴奏渲染 ----------

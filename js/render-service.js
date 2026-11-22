@@ -135,7 +135,7 @@
       return { pcm: hit.pcm, sr: hit.sr, vol: trk.vol, pan: trk.pan };
     });
     var sr = items[0] && items[0].sr ? items[0].sr : (opt.hd === true ? 48000 : 16000);
-    var mixed = NSG.DSP.mixVocalTracks(items, sr);
+    var mixed = NSG.DSP.mixVocalTracks(items, sr, { headroom: opt.headroom === true });
     if (!mixed.channels && items.length === 1 && mixed.pcm === items[0].pcm) {
       return { pcm: new Float32Array(mixed.pcm), sr: mixed.sr };
     }
@@ -147,7 +147,8 @@
     if (type === 'vocal') {
       var audio = renderVocalWithCache(data.score, data.timbre, { rawSource: data.rawSource, hd: data.hd,
         legacySound: data.legacySound,
-        modeBFricWaveguide: data.modeBFricWaveguide, modeBHighPolish: data.modeBHighPolish });
+        modeBFricWaveguide: data.modeBFricWaveguide, modeBHighPolish: data.modeBHighPolish,
+        headroom: data.headroom === true });
       var levels = meter(audio.channels || [audio.pcm], audio.sr);
       var wantAnalysis = data.includeAnalysis !== false;
       var grid = null, harmonics = null;
@@ -401,11 +402,14 @@
     this.queue.push(job); this._pump(); return job.promise;
   };
   Client.prototype.vocal = function (score, timbre, raw, hd, waveguide, highPolish, opt) {
-    var key = vocalKey(score, timbre, raw, hd, waveguide, highPolish);
+    var baseKey = vocalKey(score, timbre, raw, hd, waveguide, highPolish);
+    var headroom = !(opt && opt.headroom === false);
+    var key = headroom ? baseKey : baseKey + '|limited';
     var includeAnalysis = opt ? opt.includeAnalysis !== false : this.includeAnalysis !== false;
     return this._submit('vocal', function () {
-      var d = JSON.parse(key);
+      var d = JSON.parse(baseKey);
       if (!includeAnalysis) d.includeAnalysis = false;
+      d.headroom = headroom;
       return d;
     }, key, hd === true, includeAnalysis);
   };
