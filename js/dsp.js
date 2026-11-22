@@ -940,7 +940,8 @@
         nucList = [];
         for (var v = 0; v < phList.length; v++) {
           if (NSG.phoneOf(phList[v]).t !== 'V') continue;
-          if (v && /^(a:I|e:I|O:I|a:U|o:U)$/.test(phList[v - 1] + ':' + phList[v])) continue;
+          if (noteObj._stressByPhone ? noteObj._stressByPhone[v] === undefined :
+              v && /^(a:I|e:I|O:I|a:U|o:U)$/.test(phList[v - 1] + ':' + phList[v])) continue;
           nucList.push(v);
         }
         if (!nucList.length) nucList = [nucIdx];
@@ -1459,8 +1460,12 @@
             nucDurs[index] = NSG.phoneOf(phones[index]).syllabic ? syllDur : mainDur;
           });
         }
-      } else if (noteLang === 'fi' && nuclei.length > 1) {
-        var weights = nuclei.map(function (index) { return NSG.phoneOf(phones[index]).vowelWeight || 1; });
+      } else if (nuclei.length > 1 && (noteLang === 'fi' || (noteLang === 'en' && note._stressByPhone))) {
+        var weights = nuclei.map(function (index) {
+          if (noteLang === 'fi') return NSG.phoneOf(phones[index]).vowelWeight || 1;
+          // Scale just the vowel budget on this note; sustain beats belong to the final nucleus.
+          return [1, 1.5, 1.2][note._stressByPhone[index]];
+        });
         var totalWeight = weights.reduce(function (sum, weight) { return sum + weight; }, 0);
         if (totalWeight > nuclei.length) {
           nucDurs = {};
@@ -1654,7 +1659,8 @@
         if (ph.t === 'V') {
           // 闽南语鼻化元音是音位对立，零点上移到鼻极点之上，不随音色的鼻音量变弱。
           var prevV = ev.length > noteEv0 ? ev[ev.length - 1] : null;
-          var isEnGlide = noteLang === 'en' && c2 > 0 && /^(a:I|e:I|O:I|a:U|o:U)$/.test(phones[c2 - 1] + ':' + phones[c2]);
+          var isEnGlide = noteLang === 'en' && c2 > 0 && nuclei.indexOf(c2) < 0 &&
+            /^(a:I|e:I|O:I|a:U|o:U)$/.test(phones[c2 - 1] + ':' + phones[c2]);
           var isZhGlide = isMandarinLike && c2 > nuc && /^(I|U)$/.test(phones[c2]);
           var isDialectGlide = /^(hak|nan-x-teochew)$/.test(noteLang) && c2 > nuc && /^(i|u)(~)?$/.test(phones[c2]);
           var nextNasal = nasalTract && !(ph.nz >= 0.5) && c2 + 1 < phones.length && notePhone(phones[c2 + 1]).t === 'N' ?
@@ -2085,7 +2091,7 @@
   }
 
   /* ---------- 乐谱 → 控制帧 ---------- */
-  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract) {
+  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening) {
     var built = buildEvents(score, timbre, tm, lang, japaneseFriction, japaneseVoicedFriction, undefined, nasalRelease, nasalTract);
     var ev = built.ev, notes = built.notes;
     var pitchModel = NSG.TUNING.pitchModel(notes, built.pit);
@@ -2259,9 +2265,18 @@
       // 普通话 l 除阻：F1/F2 快速打开，F3 以上仍按原速平滑（边音 F3 本就接近元音）。
       var latEdge = !!e && !!prevEv && prevEv.latRelease && e.kind === 'V' &&
         Math.abs(e.t0 - prevEv.t1) < 1e-6 && t - e.t0 < ZH_L_RELEASE;
-      var vbRel = !!e && e.kind === 'F' && !!prevEv && prevEv.kind === 'VB' && Math.abs(e.t0 - prevEv.t1) < 1e-6; for (var k = 0; k < 6; k++) {
+      // Optional HiFi experiment. Follow the sung F0 through pitch bends and
+      // sustains. Limit the opening to keep each vowel's F1 distinct from F2.
+      var firstTarget = tgtPairs[0][0];
+      if (highVowelOpening > 0 && e && e.kind === 'V' && lastF0 > 350 && lastF0 > firstTarget) {
+        var register = Math.min(1, (lastF0 - 350) / 200);
+        var lift = Math.max(0, Math.min(lastF0 - firstTarget, firstTarget * 0.40, tgtPairs[1][0] * 0.8 - firstTarget));
+        firstTarget += lift * highVowelOpening * register * (inXf ? xr : 1);
+      }
+      var vbRel = !!e && e.kind === 'F' && !!prevEv && prevEv.kind === 'VB' && Math.abs(e.t0 - prevEv.t1) < 1e-6;
+      for (var k = 0; k < 6; k++) {
         var aK = tapEdge && k === 0 ? aFormFast : latEdge && k < 2 ? aFormLat : aF;
-        cur[k][0] += (tgtPairs[k][0] - cur[k][0]) * aK;
+        cur[k][0] += ((k === 0 ? firstTarget : tgtPairs[k][0]) - cur[k][0]) * aK;
         cur[k][1] += (tgtPairs[k][1] - cur[k][1]) * (vbRel ? aFormFast : aK);
       }
       // Coarticulated anticipatory velum opening on vowels approaching a coda nasal.
@@ -2931,7 +2946,8 @@
     var nasalTract = modeB && !opt.rawSource && opt.modeBNasalTract !== false && opt.modeBNasalTract !== 'off';
     var r0 = scoreToControl(score, timbre, tm, score.lang, research, balanceAspiration,
       !opt.rawSource && opt.modeBJapaneseFriction !== false,
-      !opt.rawSource && opt.modeBJapaneseVoicedFriction !== false, nasalRelease, aspAirMix, nasalTract);
+      !opt.rawSource && opt.modeBJapaneseVoicedFriction !== false, nasalRelease, aspAirMix, nasalTract,
+      modeB && !opt.rawSource && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0);
     if (!r0.ctrl.length) return { pcm: new Float32Array(Math.round(SR * 0.4)), sr: SR };
 
     var ctrl = r0.ctrl;

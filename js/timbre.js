@@ -492,6 +492,8 @@
       return '模式B输出均衡必须为 64 个有限值（−40…+24dB，50–20000Hz）';
     if (t.modeBHigh !== undefined && (typeof t.modeBHigh !== 'number' || !isFinite(t.modeBHigh) || t.modeBHigh < 0 || t.modeBHigh > 1))
       return '模式B有声高频必须为 0–1 的有限数值';
+    if (t.highVowelOpening !== undefined && (!Number.isFinite(t.highVowelOpening) || t.highVowelOpening < 0 || t.highVowelOpening > 1))
+      return 'HiFi 高音元音开口度必须为 0–1 的有限数值';
     if (t.fRatio !== undefined && (!Array.isArray(t.fRatio) || t.fRatio.length !== 3 ||
       !t.fRatio.every(function (v) { return typeof v === 'number' && isFinite(v) && v >= 0.75 && v <= 1.35; })))
       return '共振峰独立比例必须为 3 个有限值（0.75–1.35）';

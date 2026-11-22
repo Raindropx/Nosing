@@ -193,6 +193,43 @@
   }
   function isHan(ch) { return !!ch && isHanCode(ch.codePointAt(0)); }
 
+  // Match whole words before falling back to the single-character dictionary.
+  // Aliases share readings; longer entries take precedence (e.g. 音乐会).
+  var zhWords = Object.create(null);
+  [
+    '音乐/音樂 yin1 yue4', '音乐会/音樂會 yin1 yue4 hui4', '乐器/樂器 yue4 qi4',
+    '乐队/樂隊 yue4 dui4', '乐谱/樂譜 yue4 pu3', '乐章/樂章 yue4 zhang1',
+    '乐曲/樂曲 yue4 qu3', '声乐/聲樂 sheng1 yue4', '弦乐/弦樂 xian2 yue4',
+    '快乐/快樂 kuai4 le4', '欢乐/歡樂 huan1 le4', '歌曲 ge1 qu3',
+    '曲调/曲調 qu3 diao4', '旋律 xuan2 lv4', '曲折 qu1 zhe2',
+    '银行/銀行 yin2 hang2', '行长/行長 hang2 zhang3', '行业/行業 hang2 ye4',
+    '同行业/同行業 tong2 hang2 ye4', '行家 hang2 jia1', '一行字 yi1 hang2 zi4',
+    '行走 xing2 zou3', '行人 xing2 ren2', '旅行 lv3 xing2', '人行道 ren2 xing2 dao4',
+    '重新 chong2 xin1', '重复/重複 chong2 fu4', '重来/重來 chong2 lai2',
+    '重逢 chong2 feng2', '重温/重溫 chong2 wen1', '重叠/重疊 chong2 die2',
+    '重庆/重慶 chong2 qing4', '重重叠叠/重重疊疊 chong2 chong2 die2 die2',
+    '重要 zhong4 yao4', '重量 zhong4 liang4', '沉重 chen2 zhong4',
+    '长大/長大 zhang3 da4', '成长/成長 cheng2 zhang3', '生长/生長 sheng1 zhang3',
+    '长短/長短 chang2 duan3', '长久/長久 chang2 jiu3', '长夜/長夜 chang2 ye4',
+    '长大衣/長大衣 chang2 da4 yi1', '长发/長髮 chang2 fa4', '头发/頭髮 tou2 fa4',
+    '曾经/曾經 ceng2 jing1', '相处/相處 xiang1 chu3', '到处/到處 dao4 chu4',
+    '舍不得/捨不得 she3 bu4 de5', '舍得/捨得 she3 de5', '值得 zhi2 de5',
+    '着急/著急 zhao2 ji2', '睡着/睡著 shui4 zhao2', '看着/看著 kan4 zhe5',
+    '还给/還給 huan2 gei3', '归还/歸還 gui1 huan2', '还是/還是 hai2 shi4',
+    '朝夕 zhao1 xi1', '朝向 chao2 xiang4'
+  ].forEach(function (line) {
+    var readings = line.split(' '), aliases = readings.shift().split('/');
+    aliases.forEach(function (word) { zhWords[word] = readings; });
+  });
+  var zhWordPattern = new RegExp(Object.keys(zhWords).sort(function (a, b) { return b.length - a.length; }).join('|'), 'g');
+  function mandarinPhraseReadings(text) {
+    var readings = [], match;
+    while ((match = zhWordPattern.exec(text)) !== null) {
+      zhWords[match[0]].forEach(function (reading, i) { readings[match.index + i] = reading; });
+    }
+    return readings;
+  }
+
   /* ---------------- 普通话 ---------------- */
   var ZH_INIT = ['zh', 'ch', 'sh', 'b', 'p', 'm', 'f', 'd', 't', 'n', 'l', 'g', 'k', 'h', 'j', 'q', 'x', 'r', 'z', 'c', 's', 'y', 'w'];
   var ZH_INIT_MAP = {
@@ -3641,6 +3678,7 @@
     }
     // 汉字逐字取音，罗马字按各拼音方案切分。
     var conv = { zh: zhSyllable, 'zh-x-sichuan': sichuanSyllable, yue: yueSyllable, nan: nanSyllable, hak: hakSyllable, 'nan-x-teochew': teochewSyllable };
+    var zhReadings = lang === 'zh' ? mandarinPhraseReadings(text) : null;
     while (i < text.length) {
       var cp2 = text.codePointAt(i), cl2 = cp2 > 0xffff ? 2 : 1, ch2 = text.slice(i, i + cl2);
       if (ch2 === ' ' || ch2 === '　' || ch2 === '\n') { i++; continue; }
@@ -3653,7 +3691,7 @@
           i += phrase.length; continue;
         }
         var d = cache[lang] || (root.NSG_DICT[lang] ? (cache[lang] = makeMap(root.NSG_DICT[lang], lang)) : {});
-        var rd = d[ch2];
+        var rd = (zhReadings && zhReadings[i]) || d[ch2];
         if (!rd) { out.push({ text: ch2, phones: ['@'], roman: '?' }); i += cl2; continue; }
         out.push({ text: ch2, phones: conv[lang](rd), roman: rd, tone: rd.match(/([1-8])$/) ? +rd.match(/([1-8])$/)[1] : 0 });
         i += cl2; continue;
@@ -3685,6 +3723,66 @@
     }
     return out;
   };
+
+  function resolveMandarinNotes(notes) {
+    var owners = [], previous = null;
+    function flush() {
+      if (owners.length > 1) {
+        var text = owners.map(function (n) { return n.lyric; }).join('');
+        mandarinPhraseReadings(text).forEach(function (reading, i) {
+          var note = owners[i], phones = zhSyllable(reading), timing = note.phonemeTiming;
+          if (timing && timing.lang === 'zh' && !sameStringArray(timing.phones, phones)) {
+            var prior = note.phones || NSG.g2p(note.lyric, 'zh')[0].phones;
+            if (sameStringArray(timing.phones, prior)) return;
+          }
+          note.phones = phones;
+        });
+      }
+      owners = [];
+    }
+    notes.forEach(function (note) {
+      if (previous && (previous.lyricGroup !== note.lyricGroup || note.phonemeWordJoin === false ||
+          Math.abs(previous.start + previous.dur - note.start) >= 0.002)) flush();
+      previous = note;
+      if (note.lang !== 'zh' || NSG.noteKind(note) !== 'voiced' || note._phonesCustom) {
+        flush(); return;
+      }
+      if (note.slur && !(note.phones && note.phones.length)) return;
+      if (!note.lyric || note.lyric.length !== 1 || !isHan(note.lyric)) { flush(); return; }
+      if (note.phones && note.phones.length) {
+        var single = NSG.g2p(note.lyric, 'zh')[0];
+        if (!single || (note.phonesSource !== 'auto' && !sameStringArray(note.phones, single.phones))) { flush(); return; }
+        if (single.roman !== '?') note.phones = single.phones;
+      }
+      owners.push(note);
+    });
+    flush();
+  }
+
+  // Bind dictionary stress only when it describes the phones actually sung.
+  // The last '+' in a partially split word may carry several remaining syllables.
+  function englishNoteStress(note) {
+    if (note.slur || note._phonesCustom || !note.phones) return;
+    var word = String(note.lyric || '').replace(/#\d+$/, '');
+    if (!/^[a-z'’-]+$/i.test(word)) return;
+    var arp = englishLookup(englishKey(word));
+    if (!arp) return;
+    var vowels = arp.match(/\b[A-Z]+[012]\b/g);
+    if (!vowels || vowels.length < 2) return;
+    var first = note._autoContinuation ? Number(note.lyric.split('#')[1]) - 1 : 0;
+    var groups = arpSyllables(arp).slice(first);
+    if (groups.length < 2 || groups.length !== vowels.length - first ||
+        !sameStringArray(note.phones, [].concat.apply([], groups))) return;
+    var offset = 0, stress = [];
+    groups.forEach(function (phones, i) {
+      // AO IH across two syllables (drawing) and OY inside one syllable
+      // map to the same two phone IDs. Only the dictionary knows the boundary.
+      var nucleus = phones.findIndex(function (id) { return NSG.phoneOf(id).t === 'V'; });
+      if (nucleus >= 0) stress[offset + nucleus] = Number(vowels[first + i].slice(-1));
+      offset += phones.length;
+    });
+    note._stressByPhone = stress;
+  }
 
   // Resolve continuation lyrics on fresh runtime records. Importers and editors
   // store '+' verbatim; the phonemizer, not file language metadata, owns meaning.
@@ -3735,6 +3833,7 @@
         head = n; word = numbered ? numbered[1] : n.lyric; index = numbered ? +numbered[2] : 1;
       }
     });
+    if (notes.some(function (n) { return n.lang === 'zh'; })) resolveMandarinNotes(notes);
     // 谚文分到单独音符后仍共享常见音变；休止、空隙、片段与覆盖隔断上下文。
     var koRun = [], koOwners = [], koPrev = null;
     function flushKo() {
@@ -3813,6 +3912,7 @@
       if (syl.extend && touching && prev._englishWord === word) note.slur = true;
     });
     notes.forEach(function (note) {
+      if (note.lang === 'en') englishNoteStress(note);
       if (!note._storedPhones || note._phonesCustom) return;
       try {
         var reading = NSG.g2p(note.lyric || '', note.lang);

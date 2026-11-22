@@ -2322,7 +2322,8 @@
       ['sNas', 'nasal', 'vNas', 2],
       ['sScale', 'fScale', 'vScale', 2], ['sWarp', 'warp', 'vWarp', 2],
       ['sJit', 'jitter', 'vJit', 'pct'], ['sGlo', 'glottal', 'vGlo', 2],
-      ['sModeBHigh', 'modeBHigh', 'vModeBHigh', 'pct']
+      ['sModeBHigh', 'modeBHigh', 'vModeBHigh', 'pct'],
+      ['sVowelOpening', 'highVowelOpening', 'vVowelOpening', 'pct']
     ];
     map.forEach(function (m) {
       var el = $('#' + m[0]);
@@ -2912,6 +2913,8 @@
       $('#sGlo').value = t.glottal || 0; $('#vGlo').textContent = (+(t.glottal || 0)).toFixed(2);
       var modeBHigh = t.modeBHigh === undefined ? 0.4 : t.modeBHigh;
       $('#sModeBHigh').value = modeBHigh; $('#vModeBHigh').textContent = (modeBHigh * 100).toFixed(0) + '%';
+      var opening = t.highVowelOpening || 0;
+      $('#sVowelOpening').value = opening; $('#vVowelOpening').textContent = Math.round(opening * 100) + '%';
       var hi = t.higher || [3300, 4200, 5200];
       $('#f4').value = hi[0]; $('#f5').value = hi[1]; $('#f6').value = hi[2];
     }
@@ -3426,7 +3429,7 @@
       return {
         start: at + k, dur: 1,
         pitch: NSG.COMPOSE.degToMidi(tonic, degs, step),
-        lyric: s.text, phones: s.phones, vel: 96, vib: 0.5
+        lyric: s.text, phones: s.phones, phonesSource: state.score.lang === 'zh' ? 'auto' : undefined, vel: 96, vib: 0.5
       };
     });
 

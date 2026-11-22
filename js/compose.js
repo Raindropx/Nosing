@@ -1015,7 +1015,7 @@
           notes.push({
             start: t, dur: dur,
             pitch: C.degToMidi(root, degs, step),
-            lyric: syl.text, phones: syl.phones,
+            lyric: syl.text, phones: syl.phones, phonesSource: lang === 'zh' ? 'auto' : undefined,
             vel: sec.role === 'chorus' ? 104 : (sec.role === 'pre' ? 98 : (sec.role === 'outro' ? 88 : 94)),
             vib: (isPhraseLast && dur >= 1.5) ? 1 : (dur >= 1.25 + dot ? 0.65 : 0.25),
             eye: isPhraseLast ? 1 : 0,
@@ -1205,7 +1205,7 @@
           notes.push({
             start: t, dur: dur,
             pitch: C.degToMidi(root, degs, step),
-            lyric: syl.text, phones: syl.phones, vel: 96,
+            lyric: syl.text, phones: syl.phones, phonesSource: lang === 'zh' ? 'auto' : undefined, vel: 96,
             vib: isLast ? 1 : (dur >= 1 + dot ? 0.6 : 0.25),
             eye: isLast ? 1 : 0
           });

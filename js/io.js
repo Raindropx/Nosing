@@ -2012,8 +2012,9 @@
       var reading = NSG.g2p(pinyin, 'zh');
       if (reading.length) {
         n.phones = reading.reduce(function (all, s) { return all.concat(s.phones); }, []);
-        var normal = NSG.g2p(lyric, 'zh').reduce(function (all, s) { return all.concat(s.phones); }, []);
-        n.phonesSource = JSON.stringify(n.phones) === JSON.stringify(normal) ? 'auto' : 'imported';
+        // A saved reading can agree with the isolated character yet disagree
+        // with the automatic phrase reading after adjacent notes are resolved.
+        n.phonesSource = 'imported';
         n.phonesLang = 'zh';
       }
     }
