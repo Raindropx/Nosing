@@ -2339,7 +2339,8 @@
         var ms = fx.modeState;
         var px = roll.beatX(roll.playPos);
         var py = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
-        var ang = Math.PI * 0.5 + (ms.tilt || 0) + (ms.spinKick || 0);
+        var spinMul = (fx.options && fx.options.judgeSpin === false) ? 0 : fx.getMotionAmp();
+        var ang = Math.PI * 0.5 + ((ms.tilt || 0) + (ms.spinKick || 0)) * spinMul;
         var pulse = ms.linePulse || 0;
 
         // 浮空动态旋转判定线（中心菱形始终精准锁住播放点）
@@ -3018,10 +3019,11 @@
           var it = items[i], g = it.geo, st = it.st;
           var panic = it.active ? clamp(it.age * 5, 0, 1) : it.exitAlpha;
           var t = it.active ? it.age : (0.7 * it.exitAlpha + (it.relMotion ? Math.min(0.6, it.exitAge * 0.4) : 0));
+          var amp = fx.getMotionAmp();
           var runPhase = fx.elapsed * 26 + st.seed * 10;
-          var hopY = -Math.abs(Math.sin(runPhase * 0.5)) * (14 + roll.rowH * 0.65) * panic;
-          var fleeX = Math.sin(runPhase * 0.32) * 20 * panic + (st.dir || 1) * Math.min(28, t * 34) * panic;
-          var tilt = Math.sin(runPhase * 0.5) * 0.2 * panic;
+          var hopY = -Math.abs(Math.sin(runPhase * 0.5)) * (14 + roll.rowH * 0.65) * panic * amp;
+          var fleeX = (Math.sin(runPhase * 0.32) * 20 * panic + (st.dir || 1) * Math.min(28, t * 34) * panic) * amp;
+          var tilt = Math.sin(runPhase * 0.5) * 0.2 * panic * amp;
 
           var cx = g.x + g.w / 2 + fleeX;
           var cy = g.y + g.h / 2 + hopY;
@@ -3072,7 +3074,7 @@
           c.restore();
 
           // 尖叫气泡
-          if (it.active && st.shout) {
+          if (it.active && st.shout && (!fx.options || fx.options.floatingText !== false)) {
             var bx = clamp(cx, roll.kbW + 38, roll.w - 38);
             var by = Math.max(roll.rulerH + 16, cy - g.h / 2 - 16);
             c.save();
@@ -3321,7 +3323,7 @@
           drawStyledNote(c, roll, it.n, -g.w / 2, -g.h / 2, g.w, g.h, T);
           c.restore();
 
-          if (it.active) {
+          if (it.active && (!fx.options || fx.options.floatingText !== false)) {
             drawTextHalo(c, '???', cx + g.w * 0.35, cy - g.h * 0.9, 12, '#7dff9e', A.halo, 2.5);
           }
         }
@@ -3524,7 +3526,7 @@
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
           if (!it.active) continue;
-          var corrupted = Math.sin(fx.elapsed * 18 + it.st.seed * 7) > 0.25;
+          var corrupted = (!fx.options || fx.options.floatingText !== false) && Math.sin(fx.elapsed * 18 + it.st.seed * 7) > 0.25;
           var txt = corrupted ? (it.st.glitchWord || '0xERR') : cleanLyric(it.n);
           var tx = clamp(g.x + g.w * 0.5, roll.kbW + 30, roll.w - 30);
           var ty = Math.max(roll.rulerH + 14, g.y - 11);
@@ -3651,9 +3653,10 @@
           var it = items[i], g = it.geo;
           var env = it.active ? clamp(it.age * 6, 0, 1) : it.exitAlpha;
           if (env <= 0) continue;
+          var amp = fx.getMotionAmp();
           var t = fx.elapsed * 16 + it.st.seed * 8;
           var damp = it.active ? 1 : (it.relMotion ? (0.18 + 0.82 * Math.exp(-it.exitAge * 1.4)) * it.exitAlpha : Math.exp(-it.exitAge * 3.2));
-          var sy = 1 + (0.65 * env + Math.sin(t) * 0.42 * damp);
+          var sy = 1 + (0.65 * env + Math.sin(t) * 0.42 * damp) * amp;
           var sx = 1 / Math.sqrt(Math.max(0.45, sy));
           var cx = g.x + g.w / 2, cy = g.y + g.h / 2;
 
@@ -3666,7 +3669,7 @@
             c.beginPath();
             for (var k = 0; k < curve.length; k++) {
               var u = k / (curve.length - 1);
-              var bow = Math.sin(u * Math.PI) * Math.sin(t * 1.15) * 16 * damp * env;
+              var bow = Math.sin(u * Math.PI) * Math.sin(t * 1.15) * 16 * damp * env * amp;
               if (!k) c.moveTo(curve[k].x, curve[k].y + bow);
               else c.lineTo(curve[k].x, curve[k].y + bow);
             }
@@ -3677,7 +3680,7 @@
           // 果冻本体（半透明高光Q弹膨胀）
           c.save();
           c.translate(cx, cy);
-          c.transform(sx, Math.sin(t * 0.7) * 0.14 * damp, Math.cos(t * 0.8) * 0.14 * damp, sy, 0, 0);
+          c.transform(sx, Math.sin(t * 0.7) * 0.14 * damp * amp, Math.cos(t * 0.8) * 0.14 * damp * amp, sy, 0, 0);
           var jg = c.createLinearGradient(0, -g.h / 2, 0, g.h / 2);
           jg.addColorStop(0, colorAlpha(A.cyan, 0.85));
           jg.addColorStop(0.5, colorAlpha(A.magenta, 0.78));
@@ -5693,6 +5696,8 @@
       eyeColor: { iris: '#ff4d8d', ring: '#7bf1ff', pupil: '#2b0820' },
       onEnterNote: function (fx, n, st) {
         st.hoistMax = 0;
+        var prob = fx.options ? clamp(fx.options.clawHookProb || 0, 0, 1) : 0;
+        st.clawCaught = Math.random() < prob;
         fx.modeState.releaseT = 0;
       },
       onControlPoint: function (fx, n, cp) {
@@ -5708,6 +5713,32 @@
         });
       },
       onExitNote: function (fx, n, st, geo) {
+        if (st.clawCaught) {
+          var gotPool = { zh: '抓到了!', en: 'GOT IT!', ja: 'ゲット!' };
+          fx.spawn({
+            kind: 'glyph',
+            text: gotPool[langCode()] || gotPool.zh,
+            x: clamp(geo.x + geo.w * 0.5, fx.roll.kbW + 36, fx.roll.w - 36),
+            y: Math.max(fx.roll.rulerH + 18, geo.y - 26),
+            vx: 0,
+            vy: -42,
+            size: 13,
+            color: '#48ff7b',
+            life: 0.8
+          });
+          for (var ci = 0; ci < 5; ci++) {
+            var ca = (ci / 5) * Math.PI * 2;
+            fx.spawn({
+              kind: 'star',
+              x: geo.x + geo.w * 0.5, y: geo.y,
+              vx: Math.cos(ca) * 52, vy: Math.sin(ca) * 52 - 20,
+              r: 4, rot: 0, vrot: 8,
+              color: ci % 2 ? '#ffe042' : '#48ff7b',
+              life: 0.65
+            });
+          }
+          return;
+        }
         // 经典黑心娃娃机：快成功时突然松爪！
         fx.modeState.releaseT = 0.28;
         if (Math.random() < 0.55) {
@@ -5793,26 +5824,34 @@
         var px = roll.beatX(roll.playPos);
         var clawY = ms.followY !== undefined ? ms.followY : (roll.rulerH + 40);
 
-        // 1. 绘制被抓起摇晃 / 松爪砸落的音符
+        // 1. 绘制被抓起摇晃 / 松爪砸落 / 成功吊走的音符
+        var amp = fx.getMotionAmp();
         for (var i = 0; i < items.length; i++) {
           var it = items[i], g = it.geo;
-          var lift = 0, sway = 0;
+          var lift = 0, sway = 0, catchFade = 1;
           if (it.active) {
             lift = clamp(it.rel * 20, 0, 20);
             it.st.hoistMax = lift;
-            sway = Math.sin(fx.elapsed * 16 + it.st.seed * 6) * 0.085;
+            sway = Math.sin(fx.elapsed * 16 + it.st.seed * 6) * 0.085 * amp;
+          } else if (it.st.clawCaught) {
+            var startLiftC = it.st.hoistMax || 16;
+            lift = startLiftC + it.exitAge * 160;
+            sway = Math.sin(it.exitAge * 14 + it.st.seed * 6) * 0.06 * amp;
+            catchFade = clamp(1 - it.exitAge / 0.45, 0, 1);
+            if (catchFade <= 0) continue;
           } else {
             var startLift = it.st.hoistMax || 16;
             var fallFrac = clamp(1 - it.exitAge / 0.22, 0, 1);
             var dropLift = startLift * fallFrac * fallFrac;
             var landAge = Math.max(0, it.exitAge - 0.22);
-            var bounce = Math.abs(Math.sin(landAge * 16)) * Math.exp(-landAge * 6) * 9 * (fallFrac > 0 ? 0 : 1);
+            var bounce = Math.abs(Math.sin(landAge * 16)) * Math.exp(-landAge * 6) * 9 * amp * (fallFrac > 0 ? 0 : 1);
             lift = dropLift + bounce;
-            sway = fallFrac > 0 ? Math.sin(it.exitAge * 26) * 0.14 * fallFrac : 0;
+            sway = fallFrac > 0 ? Math.sin(it.exitAge * 26) * 0.14 * fallFrac * amp : 0;
           }
           var cx = g.x + g.w / 2;
           var cy = g.y + g.h / 2 - lift;
           c.save();
+          c.globalAlpha *= catchFade;
           c.translate(cx, cy);
           c.rotate(sway);
           drawStyledNote(c, roll, it.n, -g.w / 2, -g.h / 2, g.w, g.h, T);
@@ -6004,7 +6043,7 @@
             ms.warn = { rem: rem, total: warnBeats, frac: clamp(1 - rem / warnBeats, 0, 1) };
           }
 
-          if (gapDur >= 3.2) {
+          if (gapDur >= 3.2 && (!fx.options || fx.options.circleSpinner !== false)) {
             // 较大乐句间奏：把钢琴窗当大转盘旋转！
             var spinStart = g0 + 0.28;
             var spinEnd = g1 - warnBeats - 0.12;
@@ -6888,12 +6927,58 @@
   /* ========================================================================
    * EyeFx 引擎类
    * ======================================================================== */
+  var DEFAULT_OPTIONS = {
+    opacity: 1.0,
+    motionAmp: 1.0,
+    floatingText: true,
+    danmaku: true,
+    circleSpinner: true,
+    clawHookProb: 0.0,
+    judgeSpin: true
+  };
+
+  function normalizeOptions(src) {
+    var out = {};
+    var k;
+    for (k in DEFAULT_OPTIONS) {
+      if (Object.prototype.hasOwnProperty.call(DEFAULT_OPTIONS, k)) out[k] = DEFAULT_OPTIONS[k];
+    }
+    if (!src || typeof src !== 'object') return out;
+    if (typeof src.opacity === 'number' && isFinite(src.opacity)) out.opacity = clamp(src.opacity, 0.1, 1);
+    if (typeof src.motionAmp === 'number' && isFinite(src.motionAmp)) out.motionAmp = clamp(src.motionAmp, 0, 2);
+    if (typeof src.floatingText === 'boolean') out.floatingText = src.floatingText;
+    if (typeof src.danmaku === 'boolean') out.danmaku = src.danmaku;
+    if (typeof src.circleSpinner === 'boolean') out.circleSpinner = src.circleSpinner;
+    if (typeof src.clawHookProb === 'number' && isFinite(src.clawHookProb)) out.clawHookProb = clamp(src.clawHookProb, 0, 1);
+    if (typeof src.judgeSpin === 'boolean') out.judgeSpin = src.judgeSpin;
+    return out;
+  }
+
+  function loadEyeFxOptions() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        var raw = localStorage.getItem('nsg.eyeFxOptions');
+        if (raw) return normalizeOptions(JSON.parse(raw));
+      }
+    } catch (e) { }
+    return normalizeOptions(null);
+  }
+
+  function saveEyeFxOptions(opts) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem('nsg.eyeFxOptions', JSON.stringify(opts));
+      }
+    } catch (e) { }
+  }
+
   function EyeFx(roll) {
     this.roll = roll;
     this.active = false;
     this.mode = null;
     this.bag = [];
     this.lastModeId = null;
+    this.options = loadEyeFxOptions();
     this.noteStates = Object.create(null);
     this.modeState = Object.create(null);
     this.particles = [];
@@ -6910,6 +6995,45 @@
   }
 
   EyeFx.MODES = MODES;
+  EyeFx.DEFAULT_OPTIONS = DEFAULT_OPTIONS;
+
+  EyeFx.prototype.getOptions = function () {
+    return normalizeOptions(this.options);
+  };
+
+  EyeFx.prototype.setOptions = function (patch) {
+    if (!patch || typeof patch !== 'object') return this.getOptions();
+    var merged = this.getOptions();
+    var k;
+    for (k in patch) {
+      if (Object.prototype.hasOwnProperty.call(DEFAULT_OPTIONS, k)) {
+        merged[k] = patch[k];
+      }
+    }
+    this.options = normalizeOptions(merged);
+    saveEyeFxOptions(this.options);
+    if (!this.options.floatingText && this.particles.length) {
+      this.particles = this.particles.filter(function (p) { return p.kind !== 'glyph'; });
+    }
+    if (!this.options.danmaku && this.danmaku.length) {
+      this.danmaku = [];
+    }
+    if (this.active && this.roll) {
+      this.roll.drawCursor();
+    }
+    return this.getOptions();
+  };
+
+  EyeFx.prototype.resetOptions = function () {
+    this.options = normalizeOptions(null);
+    saveEyeFxOptions(this.options);
+    if (this.active && this.roll) this.roll.drawCursor();
+    return this.getOptions();
+  };
+
+  EyeFx.prototype.getMotionAmp = function () {
+    return clamp(this.options ? this.options.motionAmp : 1, 0, 2);
+  };
 
   EyeFx.prototype._bindMouse = function () {
     var self = this, cv = this.roll && this.roll.cv;
@@ -7034,9 +7158,17 @@
   };
 
   EyeFx.prototype.spawn = function (p) {
+    if (!p) return;
+    if (p.kind === 'glyph' && this.options && !this.options.floatingText) return;
     var relMotion = !!(this.roll && this.roll.relativeMotion);
     var maxParticles = relMotion ? 380 : 260;
     if (this.particles.length >= maxParticles) this.particles.shift();
+    var amp = this.getMotionAmp();
+    if (amp !== 1) {
+      if (p.vx) p.vx *= amp;
+      if (p.vy) p.vy *= amp;
+      if (p.vrot) p.vrot *= amp;
+    }
     p.age = 0;
     var baseLife = p.life || 0.6;
     if (relMotion) {
@@ -7049,12 +7181,14 @@
   };
 
   EyeFx.prototype.spawnDanmaku = function (text, y, color, size) {
+    if (this.options && !this.options.danmaku) return;
     if (this.danmaku.length >= 34) this.danmaku.shift();
+    var amp = this.getMotionAmp();
     this.danmaku.push({
       text: text,
       x: this.roll.w + 16,
       y: clamp(y, this.roll.rulerH + 16, Math.max(this.roll.rulerH + 20, this.roll.gridBottom() - 16)),
-      vx: -(140 + Math.random() * 140),
+      vx: -(140 + Math.random() * 140) * Math.max(0.25, amp),
       color: color || '#ffffff',
       size: size || 14
     });
@@ -7265,7 +7399,11 @@
   EyeFx.prototype.drawCustomPlayhead = function (c, T, px) {
     if (!this.active || !this.mode) return false;
     if (this.mode.drawCustomPlayhead) {
+      var fxAlpha = clamp(this.options ? this.options.opacity : 1, 0.05, 1);
+      c.save();
+      c.globalAlpha *= fxAlpha;
       var handled = !!this.mode.drawCustomPlayhead(this, c, this.roll, T, px);
+      c.restore();
       if (handled) return true;
     }
     return !!this.mode.hidePlayhead;
@@ -7276,11 +7414,13 @@
     this._syncScrollShift();
     var roll = this.roll, gridH = roll.gridBottom();
     var A = getAccents(T, roll.theme || NSG.theme || 'aero');
+    var fxAlpha = clamp(this.options ? this.options.opacity : 1, 0.05, 1);
     this._frameItems = this._collectItems();
     c.save();
     c.beginPath();
     c.rect(roll.kbW, roll.rulerH, Math.max(0, roll.w - roll.kbW), Math.max(0, gridH - roll.rulerH));
     c.clip();
+    c.globalAlpha *= fxAlpha;
     if (this.mode.renderUnder) this.mode.renderUnder(this, c, roll, T, A, this._frameItems);
     c.restore();
   };
@@ -7289,12 +7429,14 @@
     if (!this.active || !this.mode) return;
     var roll = this.roll, gridH = roll.gridBottom();
     var A = getAccents(T, roll.theme || NSG.theme || 'aero');
+    var fxAlpha = clamp(this.options ? this.options.opacity : 1, 0.05, 1);
     var items = this._frameItems || this._collectItems();
 
     c.save();
     c.beginPath();
     c.rect(roll.kbW, roll.rulerH, Math.max(0, roll.w - roll.kbW), Math.max(0, gridH - roll.rulerH));
     c.clip();
+    c.globalAlpha *= fxAlpha;
 
     if (this.mode.renderOver) this.mode.renderOver(this, c, roll, T, A, items);
     this._renderParticles(c, A);
@@ -7305,12 +7447,15 @@
   };
 
   EyeFx.prototype._renderParticles = function (c, A) {
+    var fxAlpha = clamp(this.options ? this.options.opacity : 1, 0.05, 1);
+    var showGlyph = !this.options || this.options.floatingText !== false;
     for (var i = 0; i < this.particles.length; i++) {
       var p = this.particles[i];
+      if (!showGlyph && p.kind === 'glyph') continue;
       var u = clamp(p.age / p.life, 0, 1);
       var alpha = u < 0.75 ? 1 : (1 - (u - 0.75) / 0.25);
       c.save();
-      c.globalAlpha = clamp(alpha, 0, 1);
+      c.globalAlpha = clamp(alpha * fxAlpha, 0, 1);
 
       if (p.kind === 'ring') {
         var r = p.r + (p.maxR - p.r) * (1 - Math.pow(1 - u, 2));
@@ -7361,7 +7506,7 @@
         c.rotate(p.rot || 0);
         drawTextHalo(c, p.text, 0, 0, 13, p.color, p.halo, 2.5);
       } else if (p.kind === 'puff') {
-        c.globalAlpha = clamp((1 - u) * 0.72, 0, 1);
+        c.globalAlpha = clamp((1 - u) * 0.72 * fxAlpha, 0, 1);
         c.fillStyle = p.color || '#ffffff';
         c.beginPath();
         c.arc(p.x, p.y, Math.max(1.2, (p.r || 3) * (0.85 + u * 1.35)), 0, Math.PI * 2);
@@ -7409,6 +7554,7 @@
   };
 
   EyeFx.prototype._renderDanmaku = function (c, A) {
+    if (this.options && !this.options.danmaku) return;
     for (var i = 0; i < this.danmaku.length; i++) {
       var dm = this.danmaku[i];
       drawTextHalo(c, dm.text, dm.x, dm.y, dm.size, dm.color, A.isDark ? 'rgba(0,0,0,0.9)' : 'rgba(20,24,36,0.85)', 3.2, 'left');

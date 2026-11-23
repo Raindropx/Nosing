@@ -993,7 +993,7 @@
     composeStyle: 'pop', composeFullSong: false, composeCycleMode: 'group', composeIntroBars: 4, eyeSet: null, eyeSel: 0, eyeName: '',
     arrStyle: 'pop', arrSeed: 0, arrIntro: true, arrKit: true, arrSample: false, arrSampleAmt: 1, arrImprov: 50, arrMeter: 'auto', arrGridMode: 'auto', arrSpace: 'auto', arrChip: false, arrOffset: '',
     arrHuman: 1, arrSwing: 6, arrDensity: 1, arrExpression: 1, arrChordRate: 1, arrMood: 'auto', arrKey: 'auto', arrHalfBpm: false, arrTrackScope: 'all', tm: null,
-    tuneStyle: 'natural', tuneParts: { pit: true, vibrato: true, vel: true },
+    tuneStyle: 'natural', tuneParts: { pit: true, vibrato: true, vel: true, effort: false },
     tuneSeed: Math.floor(Math.random() * 999999), tuneHuman: 60, tuneExpression: 100,
     title: ''
   };
@@ -2082,6 +2082,9 @@
       roll._defaultCvTitle = roll.cv.title || '';
     }
     syncEyeModeButton();
+    if ($('#eyeFxPanel') && !$('#eyeFxPanel').hidden && typeof renderEyeFxPanel === 'function') {
+      renderEyeFxPanel();
+    }
     var langBtn = $('#uiLangBtn');
     if (langBtn) {
       var meta = NSG && NSG.I18N && typeof NSG.I18N.getLanguageMeta === 'function' ? NSG.I18N.getLanguageMeta() : null;
@@ -2239,11 +2242,16 @@
       });
     });
     renderUiLangMenu();
-    document.addEventListener('click', function () {
+    document.addEventListener('click', function (e) {
       closeMenus();
       closeContextMenu();
+      var ep = $('#eyeFxPanel');
+      if (ep && !ep.hidden && (!e || (!ep.contains(e.target) && e.target !== $('#btnEyeMode') && !($('#btnEyeMode') && $('#btnEyeMode').contains(e.target))))) {
+        closeEyeFxPanel();
+      }
     });
     document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && $('#eyeFxPanel') && !$('#eyeFxPanel').hidden) { closeEyeFxPanel(); e.stopPropagation(); return; }
       if (e.key === 'Escape' && $('#ctxMenu') && !$('#ctxMenu').hidden) { closeContextMenu(); e.stopPropagation(); return; }
       if (e.key === 'Escape' && $('.mg.open')) { closeMenus(); e.stopPropagation(); }
     }, true);
@@ -2390,12 +2398,232 @@
       setStatus(t(this.checked ? 'ui.rawOnStatus' : 'ui.rawOffStatus', null,
         this.checked ? '正在听未经滤波的声带音（共振腔已旁路）' : '已恢复：声带音 → 口腔/鼻腔共振'));
     });
+  function escapeHtml(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function closeEyeFxPanel() {
+    var panel = $('#eyeFxPanel');
+    if (panel) panel.hidden = true;
+  }
+
+  function renderEyeFxPanel() {
+    var panel = $('#eyeFxPanel');
+    if (!panel || !roll || !roll._eyeFx) return;
+    var fx = roll._eyeFx;
+    var modes = (NSG.EyeFx && NSG.EyeFx.MODES) || [];
+    var opts = fx.getOptions ? fx.getOptions() : { opacity: 1, motionAmp: 1, floatingText: true, danmaku: true, circleSpinner: true, clawHookProb: 0, judgeSpin: true };
+    var activeId = (fx.active && fx.mode) ? fx.mode.id : '';
+    var modesBox = panel.querySelector('.eye-fx-modes');
+    var prevScroll = modesBox ? modesBox.scrollTop : 0;
+
+    var showcaseModes = modes.filter(function (m) { return !!m.showcase; });
+    var weirdModes = modes.filter(function (m) { return !m.showcase; });
+
+    function renderModeBtns(list) {
+      return list.map(function (m) {
+        var isOn = m.id === activeId;
+        var dotCol = (m.eyeColor && m.eyeColor.iris) || '#38bdf8';
+        return '<button type="button" class="eyestyle eye-fx-mode-btn' + (isOn ? ' on' : '') + '" data-eye-mode-id="' + m.id + '">' +
+          '<span class="eye-fx-mode-dot" style="background:' + dotCol + '"></span>' +
+          '<span class="eye-fx-mode-name">' + escapeHtml(fx.modeLabel(m)) + '</span>' +
+          '</button>';
+      }).join('');
+    }
+
+    var modeOptsHtml = '';
+    if (activeId === 'danmakuCat') {
+      modeOptsHtml += '<label class="eye-fx-chk"><input type="checkbox" id="eyeOptDanmaku"' + (opts.danmaku ? ' checked' : '') + '><span>' + escapeHtml(t('eye.panel.danmaku', null, '开启弹幕')) + '</span></label>';
+    } else if (activeId === 'circleClicker') {
+      modeOptsHtml += '<label class="eye-fx-chk"><input type="checkbox" id="eyeOptSpinner"' + (opts.circleSpinner ? ' checked' : '') + '><span>' + escapeHtml(t('eye.panel.spinner', null, '开启间奏大转盘')) + '</span></label>';
+    } else if (activeId === 'clawCrane') {
+      var hookPct = Math.round((opts.clawHookProb || 0) * 100);
+      modeOptsHtml += '<label class="eye-fx-slider-row"><span>' + escapeHtml(t('eye.panel.clawHook', null, '上钩概率')) + '</span>' +
+        '<input type="range" id="eyeOptClawHook" min="0" max="100" step="5" value="' + hookPct + '">' +
+        '<span class="eye-fx-slider-val" id="eyeOptClawHookVal">' + hookPct + '%</span></label>';
+    } else if (activeId === 'judgeLineSpin') {
+      modeOptsHtml += '<label class="eye-fx-chk"><input type="checkbox" id="eyeOptJudgeSpin"' + (opts.judgeSpin ? ' checked' : '') + '><span>' + escapeHtml(t('eye.panel.judgeSpin', null, '判定线旋转')) + '</span></label>';
+    }
+
+    var opPct = Math.round((opts.opacity !== undefined ? opts.opacity : 1) * 100);
+    var ampPct = Math.round((opts.motionAmp !== undefined ? opts.motionAmp : 1) * 100);
+
+    panel.innerHTML =
+      '<div class="eye-fx-head">' +
+        '<span class="eye-fx-title">' + escapeHtml(fx.active && fx.mode ? ('👁 ' + fx.modeLabel(fx.mode)) : t('eye.panel.title', null, '👁 选择莫名其妙效果')) + '</span>' +
+        '<div class="eye-fx-head-actions">' +
+          '<button type="button" class="abtn" id="eyePanelRandom">' + escapeHtml(t('eye.panel.random', null, '🎲 随机')) + '</button>' +
+          '<button type="button" class="abtn" id="eyePanelOff"' + (fx.active ? '' : ' disabled') + '>' + escapeHtml(t('eye.panel.off', null, '关闭')) + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="eye-fx-modes">' +
+        '<div>' +
+          '<div class="eye-fx-group-label">' + escapeHtml(t('eye.panel.showcaseGroup', null, '✨ 适合晒调教')) + '</div>' +
+          '<div class="eye-fx-grid">' + renderModeBtns(showcaseModes) + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="eye-fx-group-label">' + escapeHtml(t('eye.panel.weirdGroup', null, '🌀 莫名其妙')) + '</div>' +
+          '<div class="eye-fx-grid">' + renderModeBtns(weirdModes) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ctx-sep"></div>' +
+      '<div class="eye-fx-opts">' +
+        '<div class="eye-fx-opt-head">' +
+          '<span>' + escapeHtml(t('eye.panel.options', null, '效果选项')) + '</span>' +
+          '<button type="button" class="eye-fx-reset" id="eyePanelReset">' + escapeHtml(t('eye.panel.reset', null, '恢复默认')) + '</button>' +
+        '</div>' +
+        '<label class="eye-fx-slider-row">' +
+          '<span>' + escapeHtml(t('eye.panel.opacity', null, '效果透明度')) + '</span>' +
+          '<input type="range" id="eyeOptOpacity" min="10" max="100" step="5" value="' + opPct + '">' +
+          '<span class="eye-fx-slider-val" id="eyeOptOpacityVal">' + opPct + '%</span>' +
+        '</label>' +
+        '<label class="eye-fx-slider-row">' +
+          '<span>' + escapeHtml(t('eye.panel.motionAmp', null, '动作幅度')) + '</span>' +
+          '<input type="range" id="eyeOptMotionAmp" min="0" max="200" step="5" value="' + ampPct + '">' +
+          '<span class="eye-fx-slider-val" id="eyeOptMotionAmpVal">' + ampPct + '%</span>' +
+        '</label>' +
+        '<div class="eye-fx-checks">' +
+          '<label class="eye-fx-chk" title="' + escapeHtml(t('eye.panel.floatingTextHint', null, '如 呱呱、高音～、暴击 等与谱面无关的文字粒子')) + '">' +
+            '<input type="checkbox" id="eyeOptFloatingText"' + (opts.floatingText ? ' checked' : '') + '>' +
+            '<span>' + escapeHtml(t('eye.panel.floatingText', null, '浮动文字')) + '</span>' +
+          '</label>' +
+        '</div>' +
+        (modeOptsHtml ? '<div class="eye-fx-mode-opts">' + modeOptsHtml + '</div>' : '') +
+      '</div>';
+
+    var newModesBox = panel.querySelector('.eye-fx-modes');
+    if (newModesBox && prevScroll > 0) newModesBox.scrollTop = prevScroll;
+
+    $$('[data-eye-mode-id]', panel).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mode = fx.enter(btn.dataset.eyeModeId);
+        syncEyeModeButton();
+        renderEyeFxPanel();
+        if (mode) {
+          var modeName = fx.modeLabel(mode);
+          setStatus(t(mode.showcase ? 'eye.enteredShowcase' : 'eye.entered', { mode: modeName },
+            '👁 进入莫名其妙模式：「' + modeName + '」' + (mode.showcase ? '✨（适合晒调教）' : '')));
+        }
+      });
+    });
+
+    var randBtn = $('#eyePanelRandom', panel);
+    if (randBtn) randBtn.addEventListener('click', function () {
+      var mode = fx.enter();
+      syncEyeModeButton();
+      renderEyeFxPanel();
+      if (mode) {
+        var modeName = fx.modeLabel(mode);
+        setStatus(t(mode.showcase ? 'eye.enteredShowcase' : 'eye.entered', { mode: modeName },
+          '👁 进入莫名其妙模式：「' + modeName + '」' + (mode.showcase ? '✨（适合晒调教）' : '')));
+      }
+    });
+
+    var offBtn = $('#eyePanelOff', panel);
+    if (offBtn) offBtn.addEventListener('click', function () {
+      fx.exit();
+      syncEyeModeButton();
+      closeEyeFxPanel();
+      setStatus(t('eye.exited', null, '已退出莫名其妙模式，回到正常视图'));
+    });
+
+    var resetBtn = $('#eyePanelReset', panel);
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      if (fx.resetOptions) fx.resetOptions();
+      renderEyeFxPanel();
+    });
+
+    var opInp = $('#eyeOptOpacity', panel);
+    if (opInp) opInp.addEventListener('input', function () {
+      var v = Math.max(10, Math.min(100, Number(opInp.value) || 100));
+      $('#eyeOptOpacityVal', panel).textContent = v + '%';
+      if (fx.setOptions) fx.setOptions({ opacity: v / 100 });
+    });
+
+    var ampInp = $('#eyeOptMotionAmp', panel);
+    if (ampInp) ampInp.addEventListener('input', function () {
+      var v = Math.max(0, Math.min(200, Number(ampInp.value) || 0));
+      $('#eyeOptMotionAmpVal', panel).textContent = v + '%';
+      if (fx.setOptions) fx.setOptions({ motionAmp: v / 100 });
+    });
+
+    var floatChk = $('#eyeOptFloatingText', panel);
+    if (floatChk) floatChk.addEventListener('change', function () {
+      if (fx.setOptions) fx.setOptions({ floatingText: !!floatChk.checked });
+    });
+
+    var dmChk = $('#eyeOptDanmaku', panel);
+    if (dmChk) dmChk.addEventListener('change', function () {
+      if (fx.setOptions) fx.setOptions({ danmaku: !!dmChk.checked });
+    });
+
+    var spChk = $('#eyeOptSpinner', panel);
+    if (spChk) spChk.addEventListener('change', function () {
+      if (fx.setOptions) fx.setOptions({ circleSpinner: !!spChk.checked });
+    });
+
+    var hookInp = $('#eyeOptClawHook', panel);
+    if (hookInp) hookInp.addEventListener('input', function () {
+      var v = Math.max(0, Math.min(100, Number(hookInp.value) || 0));
+      $('#eyeOptClawHookVal', panel).textContent = v + '%';
+      if (fx.setOptions) fx.setOptions({ clawHookProb: v / 100 });
+    });
+
+    var judgeChk = $('#eyeOptJudgeSpin', panel);
+    if (judgeChk) judgeChk.addEventListener('change', function () {
+      if (fx.setOptions) fx.setOptions({ judgeSpin: !!judgeChk.checked });
+    });
+  }
+
+  function openEyeFxPanel(anchorEl) {
+    var panel = $('#eyeFxPanel');
+    if (!panel || !roll || !roll._eyeFx || !roll._eyeFx.active) return;
+    closeMenus();
+    closeContextMenu();
+    renderEyeFxPanel();
+    panel.hidden = false;
+    panel.style.left = '0px';
+    panel.style.top = '0px';
+    var ar = anchorEl ? anchorEl.getBoundingClientRect() : { left: 16, bottom: 48, right: 48, top: 16 };
+    var pr = panel.getBoundingClientRect();
+    var vw = window.innerWidth || document.documentElement.clientWidth || 1024;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 768;
+    var x = Math.min(Math.max(8, ar.left), Math.max(8, vw - pr.width - 8));
+    var y = ar.bottom + 6;
+    if (y + pr.height > vh - 8) {
+      y = Math.max(8, ar.top - pr.height - 6);
+    }
+    panel.style.left = Math.round(x) + 'px';
+    panel.style.top = Math.round(y) + 'px';
+  }
+
     var eyeBtn = $('#btnEyeMode');
     if (eyeBtn) {
+      var eyePanel = $('#eyeFxPanel');
+      if (eyePanel) {
+        eyePanel.addEventListener('click', function (e) { e.stopPropagation(); });
+        eyePanel.addEventListener('contextmenu', function (e) { e.preventDefault(); e.stopPropagation(); });
+      }
+      eyeBtn.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!roll || !roll._eyeFx || !roll._eyeFx.active) return;
+        var ep = $('#eyeFxPanel');
+        if (ep && !ep.hidden) closeEyeFxPanel();
+        else openEyeFxPanel(eyeBtn);
+      });
       eyeBtn.addEventListener('click', function () {
         if (!roll || !roll._eyeFx) return;
         var mode = roll._eyeFx.toggle();
         syncEyeModeButton();
+        if ($('#eyeFxPanel') && !$('#eyeFxPanel').hidden) {
+          if (mode) renderEyeFxPanel();
+          else closeEyeFxPanel();
+        }
         if (mode) {
           var modeName = roll._eyeFx.modeLabel(mode);
           setStatus(t(mode.showcase ? 'eye.enteredShowcase' : 'eye.entered', { mode: modeName },
@@ -3110,6 +3338,7 @@
       };
       if (n.vibrato) o.vibrato = NSG.TUNING.vibrato(n.vibrato);
       if (Number.isFinite(n.gain)) o.gain = NSG.TUNING.clamp(n.gain, 0, 16);
+      if (n.effortPoints) o.effortPoints = NSG.TUNING.effortPoints(n.effortPoints);
       if (n.gainPoints) o.gainPoints = NSG.TUNING.gainPoints(n.gainPoints);
       if (n.dscSource) o.dscSource = Object.assign({}, n.dscSource);
       if (Array.isArray(n.noteEq) && (n.noteEq.length === 48 || n.noteEq.length === 64) && n.noteEq.every(Number.isFinite)) o.noteEq = n.noteEq.slice();
@@ -5826,7 +6055,7 @@
       var targetVel = nSel ? selNotes : roll.notes;
       var scopeShort = nSel ? t('ctx.scopeSelShort', null, '所选') : t('ctx.scopeAllShort', null, '全部');
       return {
-        title: roll.laneParam === 'pitd' ? t('ctx.lanePitdTitle', null, '参数窗 · PITD 相对音高') :
+        title: roll.laneParam === 'effort' ? t('tune.effort', null, '轻重') : roll.laneParam === 'pitd' ? t('ctx.lanePitdTitle', null, '参数窗 · PITD 相对音高') :
           roll.laneParam === 'dyn' ? t('ctx.laneDynTitle', null, '参数窗 · DYN 音量包络') :
           roll.laneParam === 'cons' ? t('ctx.laneConsTitle', null, '参数窗 · 辅音速度') : t('ctx.laneVelTitle', null, '参数窗 · VEL 力度'),
         items: [
@@ -5834,6 +6063,7 @@
           { label: (roll.laneParam === 'cons' ? '✓ ' : '') + t('ctx.laneShowCons', null, '显示辅音速度'), active: roll.laneParam === 'cons', onClick: function () { roll.setLaneParam('cons'); } },
           { label: (roll.laneParam === 'pitd' ? '✓ ' : '') + t('ctx.laneShowPitd', null, '显示 PITD 相对音高'), active: roll.laneParam === 'pitd', onClick: function () { roll.setLaneParam('pitd'); } },
           { label: (roll.laneParam === 'dyn' ? '✓ ' : '') + t('ctx.laneShowDyn', null, '显示 DYN 音量包络'), active: roll.laneParam === 'dyn', onClick: function () { roll.setLaneParam('dyn'); } },
+          { label: (roll.laneParam === 'effort' ? '✓ ' : '') + t('tune.effort', null, '轻重'), active: roll.laneParam === 'effort', onClick: function () { roll.setLaneParam('effort'); } },
           { label: t('ctx.laneCurveHelp', null, '曲线：左键绘制；Shift / 右键拖动重置'), disabled: true },
         ].concat(roll.laneParam === 'pitd' ? [50, 100, 200, 400, 800, 1200, 2400].map(function (range) {
           return { label: t('ctx.lanePitdRange', null, 'PITD 显示范围') + ' ±' + range,
@@ -5841,6 +6071,7 @@
         }) : [], [
           '-',
           { label: t('ctx.laneResetPitd', { scope: scopeShort }, '重置' + (nSel ? '所选' : '全部') + ' PITD 为 0 音分'), disabled: !(roll.pit && roll.pit.length), onClick: function () { roll.resetLaneCurve('pitd', !nSel); } },
+          { label: t('ctx.laneResetEffort', { scope: scopeShort }, '重置' + scopeShort + '轻重为 100'), disabled: !targetVel.length, onClick: function () { roll.resetLaneCurve('effort', !nSel); } },
           { label: t('ctx.laneResetDyn', { scope: scopeShort }, '重置' + (nSel ? '所选' : '全部') + ' DYN 为 100%'), disabled: !targetVel.length, onClick: function () { roll.resetLaneCurve('dyn', !nSel); } },
           { label: t('ctx.laneResetVel', { scope: scopeShort }, '重置' + (nSel ? '所选' : '全部') + '音符 VEL 力度为 96'), disabled: !targetVel.length, onClick: function () { targetVel.forEach(function (n) { n.vel = 96; }); roll._emit(); syncInspector(); renderAndAnalyze(60); } },
           { label: t('ctx.laneResetCons', { scope: scopeShort }, '重置' + (nSel ? '所选' : '全部') + '音符辅音速度为 100%'), disabled: !targetVel.length, onClick: function () { targetVel.forEach(function (n) { delete n.consonantSpeed; delete n.consonantLength; }); roll._emit(); syncInspector(); renderAndAnalyze(60); } }
@@ -7488,7 +7719,8 @@
       '<fieldset class="tune-group"><legend>' + t('tune.itemsLegend', null, '调教项目') + '</legend><div class="tune-options">' +
       '<label><input type="checkbox" id="tunePit"> ' + t('tune.pit', null, 'PIT 音高曲线') + '</label>' +
       '<label><input type="checkbox" id="tuneVibrato"> ' + t('tune.vibrato', null, '颤音') + '</label>' +
-      '<label><input type="checkbox" id="tuneVel"> ' + t('tune.vel', null, 'VEL 响度平衡') + '</label></div></fieldset>' +
+      '<label><input type="checkbox" id="tuneVel"> ' + t('tune.vel', null, 'VEL 响度平衡') + '</label>' +
+      '<label><input type="checkbox" id="tuneEffort"> ' + t('tune.effort', null, '轻重') + '</label></div></fieldset>' +
       '<div class="row2"><label class="lb" for="tuneExpression">' + t('tune.expr', null, '表现力') + '</label>' +
       '<input type="range" id="tuneExpression" min="0" max="150" step="1" value="' + state.tuneExpression + '" style="flex:1">' +
       '<span id="tuneExpressionVal" style="width:42px;text-align:right">' + state.tuneExpression + '%</span></div>' +
@@ -7516,6 +7748,7 @@
       if ($('#tunePit', m.el).checked) parts.push(t('tune.partPit', null, 'PIT'));
       if ($('#tuneVibrato', m.el).checked) parts.push(t('tune.partVib', null, '颤音'));
       if ($('#tuneVel', m.el).checked) parts.push(t('tune.partVel', null, 'VEL'));
+      if ($('#tuneEffort', m.el).checked) parts.push(t('tune.effort', null, '轻重'));
       go.disabled = tuningBusy || !count || !parts.length;
       $('#tuneSummary', m.el).textContent = !parts.length ? t('tune.needItem', null, '请至少勾选一项调教项目。') : !count ?
         t('tune.noTargets', null, '当前范围没有可调教的发声音符，请先铺音符、导入旋律或调整范围。') : t('tune.summary', { count: count, n: count, parts: parts.join('、') }, '将为 ' + count + ' 个发声音符生成 ' + parts.join('、') + '。');
@@ -7537,7 +7770,7 @@
       };
       styles.appendChild(b);
     });
-    ['pit', 'vibrato', 'vel'].forEach(function (part) {
+    ['pit', 'vibrato', 'vel', 'effort'].forEach(function (part) {
       var input = $('#tune' + part.charAt(0).toUpperCase() + part.slice(1), m.el);
       input.checked = state.tuneParts[part];
       input.onchange = function () { state.tuneParts[part] = this.checked; refresh(); };
@@ -7564,7 +7797,7 @@
         roll.notes.forEach(function (n, idx) { noteIdxMap.set(n, idx); });
         var result = await getRenderer().compute('tune', { score: state.score, trackIndex: activeVocalTrackIndex(),
           indices: targets().map(function (n) { var ix = noteIdxMap.get(n); return ix === undefined ? -1 : ix; }), options: { style: chosenStyle,
-          pit: state.tuneParts.pit, vibrato: state.tuneParts.vibrato, vel: state.tuneParts.vel,
+          pit: state.tuneParts.pit, vibrato: state.tuneParts.vibrato, vel: state.tuneParts.vel, effort: state.tuneParts.effort,
           seed: state.tuneSeed, human: state.tuneHuman / 100, expression: state.tuneExpression / 100,
           timbre: state.timbre, rawSource: state.rawSrc, hd: state.hd,
           modeBFricWaveguide: state.hifiWaveguide, modeBHighPolish: state.hifiHighPolish } });
@@ -8125,6 +8358,9 @@
               '<tr><td>' + t('ext.rowF0', null, '基频中位数') + '</td><td>' + t('ext.rowF0Unit', { f0: d.medianF0 }, d.medianF0 + ' Hz（不改变乐谱音高）') + '</td></tr>' +
               '<tr><td>' + t('ext.rowScale', null, '声道缩放 / 带宽') + '</td><td>' + tb.fScale.toFixed(3) + fRatioStr + ' / ' + tb.bwScale.toFixed(2) + '</td></tr>' +
               '<tr><td>' + t('ext.rowTilt', null, '声源谱倾斜 / 气声') + '</td><td>' + tb.tiltDb.toFixed(2) + ' dB/oct' + h1h2Str + ' / ' + tb.breath + '</td></tr>' +
+              '<tr><td>' + t('tune.effort', null, '轻重') + '</td><td>' +
+                (tb.effortProfile ? t('ext.effortMeasured', null, '已从录音估计轻唱与重唱参数') :
+                  t('ext.effortDefault', null, '使用默认参数；可用同音高、同元音的轻唱和重唱干声校准')) + '</td></tr>' +
               (tb.vowelSpace ? '<tr><td>' + t('ext.rowSpace', null, '元音分布倍率（F1 / F2）') + '</td><td>' + tb.vowelSpace.map(function (v) { return v.toFixed(2); }).join(' / ') + '</td></tr>' : '') +
               (tb.harmTailDb !== undefined ? '<tr><td>' + t('ext.rowTail', null, 'H16 以上谐波斜率') + '</td><td>' + tb.harmTailDb.toFixed(1) + ' dB/oct</td></tr>' : '') +
               '<tr><td>' + t('ext.rowHoldout', null, '留出频谱误差') + '</td><td>' + d.baselineDb + ' → ' + d.fittedDb + ' dB</td></tr>' +

@@ -1888,6 +1888,154 @@ body #status.processing::before {
 .batch-lyric-chip.extra .tok { color: #9c5b05; }
 .batch-lyric-chip.unfilled { opacity: .62; background: #f3f7fa; }
 
+/* 莫名其妙眼睛右键面板 */
+.eye-fx-panel {
+  min-width: 330px;
+  max-width: min(376px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+  padding: 7px 8px;
+  gap: 6px;
+}
+.eye-fx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 3px 5px;
+  border-bottom: 1px solid rgba(40, 110, 170, .18);
+}
+.eye-fx-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eye-fx-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.eye-fx-head-actions .abtn {
+  font-size: 11px;
+  padding: 2px 7px;
+  height: 22px;
+}
+.eye-fx-modes {
+  max-height: 232px;
+  overflow-y: auto;
+  padding-right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.eye-fx-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  opacity: .72;
+  margin-bottom: 3px;
+  padding-left: 2px;
+}
+.eye-fx-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.eye-fx-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 7px;
+  font-size: 11.5px;
+  line-height: 1.25;
+  overflow: hidden;
+}
+.eye-fx-mode-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, .25);
+}
+.eye-fx-mode-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eye-fx-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 2px;
+}
+.eye-fx-opt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .8;
+}
+.eye-fx-reset {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10.5px;
+  opacity: .75;
+  cursor: pointer;
+  padding: 1px 4px;
+  text-decoration: underline;
+}
+.eye-fx-reset:hover { opacity: 1; }
+.eye-fx-slider-row {
+  display: grid;
+  grid-template-columns: 78px 1fr 40px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+.eye-fx-slider-row input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+.eye-fx-slider-val {
+  text-align: right;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  opacity: .85;
+}
+.eye-fx-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 1px;
+}
+.eye-fx-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.eye-fx-chk input[type="checkbox"] {
+  margin: 0;
+  flex: none;
+}
+.eye-fx-mode-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(40, 110, 170, .22);
+}
+
 /* 系统要求减少动态时：停掉装饰性动画 */
 @media (prefers-reduced-motion: reduce) {
   .bub, .marquee-in, .prog-fill, .boot-box .orb, body.is-playing #status::before { animation: none !important; }
