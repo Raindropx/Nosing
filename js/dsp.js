@@ -1371,6 +1371,21 @@
         var onsetScale = prevOnsetTotal > 0 ? (pre + late) / prevOnsetTotal : 1;
         for (var oc3 = 0; oc3 < preN; oc3++) onsetDurs[oc3] *= onsetScale;
       }
+      // CHIMERA-style Mandarin rising medial straddling: advance part of the medial glide
+      // into available pre-beat room so the main vowel lands near the beat (avoiding "ku-ai / li-ang").
+      var medialPre = 0;
+      if (isMandarinLike && !NSG.LEGACY_SOUND && resolveArticMorph(timbre) > 0 &&
+          late === 0 && !(tail && tail.locked) && preN > 0 && preN < nuc &&
+          /^(u_medial|u_labial|y_medial|y_ue|i)$/.test(phones[preN]) &&
+          notePhone(phones[nuc]).t === 'V') {
+        var availMedialRoom = Math.max(0, (lastEv ? softRoom : gap) - pre);
+        if (availMedialRoom > 0.002) {
+          var mDur = segmentDur(preN) * f;
+          var mShare = phones[preN] === 'y_ue' ? 0.45 : 0.65;
+          medialPre = Math.min(availMedialRoom, mDur * mShare);
+          pre += medialPre;
+        }
+      }
       // Persist relative beats, so moving notes and changing tempo keeps edits aligned.
       // A changed pronunciation/language cannot accidentally reuse another phone's timing.
       var timing = note.phonemeTiming, manualTimes = null;
@@ -1390,6 +1405,7 @@
           manualTimes[mt] = Math.max(mt ? manualTimes[mt - 1] + minPhone : earliest,
             Math.min(finalTime - (phones.length - mt) * minPhone, manualTimes[mt]));
         }
+        medialPre = 0;
         pre = start - manualTimes[0];
       }
       var need = Math.max(0, pre - gap);
@@ -1519,7 +1535,7 @@
           firstEvent.singingStrength = joinStrength;
         }
       }
-      var vowelBudget = dur - inRaw * f - late;
+      var vowelBudget = dur + medialPre - inRaw * f - late;
       var headBudget = vowelBudget * Math.min(1, (tm.secOf(note.start + note.dur) - start) / dur);
       var earlyVowel = headBudget / nuclei.length;
       var nucDurs = null;
@@ -2329,10 +2345,11 @@
 
   function unroundPairs(pairs, baseLip) {
     var lip = pairs && pairs._lip !== undefined ? pairs._lip : baseLip;
-    var sc = NSG.lipScale(lip);
-    var inv = sc > 1e-6 ? 1 / sc : 1;
     var f = new Float64Array(6);
-    for (var i = 0; i < 6; i++) f[i] = pairs[i][0] * inv;
+    for (var i = 0; i < 6; i++) {
+      var sc = NSG.lipScaleAt(lip, i);
+      f[i] = pairs[i][0] * (sc > 1e-6 ? 1 / sc : 1);
+    }
     return { f: f, lip: lip };
   }
 
@@ -2381,10 +2398,16 @@
         var main = unroundPairs(e.pairs, baseLip);
         var entry = e.glideFrom ? unroundPairs(e.glideFrom, baseLip) : main;
         var exit = e.closeTo ? unroundPairs(e.closeTo, baseLip) : main;
+        var preGlide = (nextV && nextV.glideFrom && !e.closeTo) ? unroundPairs(nextV.pairs, baseLip) : null;
+        if (e.glideFrom && prevV && !prevV.closeTo) {
+          var leaned = new Float64Array(6);
+          for (var lg = 0; lg < 6; lg++) leaned[lg] = entry.f[lg] + (main.f[lg] - entry.f[lg]) * 0.25;
+          entry = { f: leaned, lip: entry.lip + (main.lip - entry.lip) * 0.25 };
+        }
         anchors.push({
           e: e, t0: e.t0, t1: e.t1, rampIn: rampIn, rampOut: rampOut,
           lo: e.t0 - rampIn, hi: e.t1 + rampOut,
-          entry: entry, main: main, exit: exit
+          entry: entry, main: main, exit: exit, preGlide: preGlide
         });
       }
       phraseStart = (i < ev.length && ev[i].kind === 'B') ? i + 1 : i;
@@ -2404,6 +2427,17 @@
       for (var k = 0; k < 6; k++) outF[k] = a.entry.f[k] + (f[k] - a.entry.f[k]) * gr;
       f = outF;
       lip = a.entry.lip + (lip - a.entry.lip) * gr;
+    }
+    if (a.preGlide) {
+      var pgDur = Math.min(0.16, (e.t1 - e.t0) * 0.32);
+      var pgr = Math.max(0, Math.min(1, 1 - (e.t1 - t) / Math.max(1e-6, pgDur)));
+      if (pgr > 0) {
+        pgr = pgr * pgr * (3 - 2 * pgr) * 0.25;
+        var outP = new Float64Array(6);
+        for (var pk = 0; pk < 6; pk++) outP[pk] = f[pk] + (a.preGlide.f[pk] - f[pk]) * pgr;
+        f = outP;
+        lip = lip + (a.preGlide.lip - lip) * pgr;
+      }
     }
     if (e.closeTo) {
       var closeDur = Math.min(0.240, (e.t1 - e.t0) * 0.50);
@@ -2501,18 +2535,23 @@
     var ARTIC_HZ_F = [11.5, 9.5, 13.5, 11.5, 11.5, 11.5];
     var ARTIC_HZ_B = [14.0, 13.0, 14.0, 13.0, 13.0, 13.0];
     var ARTIC_HZ_LIP = 9.0;
+    var ARTIC_HZ_JAW = 11.0;
     var articState = null;
     if (morphAmt > 0) {
-      var initLipScale = NSG.lipScale(baseLip);
-      var initInvLip = initLipScale > 1e-6 ? 1 / initLipScale : 1;
       articState = {
-        x: [cur[0][0] * initInvLip, cur[1][0] * initInvLip, cur[2][0] * initInvLip, cur[3][0] * initInvLip, cur[4][0] * initInvLip, cur[5][0] * initInvLip],
+        x: new Array(6),
         v: [0, 0, 0, 0, 0, 0],
         bw: [cur[0][1], cur[1][1], cur[2][1], cur[3][1], cur[4][1], cur[5][1]],
         bv: [0, 0, 0, 0, 0, 0],
         lip: baseLip,
-        lipV: 0
+        lipV: 0,
+        jaw: 0,
+        jawV: 0
       };
+      for (var isk = 0; isk < 6; isk++) {
+        var initScK = NSG.lipScaleAt(baseLip, isk);
+        articState.x[isk] = cur[isk][0] * (initScK > 1e-6 ? 1 / initScK : 1);
+      }
     }
     var curFric = 0, curTn = 0, curTnLpHz = 0, curFricF = 5000, curFricB = 1200, curNasal = 0, curAv = 0, curMidi = notes.length ? notes[0].pitch : 60;
     var curJaFricF = curFricF, curJaFricB = curFricB, curFrontCavity = 0;
@@ -2603,11 +2642,25 @@
       if (e && e.glideFrom) {
         var gr = Math.min(1, Math.max(0, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
         gr = gr * gr * (3 - 2 * gr);
+        var glideStartBias = (morphAmt > 0 && ci > 0 && !ev[ci - 1].closeTo && ev[ci - 1].kind === 'V') ? 0.25 * morphAmt : 0;
+        var grEff = glideStartBias + (1 - glideStartBias) * gr;
         var glided = new Array(6);
-        for (var gk = 0; gk < 6; gk++) glided[gk] = [e.glideFrom[gk][0] + (e.pairs[gk][0] - e.glideFrom[gk][0]) * gr,
-          e.glideFrom[gk][1] + (e.pairs[gk][1] - e.glideFrom[gk][1]) * gr];
+        for (var gk = 0; gk < 6; gk++) glided[gk] = [e.glideFrom[gk][0] + (e.pairs[gk][0] - e.glideFrom[gk][0]) * grEff,
+          e.glideFrom[gk][1] + (e.pairs[gk][1] - e.glideFrom[gk][1]) * grEff];
         tgtPairs = glided;
-        if (e.glideFrom._lip !== undefined) tgtLip = e.glideFrom._lip + (tgtLip - e.glideFrom._lip) * gr;
+        if (e.glideFrom._lip !== undefined) tgtLip = e.glideFrom._lip + (tgtLip - e.glideFrom._lip) * grEff;
+      } else if (morphAmt > 0 && e && e.kind === 'V' && !e.closeTo && ci + 1 < ev.length && ev[ci + 1].glideFrom && Math.abs(ev[ci + 1].t0 - e.t1) < 1e-6) {
+        var nextGlideEv = ev[ci + 1];
+        var pgDurCtrl = Math.min(0.16, (e.t1 - e.t0) * 0.32);
+        var pgrCtrl = Math.max(0, Math.min(1, 1 - (e.t1 - t) / Math.max(1e-6, pgDurCtrl)));
+        if (pgrCtrl > 0) {
+          pgrCtrl = pgrCtrl * pgrCtrl * (3 - 2 * pgrCtrl) * 0.25 * morphAmt;
+          var preGlided = new Array(6);
+          for (var pgk = 0; pgk < 6; pgk++) preGlided[pgk] = [tgtPairs[pgk][0] + (nextGlideEv.pairs[pgk][0] - tgtPairs[pgk][0]) * pgrCtrl,
+            tgtPairs[pgk][1] + (nextGlideEv.pairs[pgk][1] - tgtPairs[pgk][1]) * pgrCtrl];
+          tgtPairs = preGlided;
+          if (nextGlideEv.pairs._lip !== undefined) tgtLip = tgtLip + (nextGlideEv.pairs._lip - tgtLip) * pgrCtrl;
+        }
       }
       if (e && e.closeTo) {
         // 以当前事件长度计算：后续声母可能向这个元音借时间，不能沿用借时前的边界。
@@ -2726,20 +2779,21 @@
       // Optional HiFi experiment. Follow the sung F0 through pitch bends and
       // sustains. Limit the opening to keep each vowel's F1 distinct from F2.
       var firstTarget = tgtPairs[0][0];
-      if (highVowelOpening > 0 && e && e.kind === 'V' && lastF0 > 350 && lastF0 > firstTarget) {
-        var register = Math.min(1, (lastF0 - 350) / 200);
-        var lift = Math.max(0, Math.min(lastF0 - firstTarget, firstTarget * 0.40, tgtPairs[1][0] * 0.8 - firstTarget));
-        firstTarget += lift * highVowelOpening * register * (inXf ? xr : 1);
+      var rawJawLift = 0;
+      if (highVowelOpening > 0 && e && e.kind === 'V' && lastF0 > 260 && lastF0 > firstTarget) {
+        var register = lastF0 >= 350 ? (0.25 + 0.75 * Math.min(1, (lastF0 - 350) / 200)) : (0.25 * (lastF0 - 260) / 90);
+        var lift = Math.max(0, Math.min(lastF0 - firstTarget, firstTarget * 0.44, tgtPairs[1][0] * 0.80 - firstTarget));
+        rawJawLift = lift * highVowelOpening * register * (inXf ? xr : 1);
+        if (!articState) firstTarget += rawJawLift;
       }
       var vbRel = !!e && e.kind === 'F' && !!prevEv && prevEv.kind === 'VB' && Math.abs(e.t0 - prevEv.t1) < 1e-6;
       if (articState) {
-        var tgtLipSc = NSG.lipScale(tgtLip);
-        var invTgtLip = tgtLipSc > 1e-6 ? 1 / tgtLipSc : 1;
         var ohman = e ? sampleOhmanField(ohmanField, t, ohmanBuf) : null;
         var free = ohman ? placeFreedom(e, inXf, nasalFromHere) : FREEDOM_ZERO;
         var tgtU = new Float64Array(6);
         for (var uk = 0; uk < 6; uk++) {
-          tgtU[uk] = (uk === 0 ? firstTarget : tgtPairs[uk][0]) * invTgtLip;
+          var tgtLipScK = NSG.lipScaleAt(tgtLip, uk);
+          tgtU[uk] = tgtPairs[uk][0] * (tgtLipScK > 1e-6 ? 1 / tgtLipScK : 1);
         }
         if (ohman) {
           for (var fk = 0; fk < 3; fk++) {
@@ -2749,18 +2803,13 @@
           var wl = free[3] * morphAmt;
           if (wl > 0) tgtLip += (ohman.lip - tgtLip) * wl;
         }
+        var tgtJaw = rawJawLift;
         if (e && e.kind === 'V' && morphAmt > 0) {
-          // Expressive jaw/aperture contour: blooms open at syllable onset and tracks pitch/effort
           var vElapsed = t - e.t0;
-          if ((!prevEv || prevEv.kind !== 'V') && vElapsed < 0.075) {
-            var uBloom = Math.max(0, Math.min(1, vElapsed / 0.075));
-            tgtU[0] *= 1 - 0.08 * morphAmt * (1 - uBloom) * (1 - uBloom);
-          }
-          var jawExpr = (lastF0 > 240 ? Math.min(1, (lastF0 - 240) / 280) * 0.08 : 0) +
-            Math.max(-0.04, Math.min(0.08, sungEffort * 0.12));
-          if (jawExpr !== 0) {
-            tgtU[0] = Math.min(tgtU[1] * 0.78, Math.max(220, tgtU[0] * (1 + jawExpr * morphAmt)));
-          }
+          var bloomFactor = (!prevEv || prevEv.kind !== 'V') && vElapsed < 0.075
+            ? -0.08 * Math.pow(1 - Math.max(0, vElapsed / 0.075), 2) : 0;
+          var effortFactor = Math.max(-0.04, Math.min(0.08, sungEffort * 0.12));
+          tgtJaw += tgtPairs[0][0] * (bloomFactor + effortFactor) * morphAmt;
         }
         var baseSp = (e && e.sonorant === 'T') || nasalEdge ? 2.6 : (e && e.sonorant) ? 2.2 : 1.0;
         if (!e) {
@@ -2771,12 +2820,18 @@
           var decLipRest = Math.exp(-2 * Math.PI * ARTIC_HZ_LIP * dt);
           articState.lip += articState.lipV * decLipRest * dt;
           articState.lipV *= decLipRest;
+          var wJawRest = 2 * Math.PI * ARTIC_HZ_JAW;
+          var decJawRest = Math.exp(-wJawRest * dt);
+          var cJawRest = articState.jawV + wJawRest * articState.jaw;
+          articState.jaw = decJawRest * (articState.jaw + cJawRest * dt);
+          articState.jawV = decJawRest * (articState.jawV - wJawRest * cJawRest * dt);
         } else if (fr === frStart && frStart === 0) {
           for (var sk = 0; sk < 6; sk++) {
             articState.x[sk] = tgtU[sk]; articState.v[sk] = 0;
             articState.bw[sk] = tgtPairs[sk][1]; articState.bv[sk] = 0;
           }
           articState.lip = tgtLip; articState.lipV = 0;
+          articState.jaw = tgtJaw; articState.jawV = 0;
         } else {
           for (var ak = 0; ak < 6; ak++) {
             var spK = tapEdge && ak === 0 ? 2.4 : latEdge && ak < 2 ? 2.0 : baseSp;
@@ -2789,12 +2844,26 @@
           var cLip = articState.lipV + wLip * eLip;
           articState.lip = tgtLip + decLip * (eLip + cLip * dt);
           articState.lipV = decLip * (articState.lipV - wLip * cLip * dt);
+          var wJaw = 2 * Math.PI * ARTIC_HZ_JAW * (latEdge || tapEdge ? 1.6 : 1.0);
+          var eJaw = articState.jaw - tgtJaw;
+          var decJaw = Math.exp(-wJaw * dt);
+          var cJaw = articState.jawV + wJaw * eJaw;
+          articState.jaw = tgtJaw + decJaw * (eJaw + cJaw * dt);
+          articState.jawV = decJaw * (articState.jawV - wJaw * cJaw * dt);
         }
-        var curLipSc = NSG.lipScale(articState.lip);
         var fCeiling = SR * 0.48;
-        for (var ok = 0; ok < 6; ok++) {
-          cur[ok][0] = Math.max(100, Math.min(fCeiling, articState.x[ok] * curLipSc));
+        for (var ok = 5; ok >= 0; ok--) {
+          var fVal = articState.x[ok] * NSG.lipScaleAt(articState.lip, ok);
+          if (ok === 0) {
+            var f1Cap = cur[1][0] > 0 ? cur[1][0] * 0.80 : fCeiling;
+            fVal = Math.min(f1Cap, Math.max(120, fVal + articState.jaw));
+          }
+          cur[ok][0] = Math.max(100, Math.min(fCeiling, fVal));
           cur[ok][1] = Math.max(30, articState.bw[ok]);
+        }
+        if (articState.jaw > 20) {
+          var jawOpenRatio = Math.min(1, articState.jaw / Math.max(120, cur[0][0] * 0.4));
+          cur[0][1] *= 1 + 0.14 * jawOpenRatio;
         }
       } else {
         for (var k = 0; k < 6; k++) {
@@ -2806,7 +2875,9 @@
       // Coarticulated anticipatory velum opening on vowels approaching a coda nasal.
       var ncr = 0;
       if (e && e.closeNasal > 0) {
-        var nCloseDur = Math.min(0.075, (e.t1 - e.t0) * 0.28);
+        var nCloseMax = 0.075 + 0.145 * morphAmt;
+        var nCloseFrac = 0.28 + 0.18 * morphAmt;
+        var nCloseDur = Math.min(nCloseMax, (e.t1 - e.t0) * nCloseFrac);
         ncr = Math.max(0, Math.min(1, 1 - (e.t1 - t) / Math.max(1e-6, nCloseDur)));
         ncr = ncr * ncr * (3 - 2 * ncr);
       }
@@ -3876,7 +3947,7 @@
     var r0 = scoreToControl(score, timbre, tm, score.lang, research, balanceAspiration,
       !opt.rawSource && opt.modeBJapaneseFriction !== false,
       !opt.rawSource && opt.modeBJapaneseVoicedFriction !== false, nasalRelease, aspAirMix, nasalTract,
-      modeB && !opt.rawSource && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0,
+      !opt.rawSource && !NSG.LEGACY_SOUND && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0,
       organicAmt, humanizeAmt, sliceRange, articMorphAmt);
     return {
       r0: r0, timbre: timbre, research: research, refine: refine, nasalRelease: nasalRelease,
@@ -5005,8 +5076,10 @@
 
   /* 供自测/调试读取控制帧（不改任何状态） */
   NSG.DSP.controlFrames = function (score, timbre, opt) {
+    var opening = (opt && opt.highVowelOpening !== undefined) ? opt.highVowelOpening
+      : (!NSG.LEGACY_SOUND && timbre && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0);
     return scoreToControl(score, timbre, NSG.TEMPO.map(score), score.lang, undefined, undefined,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, opening, undefined, undefined,
       undefined, resolveArticMorph(timbre, opt));
   };
 

@@ -337,6 +337,12 @@
   NSG.lipScale = function (r) {
     return 1 / (1 + Math.max(0, Math.min(0.5, r)));
   };
+  /* 动态非对称圆唇比例：唇部前伸强力下拉 F2/F3，对下颌决定的 F1 影响较轻 */
+  var LIP_AXIS_WEIGHT = [0.40, 1.00, 1.12, 0.90, 0.90, 0.90];
+  NSG.lipScaleAt = function (r, idx) {
+    var w = LIP_AXIS_WEIGHT[idx] !== undefined ? LIP_AXIS_WEIGHT[idx] : 1;
+    return 1 / (1 + Math.max(-0.15, Math.min(0.55, r * w)));
+  };
 
   // 对数共振峰位移，端点约 +4 / -4 半音；64 精确保持旧音色。
   NSG.genValue = function (t) {
