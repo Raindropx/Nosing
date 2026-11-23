@@ -6317,7 +6317,7 @@
   /* ---------------- 关于 ---------------- */
   function openAbout() {
     var m = modal(t('about.title', null, '关于 NSG 歌声合成器'),
-      '<h3>' + t('about.heading', null, 'NSG 歌声合成器 V9') + '</h3>' +
+      '<h3>' + t('about.heading', null, 'NSG 歌声合成器 V10') + '</h3>' +
       '<p>' + t('about.p1', null, '发声方法：先算出没有滤波的声带音——最多 64 阶倍频振幅叠加（表内 16 阶给定，表外按 −12dB/oct 续接），各阶固定随机相位；再让它穿过口腔与鼻腔的共振腔。口腔用六级共振峰级联（F1–F6，各自带中心频率与带宽，F4/F5/F6 位置由参数块单独给出），鼻腔以极点＋零点支路并联耦合；清擦音单独走并行噪声通道，最后叠加回主干，出口再过一级唇端辐射（+6dB/oct）。') + '</p>' +
       '<p>' + t('about.p2', null, '人声默认为 16kHz 单声道；工具栏“模式B”可切换至原生 48kHz 合成。') + '</p>' +
       '<div class="row2" style="margin-top:10px"><label class="tl"><input type="checkbox" id="legacySoundToggle"' +
@@ -6623,10 +6623,10 @@
   function updateVersionLabel(item) {
     var verEl = $('#appVersionTag') || $('.tb-left i');
     if (!verEl) return;
-    var cur = String(verEl.textContent || 'v9.2008');
+    var cur = String(verEl.textContent || 'v10.2008');
     verEl.textContent = /\.\d{4}$/.test(cur)
       ? cur.replace(/\.\d{4}$/, '.' + item.versionSuffix)
-      : 'v9.' + item.versionSuffix;
+      : 'v10.' + item.versionSuffix;
   }
 
   function updateTransparencyVisibility(item) {
