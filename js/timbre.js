@@ -90,40 +90,129 @@
     return h;
   }
 
+  // 可选的整体输出均衡：作用在最终人声（谐波、气声、辅音噪声一起），
+  // 由提取时的合成-对比迭代得到，记录录音整体的长时频谱色彩（含话筒与房间）。
+  // 48 点，50–8000Hz 对数频率轴；未设置时渲染路径与旧版逐字节相同。
+  var LOG_50 = Math.log(50), INV_LOG_400 = 1 / Math.log(400), INV_LOG_160 = 1 / Math.log(160);
+  NSG.OUT_EQ = { n: 48, lo: 50, hi: 8000, min: -40, max: 24 };
+  NSG.outEqHz = function (i) {
+    var E = NSG.OUT_EQ;
+    return E.lo * Math.pow(E.hi / E.lo, i / (E.n - 1));
+  };
+  NSG.outEqDbAt = function (eq, hz) {
+    var len = eq.length, last = len - 1;
+    if (hz <= 50) return eq[0];
+    var is64 = len === 64, hi = is64 ? 20000 : 8000;
+    if (hz >= hi) return eq[last];
+    var x = (Math.log(hz) - LOG_50) * (is64 ? INV_LOG_400 : INV_LOG_160) * last;
+    var i = x | 0;
+    if (i >= last) i = last - 1;
+    return eq[i] + (eq[i + 1] - eq[i]) * (x - i);
+  };
+
+  /* 16kHz 柔和输出衰减曲线：仅在滚降起始频率之上平滑衰减，抑制童声等密集高阶共振峰刺耳峰 */
+  function makeOutEqRolloff(rollStart, rollDbOct) {
+    var eq = [];
+    for (var i = 0; i < NSG.OUT_EQ.n; i++) {
+      var hz = NSG.outEqHz(i), db = hz > rollStart ? rollDbOct * Math.log2(hz / rollStart) : 0;
+      eq.push(Math.round(Math.max(NSG.OUT_EQ.min, Math.min(NSG.OUT_EQ.max, db)) * 100) / 100);
+    }
+    return eq;
+  }
+
+  /* 模式B（48kHz）宽带输出均衡：保留中低频音色，并在梨状窝与 4kHz 以上做平滑收敛，避免高频塑料嗡声 */
+  function makeModeBOutEq(opts) {
+    var pfHz = opts.pfHz || 4500, pfDb = opts.pfDb || 0;
+    var rollStart = opts.rollStart || 4500, rollDbOct = opts.rollDbOct || -6.0;
+    var baseEq = opts.baseEq || null, extraHiCutDb = opts.extraHiCutDb || 0;
+    var anchor = baseEq ? Math.min(0, NSG.outEqDbAt(baseEq, 3500)) : 0;
+    var eq = [];
+    for (var i = 0; i < 64; i++) {
+      var hz = 50 * Math.pow(400, i / 63), db;
+      if (baseEq) {
+        var old = NSG.outEqDbAt(baseEq, hz);
+        if (hz <= 3500) {
+          db = old;
+        } else {
+          var tail = anchor + rollDbOct * Math.log2(hz / 3500);
+          db = old > 0 ? Math.min(old, tail) : Math.max(old, tail);
+          if (hz > 5000 && extraHiCutDb !== 0) {
+            var u = Math.min(1, Math.log2(hz / 5000) / Math.log2(20000 / 5000));
+            db += extraHiCutDb * u;
+          }
+        }
+      } else {
+        db = 0;
+        if (pfDb !== 0) {
+          var dPf = Math.log2(hz / pfHz) / 0.25;
+          db += pfDb * Math.exp(-dPf * dPf);
+        }
+        if (hz > rollStart) db += rollDbOct * Math.log2(hz / rollStart);
+      }
+      eq.push(Math.round(Math.max(-40, Math.min(24, db)) * 100) / 100);
+    }
+    return eq;
+  }
+
+  /* 32 点固定频率声源谱修正（100–7600Hz），用于塑形胸腔厚度与歌者共振峰 */
+  function makeSourceEq(fn) {
+    var eq = [];
+    for (var i = 0; i < 32; i++) {
+      var hz = 100 * Math.pow(76, i / 31);
+      eq.push(Math.round(Math.max(-12, Math.min(12, fn(hz))) * 100) / 100);
+    }
+    return eq;
+  }
+
+  var F1_BASE_OUT_EQ = [9.26,9.26,9.26,9.26,9.26,9.26,9.26,8.715280927193845,7.861598207779624,10.429789266087532,5.143760888993264,-2.2785619152470273,-4.500920104249856,-1.6275,3.6504999999999996,7.752499999999999,6.72,1.7954999999999999,-2.6285,-2.1665,3.3145000000000002,2.6565,-1.19,0.063,0.294,-0.385,-0.091,-0.84,-2.219,-1.0815,-0.9624999999999999,-0.1295,1.1584999999999999,1.8795,-0.9029999999999999,1.0675,-0.147,0.6838998842141357,1.007901778041219,-0.8173842278675558,-2.538825914307105,-5.03,-7.82,-24.43,-39.83,-39.83,-39.83,-39.83];
+
   var PRESET_DEF = [
     {
       id: 'base', name: '基准', height: 160,
       desc: '中性基准音色：均衡、朴素，适合对照不同音色',
-      fs: 1.00, warp: 0.00, jit: 0,
+      consonantSoftness: 0.35,
+      nasalLowpassHz: 1800,
+      highVowelOpening: 0.35,
+      modeBHigh: 0.20,
+      fs: 1.00, warp: 0.00, jit: 0.0004,
       glot: 0.0,
-      bw: 1.00, hi: [3300, 4200, 5200], hiS: 1.00, lip: 0.00,
-      slope: -12.0, tilt: 0, breath: 0.02, nasal: 0.08, vib: [5.2, 0.18, 0.28],
+      bw: 1.16, hi: [3300, 4200, 5200], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -16, tilt: 0, breath: 0.036, nasal: 0.08, vib: [5.2, 0.18, 0.28],
+      modeBOutEq: makeModeBOutEq({ pfHz: 4500, pfDb: -1.5, rollStart: 4600, rollDbOct: -6.0 }),
       range: [48, 72]
     },
     {
-      id: 'm1', name: '男声1', height: 176,
-      desc: '男中音：声音结实饱满，颤音克制，气声很轻',
-      consonantSoftness: 0.45,
-      nasalLowpassHz: 1200,
-      highVowelOpening: 0.25,
-      modeBHigh: 0.38,
-      fs: 0.98, warp: -0.04, jit: 0.0010,
-      glot: 0.45,
-      bw: 0.98, hi: [3480, 4000, 4600], hiS: 1.00, lip: 0.02,
-      slope: -10.8, tilt: 1.0, breath: 0.020, nasal: 0.06, vib: [5.0, 0.16, 0.30],
-      range: [50, 69]
+      id: 'm1', name: '男声1', height: 175,
+      desc: '亮实男高/男中音：中气十足、胸腔饱满、气声极轻且带歌者共振峰明亮感',
+      consonantSoftness: 0.36,
+      nasalLowpassHz: 1350,
+      highVowelOpening: 0.35,
+      modeBHigh: 0.16,
+      fs: 0.99, warp: -0.01, jit: 0.0008,
+      glot: 0.64,
+      bw: 1.13, hi: [3240, 4040, 4760], hiS: 1.00, lip: 0.01,
+      slope: -11.2, harmTailDb: -18, tilt: 0.5, breath: 0.015, nasal: 0.05, vib: [5.2, 0.14, 0.28],
+      sourceEq: makeSourceEq(function (hz) {
+        var chest = 1.6 * Math.exp(-Math.pow(Math.log2(hz / 220) / 0.6, 2));
+        var sf = 2.1 * Math.exp(-Math.pow(Math.log2(hz / 2750) / 0.42, 2));
+        var cut = hz > 4000 ? -4.5 * Math.log2(hz / 4000) : 0;
+        return chest + sf + cut;
+      }),
+      modeBOutEq: makeModeBOutEq({ pfHz: 4400, pfDb: -2.2, rollStart: 4200, rollDbOct: -7.5 }),
+      range: [50, 71]
     },
     {
       id: 'm2', name: '男声2', height: 182,
       desc: '清亮男高音：明亮、轻柔，带一层气声',
-      consonantSoftness: 0.30,
+      consonantSoftness: 0.38,
       nasalLowpassHz: 1600,
-      highVowelOpening: 0.50,
-      modeBHigh: 0.45,
+      highVowelOpening: 0.45,
+      modeBHigh: 0.26,
       fs: 1.03, warp: 0.02, jit: 0.0010,
       glot: 0.30,
-      bw: 0.96, hi: [3480, 4030, 4630], hiS: 1.00, lip: 0.01,
-      slope: -10.4, tilt: 2.0, breath: 0.060, nasal: 0.05, vib: [5.4, 0.14, 0.26],
+      bw: 1.18, hi: [3480, 4030, 4630], hiS: 1.00, lip: 0.01,
+      slope: -11.4, harmTailDb: -16, tilt: 0.0, breath: 0.055, nasal: 0.05, vib: [5.4, 0.14, 0.26],
+      modeBOutEq: makeModeBOutEq({ pfHz: 4550, pfDb: -2.0, rollStart: 4600, rollDbOct: -6.0 }),
       range: [53, 74]
     },
     {
@@ -132,11 +221,12 @@
       consonantSoftness: 0.55,
       nasalLowpassHz: 1100,
       highVowelOpening: 0.20,
-      modeBHigh: 0.30,
-      fs: 0.92, warp: -0.06, jit: 0.0030,
+      modeBHigh: 0.18,
+      fs: 0.92, warp: -0.06, jit: 0.0015,
       glot: 0.60,
-      bw: 1.08, hi: [3550, 4140, 4800], hiS: 1.00, lip: 0.02,
-      slope: -12.8, tilt: -3.0, breath: 0.100, nasal: 0.11, vib: [4.6, 0.24, 0.34],
+      bw: 1.20, hi: [3550, 4140, 4800], hiS: 1.00, lip: 0.02,
+      slope: -12.8, harmTailDb: -18, tilt: -3.0, breath: 0.085, nasal: 0.11, vib: [4.6, 0.24, 0.34],
+      modeBOutEq: makeModeBOutEq({ pfHz: 4300, pfDb: -2.5, rollStart: 4300, rollDbOct: -6.8 }),
       range: [43, 64]
     },
     {
@@ -149,20 +239,21 @@
         "gen": 56,
         "fScale": 1.3518275,
         "warp": 0.18,
-        "jitter": 0.0018,
+        "jitter": 0.0012,
         "glottal": 0.08,
-        "bwScale": 1.25,
+        "bwScale": 1.35,
         "higher": [3167,4408,5042],
         "hiShift": 1,
         "lip": 0.1,
         "harm": [0,-12,-19,-24,-27.9,-31,-33.7,-36,-38,-39.9,-41.5,-43,-44.4,-45.7,-46.9,-48],
-        "tiltDb": 5,
-        "breath": 0.04,
+        "harmTailDb": -16,
+        "tiltDb": 1.5,
+        "breath": 0.05,
         "nasal": 0.04,
-        "consonantSoftness": 0.25,
+        "consonantSoftness": 0.32,
         "nasalLowpassHz": 2000,
-        "modeBHigh": 0.45,
-        "highVowelOpening": 0.50,
+        "modeBHigh": 0.34,
+        "highVowelOpening": 0.45,
         "articMorph": 0.5,
         "vib": {
           "rate": 5.2,
@@ -174,7 +265,8 @@
         "grid": null,
         "src": "多帧拟合 + 合成对比 v3",
         "sourceEq": [-0.89,-1.25,-1.81,-1.04,-0.04,1.04,1.84,2.34,2.34,1.08,-0.19,-1.43,-1.8,-1.69,-0.43,0.85,1.62,1.28,1.15,1.22,1.32,0.89,0.33,-0.1,-0.22,-0.05,0.38,0.67,0.65,0.34,0.11,0],
-        "outEq": [9.26,9.26,9.26,9.26,9.26,9.26,9.26,8.715280927193845,7.861598207779624,10.429789266087532,5.143760888993264,-2.2785619152470273,-4.500920104249856,-1.6275,3.6504999999999996,7.752499999999999,6.72,1.7954999999999999,-2.6285,-2.1665,3.3145000000000002,2.6565,-1.19,0.063,0.294,-0.385,-0.091,-0.84,-2.219,-1.0815,-0.9624999999999999,-0.1295,1.1584999999999999,1.8795,-0.9029999999999999,1.0675,-0.147,0.6838998842141357,1.007901778041219,-0.8173842278675558,-2.538825914307105,-5.03,-7.82,-24.43,-39.83,-39.83,-39.83,-39.83],
+        "outEq": F1_BASE_OUT_EQ.slice(),
+        "modeBOutEq": makeModeBOutEq({ rollDbOct: -6.0, extraHiCutDb: -1.0, baseEq: F1_BASE_OUT_EQ }),
         "extraction": {
           "version": 3,
           "frames": 64,
@@ -241,27 +333,31 @@
     {
       id: 'b1', name: '男孩1', height: 145,
       desc: '男童声：明亮有力，略带粗糙感，颤音很轻',
-      consonantSoftness: 0.35,
+      consonantSoftness: 0.42,
       nasalLowpassHz: 1500,
-      highVowelOpening: 0.55,
-      modeBHigh: 0.40,
-      fs: 1.08, warp: 0.04, jit: 0.0020,
+      highVowelOpening: 0.50,
+      modeBHigh: 0.26,
+      fs: 1.08, warp: 0.04, jit: 0.0012,
       glot: 0.40,
-      bw: 1.06, hi: [3240, 3750, 4250], hiS: 1.00, lip: 0.00,
-      slope: -11.4, tilt: 0.5, breath: 0.030, nasal: 0.07, vib: [5.6, 0.12, 0.30],
+      bw: 1.30, hi: [3240, 3750, 4250], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -17, tilt: -1.5, breath: 0.045, nasal: 0.07, vib: [5.6, 0.12, 0.30],
+      outEq: makeOutEqRolloff(2900, -10.5),
+      modeBOutEq: makeModeBOutEq({ pfHz: 4700, pfDb: -3.2, rollStart: 4200, rollDbOct: -6.5 }),
       range: [60, 77]
     },
     {
       id: 'g1', name: '女孩1', height: 142,
       desc: '女童声：清亮偏甜，带轻气声，颤音轻快',
-      consonantSoftness: 0.40,
+      consonantSoftness: 0.45,
       nasalLowpassHz: 1700,
-      highVowelOpening: 0.60,
-      modeBHigh: 0.42,
-      fs: 1.10, warp: 0.08, jit: 0.0012,
+      highVowelOpening: 0.55,
+      modeBHigh: 0.28,
+      fs: 1.10, warp: 0.08, jit: 0.0010,
       glot: 0.18,
-      bw: 1.08, hi: [3190, 3640, 4080], hiS: 1.00, lip: 0.00,
-      slope: -10.8, tilt: 2.0, breath: 0.060, nasal: 0.05, vib: [5.8, 0.14, 0.26],
+      bw: 1.34, hi: [3190, 3640, 4080], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -17, tilt: -1.5, breath: 0.055, nasal: 0.05, vib: [5.8, 0.14, 0.26],
+      outEq: makeOutEqRolloff(2900, -12.0),
+      modeBOutEq: makeModeBOutEq({ pfHz: 4800, pfDb: -3.2, rollStart: 4200, rollDbOct: -6.5 }),
       range: [62, 81]
     }
   ];
@@ -303,6 +399,10 @@
       if (d.nasalLowpassHz !== undefined) t.nasalLowpassHz = d.nasalLowpassHz;
       if (d.highVowelOpening !== undefined) t.highVowelOpening = d.highVowelOpening;
       if (d.modeBHigh !== undefined) t.modeBHigh = d.modeBHigh;
+      if (d.harmTailDb !== undefined) t.harmTailDb = d.harmTailDb;
+      if (d.sourceEq !== undefined) t.sourceEq = d.sourceEq.slice();
+      if (d.outEq !== undefined) t.outEq = d.outEq.slice();
+      if (d.modeBOutEq !== undefined) t.modeBOutEq = d.modeBOutEq.slice();
       t.nasal = d.nasal;
       t.vib = { rate: d.vib[0], depth: d.vib[1], delay: d.vib[2] };
       out.push(t);
@@ -419,7 +519,6 @@
   var glCacheF = -1, glCacheBw = -1, glCacheDb = -1, glCacheSr = -1;
   var glB0 = 1, glB1 = 0, glB2 = 0, glA0 = 1, glA1 = 0, glA2 = 0;
   var INV_LOG_76 = 1 / Math.log(76), LOG_100 = Math.log(100);
-  var LOG_50 = Math.log(50), INV_LOG_400 = 1 / Math.log(400), INV_LOG_160 = 1 / Math.log(160);
   NSG.glottalDbAt = function (g, hz, sampleRate) {
     if (!g) return 0;
     var sr = sampleRate || NSG.SR;
@@ -462,25 +561,6 @@
     var i = x | 0;
     if (i >= last) i = last - 1;
     return base + eq[i] + (eq[i + 1] - eq[i]) * (x - i);
-  };
-
-  // 可选的整体输出均衡：作用在最终人声（谐波、气声、辅音噪声一起），
-  // 由撅取时的合成-对比迭代得到，记录录音整体的长时频谱色彩（含话筒与房间）。
-  // 48 点，50–8000Hz 对数频率轴；未设置时渲染路径与旧版逐字节相同。
-  NSG.OUT_EQ = { n: 48, lo: 50, hi: 8000, min: -40, max: 24 };
-  NSG.outEqHz = function (i) {
-    var E = NSG.OUT_EQ;
-    return E.lo * Math.pow(E.hi / E.lo, i / (E.n - 1));
-  };
-  NSG.outEqDbAt = function (eq, hz) {
-    var len = eq.length, last = len - 1;
-    if (hz <= 50) return eq[0];
-    var is64 = len === 64, hi = is64 ? 20000 : 8000;
-    if (hz >= hi) return eq[last];
-    var x = (Math.log(hz) - LOG_50) * (is64 ? INV_LOG_400 : INV_LOG_160) * last;
-    var i = x | 0;
-    if (i >= last) i = last - 1;
-    return eq[i] + (eq[i + 1] - eq[i]) * (x - i);
   };
 
   // Separate 50 Hz–20 kHz curves for mode B. The reference F01 recording itself
