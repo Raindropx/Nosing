@@ -14,6 +14,7 @@ use crate::harmonics::{
 };
 
 pub const FRAME_STRIDE: usize = 37;
+pub const CONFIG_LEN: usize = 71;
 
 pub struct EqCacheEntry {
     pub key: Vec<u64>,
@@ -55,7 +56,7 @@ impl VocalEngine {
             harm_octaves,
             fft_ws: FftWorkspace::new(),
             eq_cache: Vec::with_capacity(16),
-            cfg_buf: vec![0.0; 48],
+            cfg_buf: vec![0.0; CONFIG_LEN],
             harm_buf: vec![0.0; 16],
             source_eq_buf: vec![0.0; 32],
             out_eq_buf: vec![0.0; 64],
@@ -131,6 +132,7 @@ impl VocalEngine {
         let has_source_eq = (flags & 131072) != 0;
         let has_out_eq = (flags & 262144) != 0;
 
+        let kernels: [f64; 26] = cfg[45..71].try_into().unwrap();
         let seed_salt = cfg[3] as u32;
         let nas_scale = cfg[4];
         let nas_bw_scale = cfg[5];
@@ -322,6 +324,13 @@ impl VocalEngine {
 
         for fr in 0..n_frames {
             let base = fr * FRAME_STRIDE;
+            let effort = frames[base + 36];
+            let ep = if effort < 0.0 { 37 } else { 41 };
+            let endpoint = &cfg[ep..ep + 4];
+            let depth = endpoint[3];
+            let pulse_norm = if effort == 0.0 { 1.0 } else {
+                1.0 / (1.0 - 1.25 * depth + 67.0 / 128.0 * depth * depth).sqrt()
+            };
             let pairs: [(f64, f64); 6] = [
                 (frames[base], frames[base + 1]),
                 (frames[base + 2], frames[base + 3]),
@@ -415,7 +424,7 @@ impl VocalEngine {
                 src.set_voiced_high(
                     &rc, f0, &pairs, voiced_high_gate, n_mix, c_av, eff_tilt, source_tilt, &gl,
                     high_strength, compensate_high_eq, wideband, has_upper_air, air_power,
-                    air_fraction, air_trim_gain, refine, tract_join, smooth_blend, perturb_blend,
+                    air_fraction, air_trim_gain, effort, endpoint, refine, tract_join, smooth_blend, perturb_blend,
                     legacy_sound, harm_octaves,
                 );
             }
@@ -731,13 +740,16 @@ impl VocalEngine {
                         let pulsed_old = (0.16 + 0.84 * open * open) * 1.76963;
                         let pulsed_new = (0.72 + 0.28 * open * open) / 0.85888;
                         let pulsed_blend = smooth_blend.max(perturb_blend);
-                        let pulsed = if pulsed_blend >= 1.0 {
+                        let mut pulsed = if pulsed_blend >= 1.0 {
                             pulsed_new
                         } else if pulsed_blend <= 0.0 {
                             pulsed_old
                         } else {
                             pulsed_old + (pulsed_new - pulsed_old) * pulsed_blend
                         };
+                        if effort != 0.0 {
+                            pulsed += effort.abs() * ((1.0 - depth + depth * open * open) * pulse_norm - pulsed);
+                        }
                         air_mod = 1.0 + amp.min(1.0) * (pulsed - 1.0);
                     }
                     let air_sample = if perturb_blend > 0.0 {
@@ -854,6 +866,25 @@ impl VocalEngine {
         if has_upper_air && air_eq_len > 0 {
             let air_curve: Vec<f64> = self.air_eq_buf[..air_eq_len.min(64)].to_vec();
             self.apply_cached_eq(3, &air_curve, sr, hd, false);
+            let frames = &self.frames_buf[..n_frames * FRAME_STRIDE];
+            if frames.chunks_exact(FRAME_STRIDE).any(|f| f[36] != 0.0) {
+                let input = self.upper_air[..slice_total].to_vec();
+                for (f, frame) in frames.chunks_exact(FRAME_STRIDE).enumerate() {
+                    let amount = frame[36];
+                    if amount == 0.0 { continue; }
+                    let taps = if amount < 0.0 { &kernels[..13] } else { &kernels[13..] };
+                    for i in f * hop..slice_total.min((f + 1) * hop) {
+                        let dry = input[i] as f64;
+                        let mut filtered = dry * taps[0];
+                        for j in 1..13 {
+                            let left = if i >= j { input[i-j] } else { 0.0 };
+                            let right = input.get(i+j).copied().unwrap_or(0.0);
+                            filtered += taps[j] * (left as f64 + right as f64);
+                        }
+                        self.upper_air[i] = (dry + amount.abs() * (filtered - dry)) as f32;
+                    }
+                }
+            }
             for i in 0..slice_total {
                 self.out_buf[i] += self.upper_air[i];
             }

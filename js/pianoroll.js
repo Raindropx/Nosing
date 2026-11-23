@@ -47,8 +47,8 @@
     this.rowH = 20;
     this.lowPitch = 40;
     this.scrollBeat = 0;
-    this.velLane = 104;
-    this.laneParam = 'vel';   // vel / cons / pitd / dyn
+    this.velLane = 124;
+    this.laneParam = 'vel';   // vel / cons / pitd / dyn / effort
     this.pitdRange = 200;     // 音分；参数栏滚轮缩放纵向范围。
     this.kbW = 56;
     this.rulerH = 28;
@@ -985,7 +985,7 @@
     c.fillStyle = velBg; c.fillRect(0, vy, w, this.velLane);
     c.strokeStyle = T.velTop; c.beginPath(); c.moveTo(0, vy + 0.5); c.lineTo(w, vy + 0.5); c.stroke();
     c.fillStyle = T.velHi; c.fillRect(0, vy + 1, w, 1);
-    var curveLane = this.laneParam === 'pitd' || this.laneParam === 'dyn';
+    var curveLane = this.laneParam === 'pitd' || this.laneParam === 'dyn' || this.laneParam === 'effort';
     if (curveLane) this._drawParamCurve(T);
     if (!curveLane && cons) {
       // 默认 100 的参考线：线上更快更短，线下更慢更长。
@@ -1089,7 +1089,7 @@
     c.fillStyle = T.rulerBottom; c.fillRect(0, this.rulerH - 1, w, 1);
     c.fillStyle = T.rulerLabel; c.font = '11px Tahoma, sans-serif'; c.fillText(tr('roll.canvas.bar', '小节'), 10, 17);
     // 参数窗标签（同 VOCALOID 的参数切换）：当前参数高亮，点击切换。
-    ['vel', 'cons', 'pitd', 'dyn'].forEach(function (key, i) {
+    ['vel', 'cons', 'pitd', 'dyn', 'effort'].forEach(function (key, i) {
       var ty = vy + 4 + i * 24, on = self.laneParam === key;
       var stops = on ? (key === 'cons' ? T.btnConsOn : T.btnVelOn) : T.btnOff;
       var btnGrad = fillStops(c.createLinearGradient(0, ty, 0, ty + 22), stops);
@@ -1103,7 +1103,7 @@
       c.strokeStyle = on ? (key === 'cons' ? T.btnConsStroke : T.btnVelStroke) : T.btnOffStroke;
       c.lineWidth = 1; c.stroke();
       c.fillStyle = on ? T.btnTextOn : T.btnTextOff; c.font = '11px Tahoma, sans-serif';
-      c.fillText(key === 'cons' ? tr('roll.canvas.consSpeed', '辅音速度') : key.toUpperCase(), 7, ty + 15);
+      c.fillText(key === 'cons' ? tr('roll.canvas.consSpeed', '辅音速度') : key === 'effort' ? tr('tune.effort', '轻重') : key.toUpperCase(), 7, ty + 15);
     });
     c.save(); c.beginPath(); c.rect(kbW, 0, w - kbW, this.rulerH); c.clip();
     for (var rb = Math.floor(this.scrollBeat); rb <= this.xBeat(w); rb++) {
@@ -1352,7 +1352,7 @@
     // pronunciation, but their current values must reach the displayed model.
     var byId = Object.create(null);
     this.notes.forEach(function (n) { byId[n.id] = n; });
-    var fields = ['pitch', 'pitchJoin', 'pitchPoints', 'pb', 'vib', 'vibrato', 'vel', 'gain', 'gainPoints'];
+    var fields = ['pitch', 'pitchJoin', 'pitchPoints', 'pb', 'vib', 'vibrato', 'vel', 'gain', 'gainPoints', 'effortPoints'];
     this._cachedPhoneNotes.forEach(function (resolved) {
       var source = byId[resolved.id];
       if (!source) return;
@@ -1565,7 +1565,7 @@
     c.save(); c.beginPath(); c.rect(this.kbW, top + 1, this.w - this.kbW, this.velLane - 1); c.clip();
     c.font = '10px Tahoma, sans-serif'; c.fillStyle = pal.btnTextOff;
     c.fillText(key === 'pitd' ? tr('roll.canvas.pitdHint', 'PITD · 相对音高（音分）· 滚轮缩放') :
-      tr('roll.canvas.dynHint', 'DYN · 音量包络（%）· 100 = 原始音量'), this.kbW + 6, top + 14);
+      key === 'effort' ? tr('roll.canvas.effortHint', '轻重 · 0 轻唱 / 100 自然 / 200 重唱') : tr('roll.canvas.dynHint', 'DYN · 音量包络（%）· 100 = 原始音量'), this.kbW + 6, top + 14);
     var step = Math.max(0.25, Math.pow(2, Math.ceil(Math.log(20 / this.pxBeat) / Math.LN2)));
     for (var b = Math.ceil(this.scrollBeat / step) * step; b <= this.xBeat(this.w); b += step) {
       var x = this.beatX(b);
@@ -1598,8 +1598,10 @@
       if (!NSG.TUNING.hasPitch(n)) return;
       var from = Math.max(self.kbW, self.beatX(n.start)), to = Math.min(self.w, self.beatX(n.start + n.dur));
       if (to < from) return;
-      drawLine(from, to, (n.gainPoints || []).map(function (p) { return n.start + p[0] * n.dur; }), function (b) {
-        return NSG.TUNING.noteGain(n, (b - n.start) / n.dur) * 100;
+      var points = key === 'effort' ? n.effortPoints : n.gainPoints;
+      drawLine(from, to, (points || []).map(function (p) { return n.start + p[0] * n.dur; }), function (b) {
+        var u = (b - n.start) / n.dur;
+        return 100 * (key === 'effort' ? NSG.TUNING.envelopeAt(points, u) : NSG.TUNING.noteGain(n, u));
       }, self.sel[n.id] ? pal.velBarSel : pal.velBar);
     });
     c.restore();
@@ -1615,7 +1617,8 @@
       if (!T.hasPitch(n) || n.start + n.dur <= lo || n.start >= hi) return;
       var from = Math.max(lo, n.start), to = Math.min(hi, n.start + n.dur);
       var u0 = (from - n.start) / n.dur, u1 = (to - n.start) / n.dur;
-      T.replaceNoteGainSpan(n, u0, u1, [[u0, erase ? 1 : valueAt(from) / 100], [u1, erase ? 1 : valueAt(to) / 100]], feather / n.dur);
+      var replace = key === 'effort' ? T.replaceNoteEffortSpan : T.replaceNoteGainSpan;
+      replace(n, u0, u1, [[u0, erase ? 1 : valueAt(from) / 100], [u1, erase ? 1 : valueAt(to) / 100]], feather / n.dur);
       if (this.drag && this.drag.touched) this.drag.touched[n.id] = n;
     }, this);
   };
@@ -1625,6 +1628,7 @@
       if (all || !picked.length) this.pit = [];
       else list.forEach(function (n) { this.pit = T.replacePitSpan(this.pit, n.start, n.start + n.dur, []); }, this);
     } else if (key === 'dyn') list.forEach(function (n) { delete n.gain; delete n.gainPoints; });
+    else if (key === 'effort') list.forEach(function (n) { delete n.effortPoints; });
     this._emit();
   };
   PianoRoll.prototype._centsAt = function (n, rel, info, withVib) {
@@ -1978,7 +1982,7 @@
       }
       if (p.x < self.kbW && p.y > self.h - self.velLane && e.button === 0) {
         var laneIndex = Math.floor((p.y - (self.h - self.velLane) - 4) / 24);
-        self.setLaneParam(['vel', 'cons', 'pitd', 'dyn'][laneIndex]);
+        self.setLaneParam(['vel', 'cons', 'pitd', 'dyn', 'effort'][laneIndex]);
         return;
       }
       if (p.x < self.kbW) {   // 键区不参与编辑
@@ -2028,7 +2032,7 @@
       }
 
       if (inVel) {
-        if (self.laneParam === 'pitd' || self.laneParam === 'dyn') {
+        if (self.laneParam === 'pitd' || self.laneParam === 'dyn' || self.laneParam === 'effort') {
           if (self.activeTrackVisible === false || (e.button !== 0 && e.button !== 2)) return;
           var laneVal = self._laneValue(p.y, self.laneParam), laneBeat = Math.max(0, beat);
           self.drag = { mode: 'paramBrush', key: self.laneParam, erase: e.button === 2 || !!e.shiftKey,
@@ -2257,8 +2261,9 @@
       if (wasBrush && brushMoved && (!wasParam || self.drag.key === 'pitd') && !self.drag.erase && NSG.TUNING && NSG.TUNING.fitPit) {
         self.pit = NSG.TUNING.fitPit(self.pit, 0.35);
       }
-      if (wasParam && brushMoved && self.drag.key === 'dyn') Object.keys(self.drag.touched).forEach(function (id) {
-        NSG.TUNING.fitNoteGain(self.drag.touched[id]);
+      if (wasParam && brushMoved && self.drag.key !== 'pitd') Object.keys(self.drag.touched).forEach(function (id) {
+        if (self.drag.key === 'effort') NSG.TUNING.fitNoteEffort(self.drag.touched[id]);
+        else NSG.TUNING.fitNoteGain(self.drag.touched[id]);
       });
       self.drag = null;
       var changed = false;
@@ -2360,7 +2365,7 @@
 
   PianoRoll.prototype._hoverCursor = function (p) {
     if (p && p.y > this.h - this.velLane) return p.x < this.kbW ? 'pointer' :
-      this.laneParam === 'pitd' || this.laneParam === 'dyn' ? 'crosshair' : 'ns-resize';
+      this.laneParam === 'pitd' || this.laneParam === 'dyn' || this.laneParam === 'effort' ? 'crosshair' : 'ns-resize';
     if (this.tool !== 'select' || !p) return '';
     if (p.y < this.rulerH) return 'ew-resize';
     var gridH = this.gridBottom();
@@ -2434,7 +2439,7 @@
       n.consonantLength != null ? T.speedFromLength(n.consonantLength) : 100;
   };
   PianoRoll.prototype.setLaneParam = function (key) {
-    if (['vel', 'cons', 'pitd', 'dyn'].indexOf(key) < 0 || this.drag) return;
+    if (['vel', 'cons', 'pitd', 'dyn', 'effort'].indexOf(key) < 0 || this.drag) return;
     this.laneParam = key;
     if (this.onLaneParam) this.onLaneParam(key);
     this.requestDraw();

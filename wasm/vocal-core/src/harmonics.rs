@@ -621,6 +621,8 @@ impl VocalSource {
         air_power: f64,
         air_fraction: f64,
         air_trim_gain: f64,
+        effort: f64,
+        endpoint: &[f64],
         refine: bool,
         tract_join: bool,
         sb: f64,
@@ -652,7 +654,7 @@ impl VocalSource {
             return;
         }
         let f6 = pairs[5].0;
-        let use_hnm = pb > 0.0 && has_air;
+        let use_hnm = (pb > 0.0 || effort != 0.0) && has_air;
         let old_start = if tract_join { (f6 - 150.0).clamp(3800.0, 6000.0) } else { 6000.0 };
         let new_start = (f6 * 0.85).clamp(3600.0, 6200.0);
         let start = if sb >= 1.0 { new_start } else if sb <= 0.0 { old_start } else { old_start.min(new_start) };
@@ -685,8 +687,16 @@ impl VocalSource {
         let has_out_eq = compensate_eq && gl.has_out_eq;
         let out_eq_slice = if has_out_eq { gl.out_eq_slice() } else { &[] };
         let two_pi_over_sr = 2.0 * PI / rc.sr;
+        let effort_norm = (source_tilt / 2.5).clamp(-1.0, 1.0);
+        let max_frac = 0.72 + (0.86 - 0.72) * pb;
+        let effort_slope = 0.28 + (0.22 - 0.28) * pb;
+        let base_fraction = if has_air {
+            (air_fraction * (1.0 - effort_slope * effort_norm)).clamp(0.03, max_frac)
+        } else {
+            0.0
+        };
         let hnm_start = (f6 * 0.86).clamp(5000.0, 6000.0);
-        let hnm_span = 5000.0;
+        let hnm_span = 7500.0;
         let dw = two_pi_over_sr * f0;
         let w_start = dw * ((k_start + 1) as f64);
         let cw_step = dw.cos();
@@ -706,8 +716,13 @@ impl VocalSource {
             let mut coh = 1.0;
             if use_hnm && hz > hnm_start {
                 let xt = ((hz - hnm_start) / hnm_span).min(1.0);
-                let hnm_coh = (1.0 - xt * xt * (3.0 - 2.0 * xt)).max(0.0);
+                let hnm_coh = 0.22 + 0.78 * (1.0 - xt * xt * (3.0 - 2.0 * xt)).max(0.0);
                 coh = 1.0 - pb * (1.0 - hnm_coh);
+            }
+            if has_air && effort != 0.0 {
+                let (band, u) = if hz < 7000.0 { (0, (hz - 5000.0) / 2000.0) } else { (1, (hz - 7000.0) / 3000.0) };
+                let residual = endpoint[band] + u.clamp(0.0, 1.0) * (endpoint[band + 1] - endpoint[band]);
+                coh = (coh * coh + effort.abs() * ((1.0 - residual) / (1.0 - base_fraction) - coh * coh)).max(0.0).sqrt();
             }
             let ft = self.full_target[k];
             let a_base = ft * a_shape;
@@ -731,26 +746,21 @@ impl VocalSource {
             gl, compensate_eq, harm_octaves, legacy_sound,
         );
         let colour = (3.0 * (pairs[1].0.max(200.0) / 1500.0).log2()).clamp(-5.0, 3.0);
-        let level_db = (if wideband { -40.0 } else { -36.0 })
+        let level_db = (if wideband { -32.5 } else { -36.0 })
             + 10.0 * strength
             + (eff_tilt * 0.5).clamp(-4.0, 3.0)
             + colour
             + 2.0 * source_tilt;
         let budget = body_power.max(0.0) * (level_db * LOG10_OVER_10).exp();
-        let effort_norm = (source_tilt / 2.5).clamp(-1.0, 1.0);
-        let max_frac = 0.72 + (0.86 - 0.72) * pb;
-        let effort_slope = 0.28 + (0.22 - 0.28) * pb;
-        let base_fraction = if has_air {
-            (air_fraction * (1.0 - effort_slope * effort_norm)).clamp(0.03, max_frac)
-        } else {
-            0.0
-        };
         let cal_base = if use_hnm { shape_only_power } else { power };
         let cal_smooth = shape_only_power.max(ref_power * 0.90);
         let cal_power = if sb >= 1.0 { cal_smooth } else if sb <= 0.0 { cal_base } else { cal_base + (cal_smooth - cal_base) * sb };
-        let coh_ratio = if use_hnm && shape_only_power > 1e-30 { (power / shape_only_power).min(1.0) } else { 1.0 };
+        let coh_ratio = if use_hnm && shape_only_power > 1e-30 { power / shape_only_power } else { 1.0 };
         let fraction = if has_air {
-            if use_hnm { base_fraction.max(1.0 - (1.0 - base_fraction) * coh_ratio) } else { base_fraction }
+            if use_hnm {
+                let floor = if effort != 0.0 { 0.0 } else { base_fraction };
+                floor.max(1.0 - (1.0 - base_fraction) * coh_ratio)
+            } else { base_fraction }
         } else {
             0.0
         };

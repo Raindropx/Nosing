@@ -459,10 +459,11 @@
     if (!modeBEqProfiles) {
       modeBEqProfiles = Object.create(null);
       ['f1', 'f2'].forEach(function (id) {
-        var original = NSG.presetTimbre(id).outEq, anchor = NSG.outEqDbAt(original, 3500), curve = [];
+        var original = NSG.presetTimbre(id).outEq, anchor = Math.min(0, NSG.outEqDbAt(original, 3500)), curve = [];
         for (var i = 0; i < 64; i++) {
           var hz = 50 * Math.pow(400, i / 63), old = NSG.outEqDbAt(original, hz);
-          curve.push(hz <= 3500 ? old : Math.max(old, anchor - 6 * Math.log2(hz / 3500)));
+          var tail = anchor - 6 * Math.log2(hz / 3500);
+          curve.push(hz <= 3500 ? old : (old > 0 ? Math.min(old, tail) : Math.max(old, tail)));
         }
         modeBEqProfiles[original.join(',')] = curve;
       });
@@ -470,7 +471,14 @@
     return modeBEqProfiles[t.outEq.join(',')] || null;
   };
 
+  // Soft and strong endpoints: residual power at 5, 7 and 10 kHz, then
+  // amplitude modulation depth of the upper-band residual per glottal cycle.
+  NSG.defaultEffortProfile = [0.68, 0.86, 0.96, 0.14, 0.10, 0.23, 0.45, 0.68];
+  NSG.validEffortProfile = function (p) {
+    return Array.isArray(p) && p.length === 8 && p.every(function (v) { return Number.isFinite(v) && v >= 0 && v <= 1; });
+  };
   NSG.validateBlock = function (t) {
+    if (t && t.effortProfile !== undefined && !NSG.validEffortProfile(t.effortProfile)) return '轻重音色参数需要 8 个 0–1 的有限数值';
     if (!t || typeof t !== 'object') return '参数块格式错误';
     if (!(t.height >= 110 && t.height <= 210)) return '身高越界（110–210）';
     if (t.gen !== undefined && (typeof t.gen !== 'number' || !isFinite(t.gen) || t.gen < 0 || t.gen > 127)) return 'GEN 越界（0–127）';

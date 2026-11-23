@@ -389,7 +389,7 @@
       }
       var color = (nMid ? eMid / nMid : 0) - (nLow ? eLow / nLow : 0);
       rawFrames.push({
-        time: level.off / SR, f0: f0, clarity: corr[period], glide: glide, color: color,
+        time: level.off / SR, rms: level.rms, f0: f0, clarity: corr[period], glide: glide, color: color,
         hz: hz, db: db, weight: weight, trig: trig
       });
     });
@@ -867,6 +867,132 @@
     return best + (den < 0 ? 0.5 * (corr[i - 1] - corr[i + 1]) / den : 0);
   }
 
+  // Compare aligned cycles at the same phase. The mean retains coherent
+  // harmonics; the variance estimates noise after correcting for sample count.
+  function measureEffortWindow(pcm, rate, fr, noiseFloor) {
+    var period = rate / fr.f0, cycles = Math.min(12, Math.floor(0.060 * fr.f0));
+    if (cycles < 6) return null;
+    var start = Math.round((fr.time + 0.032) * rate - cycles * period / 2);
+    if (start < 0 || start + cycles * period + 1 >= pcm.length) return null;
+    // A sub-sample F0 error accumulates rapidly at the 50th harmonic.
+    // Refine over several periods in the original wideband window before folding.
+    var span = Math.floor(cycles / 2), expected = span * period;
+    var first = Math.floor(expected * 0.99) - 1, last = Math.ceil(expected * 1.01) + 1;
+    var corr = [], peak = 0, length = Math.floor(period * cycles) - last;
+    for (var lag = first; lag <= last; lag++) {
+      var ab = 0, aa = 0, bb = 0;
+      for (var i = 0; i < length; i += 2) {
+        var a = pcm[start + i], b = pcm[start + i + lag];
+        ab += a * b; aa += a * a; bb += b * b;
+      }
+      corr.push(ab / Math.sqrt(Math.max(1e-30, aa * bb)));
+      if (corr[corr.length - 1] > corr[peak]) peak = corr.length - 1;
+    }
+    if (!peak || peak === corr.length - 1 || corr[peak] < 0.84) return null;
+    var curvature = corr[peak-1] - 2 * corr[peak] + corr[peak+1];
+    var delta = curvature < 0 ? 0.5 * (corr[peak-1] - corr[peak+1]) / curvature : 0;
+    period = (first + peak + clamp(delta, -0.5, 0.5)) / span;
+    if (start + cycles * period + 1 >= pcm.length) return null;
+    var f0 = rate / period, size = 64;
+    while (size * f0 < 26000) size *= 2;
+    var spectra = [], meanR = new Float64Array(size), meanI = new Float64Array(size);
+    for (var c = 0; c < cycles; c++) {
+      var re = new Float64Array(size), im = new Float64Array(size);
+      for (var j = 0; j < size; j++) {
+        var pos = start + (c + j / size) * period, lo = Math.floor(pos);
+        re[j] = pcm[lo] + (pcm[lo + 1] - pcm[lo]) * (pos - lo);
+      }
+      NSG.fft(re, im);
+      spectra.push([re, im]);
+      for (var k = 0; k < size; k++) { meanR[k] += re[k] / cycles; meanI[k] += im[k] / cycles; }
+    }
+    var totals = [0, 0, 0], noise = [0, 0, 0], phasePower = new Float64Array(size);
+    spectra.forEach(function (spec) {
+      var re = spec[0], im = spec[1];
+      for (var k = 0; k < size; k++) {
+        var hz = Math.min(k, size - k) * f0;
+        if (hz < 4000 || hz >= 12000) { re[k] = im[k] = 0; continue; }
+        var b = hz < 6000 ? 0 : hz < 8000 ? 1 : 2;
+        totals[b] += re[k] * re[k] + im[k] * im[k];
+        re[k] -= meanR[k]; im[k] -= meanI[k];
+        noise[b] += re[k] * re[k] + im[k] * im[k];
+        im[k] = -im[k];
+      }
+      NSG.fft(re, im);
+      for (var j = 0; j < size; j++) phasePower[j] += re[j] * re[j];
+    });
+    var floor = cycles * size * size * Math.max(1e-12, fr.rms * fr.rms * 1e-7);
+    var result = totals.map(function (total, b) {
+      return total > Math.max(floor, cycles * size * size * noiseFloor[b] * 4) ? clamp(noise[b] * cycles / ((cycles - 1) * total), 0, 1) : null;
+    });
+    var sum = 0, x = 0, y = 0;
+    for (var j = 0; j < size; j++) {
+      var angle = 2 * Math.PI * j / size;
+      sum += phasePower[j]; x += phasePower[j] * Math.cos(angle); y += phasePower[j] * Math.sin(angle);
+    }
+    var depth = null;
+    if (result.every(Number.isFinite) && sum > size * floor && noise.reduce(function (a, b) { return a + b; }, 0) > floor) {
+      var moment = Math.hypot(x, y) / sum, error = Infinity;
+      for (var d = 0; d <= 100; d++) {
+        var a0 = 1 - 0.625 * d / 100, a1 = 0.5 * d / 100, a2 = 0.125 * d / 100;
+        var predicted = a1 * (2 * a0 + a2) / (2 * a0 * a0 + a1 * a1 + a2 * a2);
+        if (Math.abs(moment - predicted) < error) { error = Math.abs(moment - predicted); depth = d / 100; }
+      }
+    }
+    return result.concat([depth]);
+  }
+  function effortNoiseFloor(pcm, rate, voiceRms) {
+    var size = 1024, bands = [[], [], []];
+    var hop = Math.max(size, Math.ceil(pcm.length / 200));
+    for (var off = 0; off + size <= pcm.length; off += hop) {
+      var sum = 0;
+      for (var i = 0; i < size; i++) sum += pcm[off + i] * pcm[off + i];
+      if (sum / size > voiceRms * voiceRms * 0.0016) continue;
+      var re = new Float64Array(size), im = new Float64Array(size), power = [0, 0, 0];
+      for (var j = 0; j < size; j++) re[j] = pcm[off + j] * (0.5 - 0.5 * Math.cos(2 * Math.PI * j / size));
+      NSG.fft(re, im);
+      for (var k = 1; k < size / 2; k++) {
+        var hz = k * rate / size;
+        if (hz >= 4000 && hz < 12000) power[hz < 6000 ? 0 : hz < 8000 ? 1 : 2] += re[k] * re[k] + im[k] * im[k];
+      }
+      power.forEach(function (p, b) { bands[b].push(2 * p / (0.375 * size * size)); });
+    }
+    return bands.map(function (p) { return p.length >= 3 ? median(p) : 0; });
+  }
+  function fitEffortProfile(pcm, rate, frames, labels, timbre) {
+    // Compare different levels only within the same vowel and approximate
+    // semitone. A recording without contrasting takes keeps the stock endpoints.
+    var groups = new Map(), soft = [], strong = [];
+    var noiseFloor = effortNoiseFloor(pcm, rate, median(frames.map(function (f) { return f.rms; })));
+    frames.forEach(function (f, i) {
+      if (f.clarity < 0.85 || f.glide > 0.02) return;
+      var key = labels[i] + '/' + Math.round(12 * Math.log2(f.f0 / 440));
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(f);
+    });
+    groups.forEach(function (group) {
+      var n = Math.floor(group.length / 3);
+      if (n < 2) return;
+      group.sort(function (a, b) { return a.rms - b.rms; });
+      var low = group.slice(0, n), high = group.slice(-n);
+      if (high[0].rms < low[n - 1].rms * 1.58) return;
+      [low, high].forEach(function (list, i) {
+        list.forEach(function (f) {
+          var measured = measureEffortWindow(pcm, rate, f, noiseFloor);
+          if (measured) (i ? strong : soft).push(measured);
+        });
+      });
+    });
+    var profile = NSG.defaultEffortProfile.slice(), usable = false;
+    for (var b = 0; b < 4; b++) {
+      var pair = [soft, strong].map(function (rows) { return rows.map(function (r) { return r[b]; }).filter(Number.isFinite); });
+      if (pair[0].length < 3 || pair[1].length < 3) continue;
+      pair.forEach(function (values, i) { profile[i * 4 + b] = +median(values).toFixed(3); });
+      usable = true;
+    }
+    if (usable) timbre.effortProfile = profile;
+  }
+
   function fitPitchTexture(pcm, train, t) {
     var jitter = [], rates = [], depths = [], previousEnd = -1;
     train.forEach(function (fr) {
@@ -1255,6 +1381,7 @@
       abs = calibrateEq(t, cal, pcm, SR, false);
       fitConsonants(pcm, t, cal);
       if (opts && opts.widePcm) {
+        fitEffortProfile(opts.widePcm, opts.wideRate, train, fitted.labels, t);
         wide = calibrateEq(t, cal, opts.widePcm, opts.wideRate, true);
       }
     }

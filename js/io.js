@@ -3879,6 +3879,15 @@
   IO.loadProject = function (text) {
     var j = JSON.parse(String(text).replace(/^\uFEFF/, ''));
     if (j.format !== 'NSG-SCORE') throw new Error('不是 NSG 工程文件');
+    var tracks = j.score && Array.isArray(j.score.tracks) ? j.score.tracks : [];
+    tracks.forEach(function (track) {
+      if (!track || !Array.isArray(track.notes)) return;
+      track.notes.forEach(function (note) {
+        if (!note || note.effortPoints === undefined) return;
+        var points = NSG.TUNING.effortPoints(note.effortPoints);
+        if (points.length) note.effortPoints = points; else delete note.effortPoints;
+      });
+    });
     return j;
   };
 

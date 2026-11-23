@@ -47,6 +47,11 @@ pub extern "C" fn vocal_init() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn vocal_cfg_len() -> u32 {
+    render::CONFIG_LEN as u32
+}
+
+#[no_mangle]
 pub extern "C" fn vocal_cfg_ptr() -> *mut f64 {
     engine().cfg_buf.as_mut_ptr()
 }

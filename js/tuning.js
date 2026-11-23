@@ -8,10 +8,10 @@
   function value(x, fallback) { return Number.isFinite(+x) && x !== null && x !== undefined ? +x : fallback; }
   // Imported mix automation is independent of VEL (which also changes voice colour).
   // Positions are fractions of a note, so moving/resizing notes preserves the envelope.
-  function gainPoints(input) {
+  function envelopePoints(input, maxValue) {
     var sorted = (Array.isArray(input) ? input : []).filter(function (p) {
       return Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]);
-    }).map(function (p) { return [clamp(p[0], 0, 1), clamp(p[1], 0, 16)]; })
+    }).map(function (p) { return [clamp(p[0], 0, 1), clamp(p[1], 0, maxValue)]; })
       .sort(function (a, b) { return a[0] - b[0]; });
     var out = [];
     sorted.forEach(function (p) {
@@ -20,37 +20,48 @@
     });
     return out;
   }
+  function gainPoints(input) { return envelopePoints(input, 16); }
+  function effortPoints(input) { return envelopePoints(input, 2); }
   function noteGain(note, u) {
-    var g = clamp(value(note.gain, 1), 0, 16), pts = note.gainPoints;
-    if (!pts || !pts.length) return g;
-    if (u <= pts[0][0]) return g * pts[0][1];
+    return clamp(value(note.gain, 1), 0, 16) * envelopeAt(note.gainPoints, u);
+  }
+  function envelopeAt(pts, u) {
+    if (!pts || !pts.length) return 1;
+    if (u <= pts[0][0]) return pts[0][1];
     var last = pts.length - 1;
-    if (u >= pts[last][0]) return g * pts[last][1];
+    if (u >= pts[last][0]) return pts[last][1];
     var lo = 0, hi = last;
     while (lo + 1 < hi) { var mid = (lo + hi) >> 1; if (pts[mid][0] <= u) lo = mid; else hi = mid; }
     var a = pts[lo], b = pts[hi];
-    return g * (a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0]));
+    return a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0]);
   }
   // Edit the audible DYN envelope while preserving imported gain outside the stroke.
   // Both coordinates and feather are fractions of the note; a zero-gain note can be raised again.
-  function replaceNoteGainSpan(note, from, to, points, feather) {
+  function replaceEnvelopeSpan(old, from, to, points, feather, maxValue, base) {
     from = clamp(from, 0, 1); to = clamp(to, from, 1);
     feather = Math.max(0.00001, value(feather, 0.005));
     var left = Math.max(0, from - feather), right = Math.min(1, to + feather);
-    var base = clamp(value(note.gain, 1), 0, 16);
-    var old = gainPoints(note.gainPoints).map(function (p) { return [p[0], p[1] * base]; });
-    var next = old.filter(function (p) { return p[0] < left || p[0] > right; });
-    if (left > 0) next.push([0, noteGain(note, 0)]);
-    if (right < 1) next.push([1, noteGain(note, 1)]);
-    if (from > 0) next.push([left, noteGain(note, left)]);
-    if (to < 1) next.push([right, noteGain(note, right)]);
-    points.forEach(function (p) { next.push([clamp(p[0], from, to), clamp(p[1], 0, 256)]); });
+    function at(u) { return base * envelopeAt(old, u); }
+    var next = old.filter(function (p) { return p[0] < left || p[0] > right; }).map(function (p) { return [p[0], p[1] * base]; });
+    if (left > 0) next.push([0, at(0)]);
+    if (right < 1) next.push([1, at(1)]);
+    if (from > 0) next.push([left, at(left)]);
+    if (to < 1) next.push([right, at(right)]);
+    points.forEach(function (p) { next.push([clamp(p[0], from, to), clamp(p[1], 0, maxValue)]); });
     next.sort(function (a, b) { return a[0] - b[0]; });
     var dedup = [];
     next.forEach(function (p) {
       if (dedup.length && Math.abs(p[0] - dedup[dedup.length - 1][0]) < 1e-9) dedup[dedup.length - 1] = p;
       else dedup.push(p);
     });
+    return dedup;
+  }
+  function replaceNoteEffortSpan(note, from, to, points, feather) {
+    note.effortPoints = replaceEnvelopeSpan(effortPoints(note.effortPoints), from, to, points, feather, 2, 1);
+  }
+  function replaceNoteGainSpan(note, from, to, points, feather) {
+    var base = clamp(value(note.gain, 1), 0, 16);
+    var dedup = replaceEnvelopeSpan(gainPoints(note.gainPoints), from, to, points, feather, 256, base);
     var maxGain = dedup.reduce(function (m, p) { return Math.max(m, p[1]); }, 1);
     var factor = Math.max(1, maxGain / 16);
     if (factor === 1) delete note.gain; else note.gain = factor;
@@ -60,6 +71,10 @@
     if (!note.gainPoints) return;
     note.gainPoints = fitPitSpan(gainPoints(note.gainPoints), 0.0001);
     if (note.gainPoints.every(function (p) { return Math.abs(p[1] - 1) < 1e-9; })) delete note.gainPoints;
+  }
+  function fitNoteEffort(note) {
+    note.effortPoints = fitPitSpan(effortPoints(note.effortPoints), 0.001);
+    if (note.effortPoints.every(function (p) { return Math.abs(p[1] - 1) < 1e-9; })) delete note.effortPoints;
   }
   function consonantLength(x) { return clamp(value(x, 100), 25, 200); }
   /* 辅音速度（与 UTAU 的 Velocity 同义）：0–200，默认 100，越大辅音越短。
@@ -1544,6 +1559,53 @@
     }
     commitBalanceState(state);
   }
+  // Probe the current singer once per occupied register. Measure upper/body
+  // energy on a sustained vowel; relative dB cancels playback gain and VEL.
+  function effortCalibration(notes, targets, options) {
+    var registers = new Map();
+    if (!NSG.DSP || !NSG.DSP.render) return registers;
+    function register(pitch) { return clamp(Math.round(pitch / 12), 3, 7); }
+    notes.forEach(function (n) {
+      if (hasPitch(n) && (!targets || targets.has(n))) registers.set(register(n.pitch), []);
+    });
+    var probes = [];
+    registers.forEach(function (levels, key) {
+      [0, 1, 2].forEach(function (level) {
+        probes.push({ id: 'effort' + probes.length, start: probes.length * 0.48, dur: 0.36, pitch: key * 12,
+          lyric: 'a', phones: ['a'], vel: 96, vib: 0, effortPoints: [[0, level]] });
+      });
+    });
+    if (!probes.length) return registers;
+    var audio = NSG.DSP.render({ lang: 'zh', tempo: 60, tracks: [{ type: 'vocal', notes: probes }] },
+      options.timbre || NSG.defaultTimbre(), { hd: !!options.hd, rawSource: !!options.rawSource,
+        modeBFricWaveguide: options.modeBFricWaveguide, modeBHighPolish: options.modeBHighPolish });
+    var size = audio.sr > 16000 ? 2048 : 1024;
+    probes.forEach(function (n) {
+      var re = new Float64Array(size), im = new Float64Array(size), low = 0, high = 0;
+      var offset = Math.round((n.start + 0.18) * audio.sr);
+      for (var i = 0; i < size; i++) re[i] = audio.pcm[offset + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / size));
+      NSG.fft(re, im);
+      for (var k = 1; k < size / 2; k++) {
+        var hz = k * audio.sr / size, power = re[k] * re[k] + im[k] * im[k];
+        if (hz >= 250 && hz < 1800) low += power;
+        if (hz >= 2500 && hz <= 12000) high += power;
+      }
+      registers.get(register(n.pitch)).push(10 * Math.log10((high + 1e-20) / (low + 1e-20)));
+    });
+    return registers;
+  }
+
+  // Closest predicted colour to the style target, regularized toward the drawn
+  // gesture when the singer has little response in this pitch register.
+  function calibratedEffort(gesture, levels) {
+    var prior = clamp(gesture, -1, 1);
+    if (!levels || !prior) return 1 + prior;
+    var slope = prior < 0 ? levels[1] - levels[0] : levels[2] - levels[1];
+    if (!(slope > 0)) return 1 + prior;
+    var best = prior * (5 * slope + 4) / (slope * slope + 4);
+    return 1 + clamp(best, -1, 1);
+  }
+
   // Mutate only requested fields on the supplied target notes. All notes provide
   // phrase/transition context, including unselected notes and rests.
   // options.seed picks a take (same seed = same result); options.human (0–1) scales the
@@ -1558,13 +1620,15 @@
     var pit = options.pit !== false, vib = options.vibrato !== false, vel = options.vel !== false;
     var seed = Math.floor(value(options.seed, 0)), human = clamp(value(options.human, 0.6), 0, 1);
     var expression = clamp(value(options.expression, 1), 0, 1.5);
-    if (!pit && !vib && !vel) return 0;
+    var effort = options.effort === true;
+    if (!pit && !vib && !vel && !effort) return 0;
     var track = options.track || (score && Array.isArray(score.tracks)
       ? score.tracks.filter(function (t) { return t && t.notes === notes; })[0]
       : null);
     if (!track && Number.isInteger(options.trackIndex) && score && Array.isArray(score.tracks)) {
       track = score.tracks[options.trackIndex] || null;
     }
+    var effortLevels = effort && expression ? effortCalibration(sorted, targets, options) : null;
     var trackPit = pit && track ? pitPoints(track.pit) : [];
     sorted.forEach(function (n, i) {
       if ((targets && !targets.has(n)) || !hasPitch(n)) return;
@@ -1741,6 +1805,20 @@
         n.vibrato = vibrato({ enabled: on && length > 0, length: length, depth: depth, rate: rate,
           fadeIn: clamp(vary(style.fadeIn, 0.3), 10, 80), fadeOut: fadeOut, phase: phase });
       }
+      if (effort) {
+        // Style and melodic stress set the target effort. Enter repeated/slurred notes
+        // gently, support sustained notes, and relax the end of each phrase.
+        var body = (style.vel - 96) / 43 + (crest ? 0.20 : 0);
+        var spread = style.accent / 9;
+        var onset = body + (n.slur ? 0 : phraseStart ? -0.24 : 0.10) * spread;
+        var sustain = body + 0.18 * Math.min(1, duration / 0.8) * spread;
+        var end = body - (phraseEnd ? 0.40 : 0.06) * spread;
+        var levels = effortLevels && effortLevels.get(clamp(Math.round(n.pitch / 12), 3, 7));
+        function level(x) { return Math.round(100 * calibratedEffort(expression * x, levels)) / 100; }
+        n.effortPoints = [[0, level(onset)], [at(Math.min(0.12, duration * 0.3)) / n.dur, level(body)],
+          [at(duration * 0.65) / n.dur, level(sustain)], [1, level(end)]];
+        fitNoteEffort(n);
+      }
       if (vel) {
         var beat = ((n.start % 4) + 4) % 4;
         var accent = beat < 0.02 ? 1 : Math.abs(beat - 2) < 0.02 ? 0.5 : -0.35;
@@ -1764,6 +1842,7 @@
     return count;
   }
   NSG.TUNING = { pitchShapes: pitchShapes, pitchShape: pitchShape, clamp: clamp, points: points, interp: interp, vibrato: vibrato, consonantLength: consonantLength,
+    effortPoints: effortPoints, envelopeAt: envelopeAt, replaceNoteEffortSpan: replaceNoteEffortSpan, fitNoteEffort: fitNoteEffort,
     gainPoints: gainPoints, noteGain: noteGain, replaceNoteGainSpan: replaceNoteGainSpan, fitNoteGain: fitNoteGain,
     consonantSpeed: consonantSpeed, speedFromLength: speedFromLength, consonantScale: consonantScale,
     autoStyles: autoStyles, autoTune: autoTune, fitPitch: fitPitch, simplifyPitch: simplifyPitch,

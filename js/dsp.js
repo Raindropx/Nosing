@@ -2362,7 +2362,7 @@
     }
 
     var ci = 0, noteIdx = 0, velocity = 1, mixGain = 1, lastF0 = NSG.mtof(curMidi);
-    var effortTilt = 0, effortAlpha = 1 - Math.exp(-dt / 0.025);
+    var sungEffort = 0, effortTilt = 0, effortAlpha = 1 - Math.exp(-dt / 0.025);
     var orgAmt = clampUnit(organicAmt);
     var humAmt = clampUnit(humanizeAmt);
     var org = null, orgGate = 0, orgVoicedSec = 0, orgGateAlpha = 1 - Math.exp(-dt / 0.030);
@@ -2675,6 +2675,9 @@
       }
 
       var voicedNote = active && !active._rest && !active._breath;
+      var requestedEffort = voicedNote && active.effortPoints ? NSG.TUNING.envelopeAt(active.effortPoints, rel) - 1 : 0;
+      sungEffort += (requestedEffort - sungEffort) * effortAlpha;
+      if (Math.abs(sungEffort) < 1e-6 && !requestedEffort) sungEffort = 0;
       var vibNorm = vc ? Math.max(-1, Math.min(1, vc / 35)) : 0;
       var orgTremolo = 1, orgTiltMod = 0, orgAirMod = 1;
       if (org) {
@@ -2699,7 +2702,7 @@
       if (humAmt > 0) {
         var tgtRd = curAv >= 1e-3 ? humCurRd : humBaseRd;
         if (voicedNote) {
-          tgtRd = humBaseRd;
+          tgtRd = humBaseRd - 0.65 * sungEffort;
           humEndTaper = 1;
           humBreathBoost = 1;
           var hVel = NSG.TUNING.clamp(Number.isFinite(+active.vel) && active.vel != null ? +active.vel : 96, 1, 127);
@@ -2774,6 +2777,7 @@
       }
       // Keep guardTilt on the base effort contour so organic/vibrato micro-tilt
       // does not thrash guardRefCache or fight natural brightness modulation.
+      sourceTilt += 1.6 * sungEffort;
       var guardTilt = pitchTiltAt(timbre, f0) + sourceTilt;
       if (org) sourceTilt += orgTiltMod;
       if (humAmt > 0 && vc) sourceTilt += 0.45 * humAmt * vibNorm;
@@ -2885,7 +2889,8 @@
       };
       if (curTnLpHz > 0) ctrl[ctrlIdx].tnLpHz = curTnLpHz;
       if ((curTn < 1e-6 && (!e || !e.tnLpHz)) || (active && active._rest)) curTnLpHz = 0;
-      if (research || org || humAmt > 0) ctrl[ctrlIdx].sourceTilt = sourceTilt;
+      if (research || org || humAmt > 0 || sungEffort) ctrl[ctrlIdx].sourceTilt = sourceTilt;
+      ctrl[ctrlIdx].effort = sungEffort;
       if (org) {
         ctrl[ctrlIdx].organicGate = orgGate;
         ctrl[ctrlIdx].organicAirMod = orgAirMod;
@@ -3162,6 +3167,41 @@
     return refinementCurves[branch];
   }
 
+  // Symmetric 25-tap FIR for the relative colour of the air branch. The
+  // existing air gain carries total power. Normalize the correction against
+  // that branch's spectrum and send the same coefficients to both renderers.
+  function effortAirKernel(profile, offset, curve) {
+    var radius = 12, bins = 128, gains = [], energy = 0, weight = 0;
+    for (var i = 0; i < bins; i++) {
+      var hz = SR * (i + 0.5) / (2 * bins);
+      var band = hz < 7000 ? offset : offset + 1;
+      var u = clampUnit(hz < 7000 ? (hz - 5000) / 2000 : (hz - 7000) / 3000);
+      var q = profile[band] + u * (profile[band + 1] - profile[band]);
+      var w = Math.pow(10, NSG.outEqDbAt(curve, hz) / 10);
+      gains.push(Math.sqrt(q)); energy += q * w; weight += w;
+    }
+    var scale = Math.sqrt(weight / Math.max(energy, 1e-12)), kernel = [];
+    for (var j = 0; j <= radius; j++) {
+      var sum = 0;
+      for (var k = 0; k < bins; k++) sum += gains[k] * Math.cos(Math.PI * (k + 0.5) * j / bins);
+      kernel.push(scale * sum / bins * (0.5 + 0.5 * Math.cos(Math.PI * j / (radius + 1))));
+    }
+    return kernel;
+  }
+  function shapeEffortAir(samples, ctrl, kernels) {
+    if (!kernels) return;
+    var input = samples.slice();
+    for (var f = 0; f < ctrl.length; f++) {
+      var amount = ctrl[f].effort;
+      if (!amount) continue;
+      var taps = kernels[amount < 0 ? 0 : 1], end = Math.min(input.length, (f + 1) * HOP);
+      for (var i = f * HOP; i < end; i++) {
+        var filtered = taps[0] * input[i];
+        for (var j = 1; j < taps.length; j++) filtered += taps[j] * ((input[i-j] || 0) + (input[i+j] || 0));
+        samples[i] += Math.abs(amount) * (filtered - input[i]);
+      }
+    }
+  }
   function makeVoicedAir(timbre, compensateEq, soften, refine, tractJoin, smoothBlend, perturbBlend) {
     var sb = smoothBlend === true ? 1 : smoothBlend === false ? 0 : (typeof smoothBlend === 'number' && isFinite(smoothBlend) ? Math.max(0, Math.min(1, smoothBlend)) : 0);
     var pb = perturbBlend === true ? 1 : perturbBlend === false ? 0 : (typeof perturbBlend === 'number' && isFinite(perturbBlend) ? Math.max(0, Math.min(1, perturbBlend)) : 0);
@@ -3173,7 +3213,7 @@
       // 19-20 kHz FIR stopband cliff.
       var aOld = sb < 1 ? voicedHighShape(hz, f6, true, tractJoin, 0) * Math.pow(Math.max(1, hz / 7800), -2.0) *
         (hz <= 13500 ? 1 : hz >= 19500 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 13500) / 6000)) : 0;
-      var aNew = sb > 0 ? voicedHighShape(hz, f6, true, tractJoin, 1) * Math.pow(Math.max(1, hz / 7200), -1.25) *
+      var aNew = sb > 0 ? voicedHighShape(hz, f6, true, tractJoin, 1) * Math.pow(Math.max(1, hz / 7200), -0.55) *
         (hz <= 15500 ? 1 : hz >= 20000 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 15500) / 4500)) : 0;
       var a = (sb >= 1 ? aNew : sb <= 0 ? aOld : aOld + (aNew - aOld) * sb) *
         Math.sqrt(2 - 2 * Math.cos(2 * Math.PI * hz / SR));
@@ -3196,8 +3236,10 @@
     // harmonics fade smoothly into silky air without FM beating.
     var brNorm = Math.min(1, Math.max(0, timbre.breath || 0) / 0.065);
     var fracOld = 0.64 * Math.pow(brNorm, 0.50);
-    var fracNew = Math.max(0.45, 0.72 * Math.pow(brNorm, 0.45));
-    return { eq: curve, power: power,
+    var fracNew = Math.max(0.26, 0.72 * Math.pow(brNorm, 0.45));
+    var profile = NSG.validEffortProfile(timbre.effortProfile) ? timbre.effortProfile : NSG.defaultEffortProfile;
+    return { eq: curve, power: power, profile: profile,
+      kernels: null,
       fraction: pb >= 1 ? fracNew : pb <= 0 ? fracOld : fracOld + (fracNew - fracOld) * pb,
       trimGain: soften ? Math.pow(10, -3 / 20) : 1 };
   }
@@ -3226,7 +3268,14 @@
       return;
     }
     var f6 = c.fb[5][0], power = 0, shapeOnlyPower = 0, refPower = 0;
-    var useHnm = !!(pb > 0 && air);
+    // Higher vocal effort sharpens glottal closure (higher HNR: more periodic
+    // shimmer, less continuous hiss); softer singing allows a breathier upper tail.
+    var effortNorm = Math.max(-1, Math.min(1, (c.sourceTilt || 0) / 2.5));
+    var maxFrac = 0.72 + (0.86 - 0.72) * pb;
+    var effortSlope = 0.28 + (0.22 - 0.28) * pb;
+    var baseFraction = air ? Math.max(0.03, Math.min(maxFrac, air.fraction * (1 - effortSlope * effortNorm))) : 0;
+    var effort = air ? c.effort || 0 : 0, ep = effort < 0 ? 0 : 4;
+    var useHnm = !!(air && (pb > 0 || effort));
     var oldStart = tractJoin ? Math.max(3800, Math.min(6000, f6 - 150)) : 6000;
     var newStart = Math.max(3600, Math.min(6200, f6 * 0.85));
     var start = sb >= 1 ? newStart : sb <= 0 ? oldStart : Math.min(oldStart, newStart);
@@ -3248,7 +3297,7 @@
     src.nextHighSilent = false;
     var hasOutEq = compensateEq && Array.isArray(timbre.outEq);
     var twoPiOverSr = 2 * Math.PI / SR;
-    var hnmStart = Math.max(5000, Math.min(6000, f6 * 0.86)), hnmSpan = 5000;
+    var hnmStart = Math.max(5000, Math.min(6000, f6 * 0.86)), hnmSpan = 7500;
     var dw = twoPiOverSr * f0, wStart = dw * (kStart + 1);
     var cwStep = Math.cos(dw), swStep = Math.sin(dw);
     var cwCur = Math.cos(wStart), swCur = Math.sin(wStart);
@@ -3261,8 +3310,15 @@
       var coh = 1;
       if (useHnm && hz > hnmStart) {
         var xt = Math.min(1, (hz - hnmStart) / hnmSpan);
-        var hnmCoh = Math.max(0, 1 - xt * xt * (3 - 2 * xt));
+        var hnmCoh = 0.22 + 0.78 * Math.max(0, 1 - xt * xt * (3 - 2 * xt));
         coh = 1 - pb * (1 - hnmCoh);
+      }
+      if (effort) {
+        var p = air.profile, kHz = hz / 1000;
+        var band = kHz < 7 ? ep : ep + 1;
+        var u = clampUnit(kHz < 7 ? (kHz - 5) / 2 : (kHz - 7) / 3);
+        var residual = p[band] + u * (p[band + 1] - p[band]);
+        coh = Math.sqrt(Math.max(0, coh * coh + Math.abs(effort) * ((1 - residual) / (1 - baseFraction) - coh * coh)));
       }
       var aBase = src.fullTarget[k] * aShape;
       var a = aBase * coh;
@@ -3285,21 +3341,15 @@
     var effTilt = pitchTiltAt(timbre, f0);
     var bodyPower = chainPower(c.fb, f0, src.amps, effTilt + (c.sourceTilt || 0), sourceFilter);
     var colour = Math.max(-5, Math.min(3, 3 * Math.log2(Math.max(200, c.fb[1][0]) / 1500)));
-    var levelDb = (wideband ? -40 : -36) + 10 * strength + Math.max(-4, Math.min(3, effTilt * 0.5)) + colour + 2 * (c.sourceTilt || 0);
+    var levelDb = (wideband ? -32.5 : -36) + 10 * strength + Math.max(-4, Math.min(3, effTilt * 0.5)) + colour + 2 * (c.sourceTilt || 0);
     var budget = Math.max(0, bodyPower) * Math.exp(levelDb * LOG10_OVER_10);
-    // Higher vocal effort sharpens glottal closure (higher HNR: more periodic
-    // shimmer, less continuous hiss); softer singing allows a breathier upper tail.
-    var effortNorm = Math.max(-1, Math.min(1, (c.sourceTilt || 0) / 2.5));
-    var maxFrac = 0.72 + (0.86 - 0.72) * pb;
-    var effortSlope = 0.28 + (0.22 - 0.28) * pb;
-    var baseFraction = air ? Math.max(0.03, Math.min(maxFrac, air.fraction * (1 - effortSlope * effortNorm))) : 0;
     // Anchor gain against the un-attenuated envelope reference so trimming >9 kHz
     // shelf energy or rolling off upper harmonics never pushes excess level down into 6-9 kHz.
     var calBase = useHnm ? shapeOnlyPower : power;
     var calSmooth = Math.max(shapeOnlyPower, refPower * 0.90);
     var calPower = sb >= 1 ? calSmooth : sb <= 0 ? calBase : calBase + (calSmooth - calBase) * sb;
-    var cohRatio = useHnm && shapeOnlyPower > 1e-30 ? Math.min(1, power / shapeOnlyPower) : 1;
-    var fraction = air ? (useHnm ? Math.max(baseFraction, 1 - (1 - baseFraction) * cohRatio) : baseFraction) : 0;
+    var cohRatio = useHnm && shapeOnlyPower > 1e-30 ? power / shapeOnlyPower : 1;
+    var fraction = air ? (useHnm ? Math.max(effort ? 0 : baseFraction, 1 - (1 - baseFraction) * cohRatio) : baseFraction) : 0;
     var gain = strength > 0 && calPower > 1e-30 ? gate * Math.sqrt(budget * (1 - baseFraction) / calPower) : 0;
     var airGain = air && air.power > 1e-30 ? gate * Math.sqrt(0.5 * budget * fraction / air.power) * air.trimGain : 0;
     src.airTarget = airGain; src.airStep = (airGain - src.airAmp) / HOP;
@@ -3704,6 +3754,9 @@
     var velvetRem = 0, velvetPos = 0, velvetSign = 1, velvetLen = 5, airApZ = 0;
     var air = voicedHigh && wideband && timbre.breath > 0 ?
       makeVoicedAir(timbre, compensateHighEq, opt.modeBAirSoftness !== false, refine, tractJoin, smoothBlend, perturbBlend) : null;
+    if (air && ctrl.some(function (c) { return c.effort; })) {
+      air.kernels = [effortAirKernel(air.profile, 0, air.eq), effortAirKernel(air.profile, 4, air.eq)];
+    }
     var upperAir = (!useWasmVocal && air) ? new Float32Array(sliceTotal) : null, airNoise = (!useWasmVocal && air) ? mulberry32((0x73e91a45 ^ seedSalt) >>> 0) : null;
     // Piriform fossa anti-resonance (~4.2-5.4 kHz spectral dip) for HiFi voices
     // that lack an extracted speaker outEq (which already encodes recording dips).
@@ -3849,6 +3902,7 @@
         frames[wb + 33] = wc.voicedHighGate || 0;
         frames[wb + 34] = wEffTilt;
         frames[wb + 35] = wSrcTilt;
+        frames[wb + 36] = wc.effort || 0;
         prevAmpW = wcAv;
         prevCavW = wc.frontCavity || 0;
       }
@@ -3864,7 +3918,9 @@
         (piriform ? 16384 : 0) | (NSG.LEGACY_SOUND ? 32768 : 0) | (glObj ? 65536 : 0) |
         (srcEqArr ? 131072 : 0) | (outEqArr ? 262144 : 0);
       var lfTabW = useHumanize ? getLfTable() : null;
-      var cfg = new Float64Array(37);
+      var cfg = new Float64Array(71);
+      if (air && air.kernels) { cfg.set(air.kernels[0], 45); cfg.set(air.kernels[1], 58); }
+      cfg.set(air ? air.profile : NSG.defaultEffortProfile, 37);
       cfg[0] = SR; cfg[1] = HOP; cfg[2] = flags >>> 0; cfg[3] = seedSalt >>> 0;
       cfg[4] = nasScale; cfg[5] = nasBwScale; cfg[6] = nasalLowpassHz;
       cfg[7] = consonantSoftness; cfg[8] = highStrength; cfg[9] = smoothBlend; cfg[10] = perturbBlend;
@@ -3996,6 +4052,10 @@
       var phaseArr = src.phase, ampArr = src.amp, targetArr = src.target, stepArr = src.step;
       var phaseOffArr = src.phaseOff, phaseOffTargetArr = src.phaseOffTarget, phaseOffStepArr = src.phaseOffStep;
       var highAmpArr = src.highAmp, highTargetArr = src.highTarget, highStepArr = src.highStep;
+      var flowEffort = air ? c.effort || 0 : 0;
+      var pulseDepth = flowEffort ? air.profile[flowEffort < 0 ? 3 : 7] : 0;
+      // RMS of (1-d) + d*((1+sin(phase))/2)^2, with uniform phase.
+      var pulseNorm = flowEffort ? 1 / Math.sqrt(1 - 1.25 * pulseDepth + 67 / 128 * pulseDepth * pulseDepth) : 1;
       var K = src.K, bandLimit = SOURCE_TOP - SOURCE_FADE;
       var activeLimit = NSG.LEGACY_SOUND ? K : Math.min(K, Math.max(1, src.lowActiveK, voicedHigh ? src.highActiveK : 0));
       var skipHarmonics = prevAmp === 0 && cAv === 0;
@@ -4379,6 +4439,7 @@
             var pulsedNew = (0.72 + 0.28 * open * open) / 0.85888;
             var pulsedBlend = smoothBlend > perturbBlend ? smoothBlend : perturbBlend;
             var pulsed = pulsedBlend >= 1 ? pulsedNew : pulsedBlend <= 0 ? pulsedOld : pulsedOld + (pulsedNew - pulsedOld) * pulsedBlend;
+            if (flowEffort) pulsed += Math.abs(flowEffort) * ((1 - pulseDepth + pulseDepth * open * open) * pulseNorm - pulsed);
             airMod = 1 + Math.min(1, amp) * (pulsed - 1);
           }
           var airSample;
@@ -4475,6 +4536,7 @@
       // Internal upper-band shaping has its own compensated FIR delay. Mix before
       // final output EQ and level control, so user EQ still affects both parts.
       NSG.DSP.applyOutEq(upperAir, air.eq);
+      shapeEffortAir(upperAir, ctrl, air.kernels);
       for (var ua = 0; ua < out.length; ua++) out[ua] += upperAir[ua];
     }
     if (!rawSrc && Array.isArray(timbre.outEq)) NSG.DSP.applyOutEq(out, timbre.outEq);
