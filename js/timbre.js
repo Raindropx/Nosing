@@ -67,6 +67,7 @@
       tiltDb: 0,                   // 声带音谱倾斜 dB/oct
       breath: 0.02,                // 气声
       nasal: 0.08,                 // 鼻腔耦合
+      articMorph: 0.5,             // 口型连续变化（CHIMERA 启发）
       vib: { rate: 5.2, depth: 0.18, delay: 0.28 },
       harmV: 2,                    // 倍频振幅表版本：2 = 已按 −12dB/oct 重标，不再迁移
       curve: null,
@@ -104,6 +105,8 @@
       desc: '男中音：声音结实饱满，颤音克制，气声很轻',
       consonantSoftness: 0.45,
       nasalLowpassHz: 1200,
+      highVowelOpening: 0.25,
+      modeBHigh: 0.38,
       fs: 0.98, warp: -0.04, jit: 0.0010,
       glot: 0.45,
       bw: 0.98, hi: [3480, 4000, 4600], hiS: 1.00, lip: 0.02,
@@ -113,7 +116,11 @@
     {
       id: 'm2', name: '男声2', height: 182,
       desc: '清亮男高音：明亮、轻柔，带一层气声',
-      fs: 1.03, warp: 0.02, jit: 0.0008,
+      consonantSoftness: 0.30,
+      nasalLowpassHz: 1600,
+      highVowelOpening: 0.50,
+      modeBHigh: 0.45,
+      fs: 1.03, warp: 0.02, jit: 0.0010,
       glot: 0.30,
       bw: 0.96, hi: [3480, 4030, 4630], hiS: 1.00, lip: 0.01,
       slope: -10.4, tilt: 2.0, breath: 0.060, nasal: 0.05, vib: [5.4, 0.14, 0.26],
@@ -122,6 +129,10 @@
     {
       id: 'u1', name: '男声3', height: 175,
       desc: '成熟男中低音：浑厚偏暗，略带沙哑和鼻音，颤音舒缓',
+      consonantSoftness: 0.55,
+      nasalLowpassHz: 1100,
+      highVowelOpening: 0.20,
+      modeBHigh: 0.30,
       fs: 0.92, warp: -0.06, jit: 0.0030,
       glot: 0.60,
       bw: 1.08, hi: [3550, 4140, 4800], hiS: 1.00, lip: 0.02,
@@ -138,8 +149,8 @@
         "gen": 56,
         "fScale": 1.3518275,
         "warp": 0.18,
-        "jitter": 0.003,
-        "glottal": 0,
+        "jitter": 0.0018,
+        "glottal": 0.08,
         "bwScale": 1.25,
         "higher": [3167,4408,5042],
         "hiShift": 1,
@@ -148,6 +159,11 @@
         "tiltDb": 5,
         "breath": 0.04,
         "nasal": 0.04,
+        "consonantSoftness": 0.25,
+        "nasalLowpassHz": 2000,
+        "modeBHigh": 0.45,
+        "highVowelOpening": 0.50,
+        "articMorph": 0.5,
         "vib": {
           "rate": 5.2,
           "depth": 0,
@@ -182,16 +198,21 @@
         "gen": 64,
         "fScale": 1.3518275,
         "warp": 0.126187875,
-        "jitter": 0,
-        "glottal": 0,
-        "bwScale": 2.262815625,
+        "jitter": 0.0012,
+        "glottal": 0.12,
+        "bwScale": 1.45,
         "higher": [3167,4408,5042],
         "hiShift": 1,
         "lip": 0,
         "harm": [0,-12,-19,-24,-27.9,-31,-33.7,-36,-38,-39.9,-41.5,-43,-44.4,-45.7,-46.9,-48],
         "tiltDb": -4,
-        "breath": 0.04,
+        "breath": 0.055,
         "nasal": 0.04,
+        "consonantSoftness": 0.35,
+        "nasalLowpassHz": 1800,
+        "modeBHigh": 0.36,
+        "highVowelOpening": 0.45,
+        "articMorph": 0.5,
         "vib": {
           "rate": 5.2,
           "depth": 0,
@@ -220,18 +241,26 @@
     {
       id: 'b1', name: '男孩1', height: 145,
       desc: '男童声：明亮有力，略带粗糙感，颤音很轻',
-      fs: 1.08, warp: 0.04, jit: 0.0030,
+      consonantSoftness: 0.35,
+      nasalLowpassHz: 1500,
+      highVowelOpening: 0.55,
+      modeBHigh: 0.40,
+      fs: 1.08, warp: 0.04, jit: 0.0020,
       glot: 0.40,
-      bw: 1.00, hi: [3240, 3750, 4250], hiS: 1.00, lip: 0.00,
+      bw: 1.06, hi: [3240, 3750, 4250], hiS: 1.00, lip: 0.00,
       slope: -11.4, tilt: 0.5, breath: 0.030, nasal: 0.07, vib: [5.6, 0.12, 0.30],
       range: [60, 77]
     },
     {
       id: 'g1', name: '女孩1', height: 142,
       desc: '女童声：清亮偏甜，带轻气声，颤音轻快',
-      fs: 1.10, warp: 0.08, jit: 0.0010,
+      consonantSoftness: 0.40,
+      nasalLowpassHz: 1700,
+      highVowelOpening: 0.60,
+      modeBHigh: 0.42,
+      fs: 1.10, warp: 0.08, jit: 0.0012,
       glot: 0.18,
-      bw: 0.96, hi: [3190, 3640, 4080], hiS: 1.00, lip: 0.00,
+      bw: 1.08, hi: [3190, 3640, 4080], hiS: 1.00, lip: 0.00,
       slope: -10.8, tilt: 2.0, breath: 0.060, nasal: 0.05, vib: [5.8, 0.14, 0.26],
       range: [62, 81]
     }
@@ -272,6 +301,8 @@
       t.breath = d.breath;
       if (d.consonantSoftness !== undefined) t.consonantSoftness = d.consonantSoftness;
       if (d.nasalLowpassHz !== undefined) t.nasalLowpassHz = d.nasalLowpassHz;
+      if (d.highVowelOpening !== undefined) t.highVowelOpening = d.highVowelOpening;
+      if (d.modeBHigh !== undefined) t.modeBHigh = d.modeBHigh;
       t.nasal = d.nasal;
       t.vib = { rate: d.vib[0], depth: d.vib[1], delay: d.vib[2] };
       out.push(t);
@@ -362,6 +393,7 @@
       if (j >= 2) pairs[j][1] = Math.max(pairs[j][1],
         pairs[j][0] / 18 * (1 + Math.max(0, pairs[j][0] - 4500) / 2000));
     }
+    Object.defineProperty(pairs, '_lip', { value: lip, enumerable: false, configurable: true });
     return { pairs: pairs, f: f, b: b, nz: phone.nz || 0, na: phone.na, lip: lip };
   };
 
@@ -502,6 +534,8 @@
       return '模式B有声高频必须为 0–1 的有限数值';
     if (t.highVowelOpening !== undefined && (!Number.isFinite(t.highVowelOpening) || t.highVowelOpening < 0 || t.highVowelOpening > 1))
       return 'HiFi 高音元音开口度必须为 0–1 的有限数值';
+    if (t.articMorph !== undefined && (!Number.isFinite(t.articMorph) || t.articMorph < 0 || t.articMorph > 1))
+      return '口型连续变化程度必须为 0–1 的有限数值';
     if (t.fRatio !== undefined && (!Array.isArray(t.fRatio) || t.fRatio.length !== 3 ||
       !t.fRatio.every(function (v) { return typeof v === 'number' && isFinite(v) && v >= 0.75 && v <= 1.35; })))
       return '共振峰独立比例必须为 3 个有限值（0.75–1.35）';

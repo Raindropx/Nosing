@@ -2331,6 +2331,7 @@
       ['sScale', 'fScale', 'vScale', 2], ['sWarp', 'warp', 'vWarp', 2],
       ['sJit', 'jitter', 'vJit', 'pct'], ['sGlo', 'glottal', 'vGlo', 2],
       ['sModeBHigh', 'modeBHigh', 'vModeBHigh', 'pct'],
+      ['sArticMorph', 'articMorph', 'vArticMorph', 'pct'],
       ['sVowelOpening', 'highVowelOpening', 'vVowelOpening', 'pct']
     ];
     map.forEach(function (m) {
@@ -3152,6 +3153,8 @@
       $('#sGlo').value = t.glottal || 0; $('#vGlo').textContent = (+(t.glottal || 0)).toFixed(2);
       var modeBHigh = t.modeBHigh === undefined ? 0.4 : t.modeBHigh;
       $('#sModeBHigh').value = modeBHigh; $('#vModeBHigh').textContent = (modeBHigh * 100).toFixed(0) + '%';
+      var articMorph = t.articMorph === undefined ? 0.5 : t.articMorph;
+      if ($('#sArticMorph')) { $('#sArticMorph').value = articMorph; $('#vArticMorph').textContent = Math.round(articMorph * 100) + '%'; }
       var opening = t.highVowelOpening || 0;
       $('#sVowelOpening').value = opening; $('#vVowelOpening').textContent = Math.round(opening * 100) + '%';
       var hi = t.higher || [3300, 4200, 5200];
