@@ -173,14 +173,14 @@ pub fn voiced_high_shape(hz: f64, f6: f64, wideband: bool, tract_join: bool, sb:
         let mut env_fade = ((hz - env_start) / 1500.0).clamp(0.0, 1.0);
         env_fade = env_fade * env_fade * (3.0 - 2.0 * env_fade);
         let ref_hz = (f6 * 0.96).max(5200.0);
-        let slope = (hz / ref_hz).max(1.0).powf(-1.18);
+        let slope = (hz / ref_hz).max(1.0).powf(if studio { -2.05 } else { -1.18 });
         let env_top = if studio {
-            if hz <= 14200.0 {
+            if hz <= 10500.0 {
                 1.0
-            } else if hz >= 18200.0 {
+            } else if hz >= 15500.0 {
                 0.0
             } else {
-                0.5 + 0.5 * (PI * (hz - 14200.0) / 4000.0).cos()
+                0.5 + 0.5 * (PI * (hz - 10500.0) / 5000.0).cos()
             }
         } else if hz <= 15000.0 {
             1.0
@@ -569,10 +569,10 @@ impl VocalSource {
                 lf_modal_row = (((1.0 - lt.rd_min) / lt.rd_step).round() as usize).min(lt.nrd - 1) * lt.nh;
                 f_coh = (2650.0 - 480.0 * (rd_clamped - 1.0)).clamp(1500.0, 3000.0);
                 if studio {
-                    st_disp_start = (2150.0 - 380.0 * (rd_clamped - 1.0)).max(1550.0);
+                    st_disp_start = (1320.0 - 320.0 * (rd_clamped - 1.0)).clamp(950.0, 1650.0);
                     let st_rd_u = ((rd_clamped - 0.8) / 0.7).clamp(0.0, 1.0);
-                    st_coh_ceil = 0.84 - 0.22 * st_rd_u;
-                    st_coh_start = 7000.0 - 900.0 * st_rd_u;
+                    st_coh_ceil = 0.18 - 0.08 * st_rd_u;
+                    st_coh_start = 4800.0 - 800.0 * st_rd_u;
                     if lt.rd_comp_db.len() > lf_ri + 1 {
                         rd_comp = lt.rd_comp_db[lf_ri]
                             + (lt.rd_comp_db[lf_ri + 1] - lt.rd_comp_db[lf_ri]) * lf_fr;
@@ -596,8 +596,17 @@ impl VocalSource {
                 let row0 = lf_ri * lf_nh;
                 let row1 = (lf_ri + 1) * lf_nh;
                 let m_delta = lt.mag_delta[row0 + m_idx] + (lt.mag_delta[row1 + m_idx] - lt.mag_delta[row0 + m_idx]) * lf_fr;
-                db += (if studio { 1.0 } else { 0.68 }) * m_delta;
                 if studio {
+                    let m_clamped = m_delta.clamp(-10.0, 6.5);
+                    let lf_scale = if m_clamped > 0.0 {
+                        let fk_t = ((khz - 1200.0) / 2200.0).clamp(0.0, 1.0);
+                        let k_t = (((k as f64) - 4.0) / 10.0).clamp(0.0, 1.0);
+                        let u_t = fk_t.max(k_t);
+                        1.0 - 0.82 * (u_t * u_t * (3.0 - 2.0 * u_t))
+                    } else {
+                        0.75
+                    };
+                    db += lf_scale * m_clamped;
                     db += rd_comp;
                     if st_rd > 1.12 {
                         let oq_u = (st_rd - 1.12).min(1.1);
@@ -611,11 +620,13 @@ impl VocalSource {
                         if k == 1 {
                             db -= 0.9 * skew_u;
                         } else if k == 2 {
-                            db += 3.3 * skew_u;
+                            db += 2.6 * skew_u;
                         } else if k == 3 {
-                            db += 1.5 * skew_u;
+                            db += 1.2 * skew_u;
                         }
                     }
+                } else {
+                    db += 0.68 * m_delta;
                 }
                 let mut tgt_off;
                 if studio {
@@ -627,12 +638,12 @@ impl VocalSource {
                         0.0
                     };
                     if khz > st_disp_start {
-                        let u_disp = ((khz - st_disp_start) / 3400.0).min(1.0);
+                        let u_disp = ((khz - st_disp_start) / 2200.0).min(1.0);
                         let w_decoh = u_disp * u_disp * (3.0 - 2.0 * u_disp);
                         let rp_st = self.rand_phase[k - 1];
                         let base_ph = lf_ph_st + w_decoh * (rp_st - lf_ph_st - (rp_st - lf_ph_st).round());
-                        let disp_rate = 5.0 + 14.0 * u_disp;
-                        let disp_amp = (0.022 + 0.085 * u_disp.powf(1.35))
+                        let disp_rate = 1.8 + 3.2 * u_disp;
+                        let disp_amp = (0.006 + 0.018 * u_disp.powf(1.35))
                             * (0.75 + 0.45 * (st_rd - 0.85).clamp(0.0, 1.0));
                         let a_d = (-2.0 * PI * disp_rate * st_dt).exp();
                         let u_tri = (self.part_rnd.next() + self.part_rnd.next() - 1.0) * 2.44948974;
@@ -676,7 +687,7 @@ impl VocalSource {
                     let mut d_off = tgt_off - cur_off;
                     d_off -= d_off.round();
                     if studio {
-                        d_off = d_off.clamp(-0.14, 0.14);
+                        d_off = d_off.clamp(-0.045, 0.045);
                     }
                     if cur_off + d_off < 0.0 { cur_off += 1.0; }
                     self.phase_off.data[k - 1] = cur_off as f32;
@@ -695,7 +706,7 @@ impl VocalSource {
             }
             let mut target = if a < 1e-6 { 0.0 } else { a };
             if use_lf && studio && khz > st_coh_start && target > 0.0 {
-                let xt_c = ((khz - st_coh_start) / (9500.0 - st_coh_start)).min(1.0);
+                let xt_c = ((khz - st_coh_start) / 4200.0).min(1.0);
                 let s_coh = xt_c * xt_c * (3.0 - 2.0 * xt_c);
                 target *= 1.0 - (1.0 - st_coh_ceil) * s_coh;
             }
@@ -823,8 +834,8 @@ impl VocalSource {
         let mut cw_cur = w_start.cos();
         let mut sw_cur = w_start.sin();
         let rd_high_u = ((c_rd - 0.8) / 0.7).clamp(0.0, 1.0);
-        let st_high_ceil = 0.84 - 0.22 * rd_high_u;
-        let st_high_start = 7000.0 - 900.0 * rd_high_u;
+        let st_high_ceil = 0.12 - 0.06 * rd_high_u;
+        let st_high_start = 4800.0 - 900.0 * rd_high_u;
         let rad_a_hi = if studio { (-2.0 * PI * 3800.0 / rc.sr).exp() } else { 0.0 };
         let rad_num2_hi = (1.0 - rad_a_hi) * (1.0 - rad_a_hi);
         let rad_den_b_hi = 1.0 + rad_a_hi * rad_a_hi;
@@ -842,12 +853,12 @@ impl VocalSource {
             let mut coh = 1.0;
             if studio {
                 if hz > st_high_start {
-                    let xt_s = ((hz - st_high_start) / (9500.0 - st_high_start)).min(1.0);
+                    let xt_s = ((hz - st_high_start) / 4200.0).min(1.0);
                     coh = 1.0 - (1.0 - st_high_ceil) * (xt_s * xt_s * (3.0 - 2.0 * xt_s));
                 }
-                if hz > 9500.0 {
-                    let xt_u = ((hz - 9500.0) / 4500.0).min(1.0);
-                    coh *= 1.0 - 0.16 * (xt_u * xt_u * (3.0 - 2.0 * xt_u));
+                if hz > 8500.0 {
+                    let xt_u = ((hz - 8500.0) / 3000.0).min(1.0);
+                    coh *= 1.0 - (xt_u * xt_u * (3.0 - 2.0 * xt_u));
                 }
             } else {
                 if use_hnm && hz > hnm_start {
@@ -889,12 +900,12 @@ impl VocalSource {
         );
         let colour = (3.0 * (pairs[1].0.max(200.0) / 1500.0).log2()).clamp(-5.0, 3.0);
         let level_db = if studio {
-            -29.2
+            -32.0
                 + 4.5 * strength
                 + (eff_tilt * 0.5).clamp(-3.0, 3.0)
-                + 0.7 * colour
-                + 1.4 * (c_rd - 1.0).max(0.0)
-                + 0.75 * source_tilt
+                + 0.65 * colour
+                + 1.1 * (c_rd - 1.0).max(0.0)
+                + 0.65 * source_tilt
         } else {
             (if wideband { -32.5 } else { -36.0 })
                 + 10.0 * strength

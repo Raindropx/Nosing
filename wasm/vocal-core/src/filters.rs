@@ -269,12 +269,12 @@ impl DynamicNotch {
 #[inline]
 pub fn hpc_coeffs(f6: f64, sr: f64) -> [f64; 5] {
     let f6_eff = if f6 > 0.0 { f6 } else { 5200.0 };
-    let fc = (3800.0 * (f6_eff / 5200.0)).clamp(3200.0, 4400.0);
-    let cap_a = 10.0_f64.powf(11.5 / 40.0);
+    let fc = (3900.0 * (f6_eff / 5200.0)).clamp(3350.0, 4500.0);
+    let cap_a = 10.0_f64.powf(8.0 / 40.0);
     let w0 = 2.0 * PI * fc / sr;
     let cw0 = w0.cos();
     let sw0 = w0.sin();
-    let alpha = sw0 / (2.0 * 0.60);
+    let alpha = sw0 / (2.0 * 0.64);
     let tsa = 2.0 * cap_a.sqrt() * alpha;
     let a0 = (cap_a + 1.0) - (cap_a - 1.0) * cw0 + tsa;
     [
@@ -284,6 +284,65 @@ pub fn hpc_coeffs(f6: f64, sr: f64) -> [f64; 5] {
         (2.0 * ((cap_a - 1.0) - (cap_a + 1.0) * cw0)) / a0,
         ((cap_a + 1.0) - (cap_a - 1.0) * cw0 - tsa) / a0,
     ]
+}
+
+#[inline]
+fn make_allpass_section(fc: f64, q: f64, sr: f64) -> (f64, f64) {
+    let w0 = 2.0 * PI * fc / sr;
+    let alpha = w0.sin() / (2.0 * q);
+    let a0 = 1.0 + alpha;
+    (-2.0 * w0.cos() / a0, (1.0 - alpha) / a0)
+}
+
+pub struct AllPassDispersion {
+    a11: f64,
+    a12: f64,
+    a21: f64,
+    a22: f64,
+    x11: f64,
+    x12: f64,
+    y11: f64,
+    y12: f64,
+    x21: f64,
+    x22: f64,
+    y21: f64,
+    y22: f64,
+}
+
+impl AllPassDispersion {
+    pub fn new(sr: f64) -> Self {
+        let (a11, a12) = make_allpass_section(880.0, 0.72, sr);
+        let (a21, a22) = make_allpass_section(2550.0, 0.85, sr);
+        Self {
+            a11,
+            a12,
+            a21,
+            a22,
+            x11: 0.0,
+            x12: 0.0,
+            y11: 0.0,
+            y12: 0.0,
+            x21: 0.0,
+            x22: 0.0,
+            y21: 0.0,
+            y22: 0.0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn run(&mut self, x: f64) -> f64 {
+        let u = self.a12 * x + self.a11 * self.x11 + self.x12 - self.a11 * self.y11 - self.a12 * self.y12;
+        self.x12 = self.x11;
+        self.x11 = x;
+        self.y12 = self.y11;
+        self.y11 = u;
+        let v = self.a22 * u + self.a21 * self.x21 + self.x22 - self.a21 * self.y21 - self.a22 * self.y22;
+        self.x22 = self.x21;
+        self.x21 = u;
+        self.y22 = self.y21;
+        self.y21 = v;
+        v
+    }
 }
 
 pub struct DynamicShelf {
@@ -542,8 +601,8 @@ impl FricativeFrontCavity {
                 let sx = sh + (x - sh) * t_pal;
                 sx + (s - sx) * t_alv
             };
-            let f_pole = if studio { place(3800.0, 7400.0, 9200.0) } else { place(2750.0, 5600.0, 8200.0) };
-            let lp_hz = if studio { place(9500.0, 9000.0, 13500.0) } else { place(9000.0, 10500.0, 16500.0) };
+            let f_pole = if studio { place(3500.0, 6100.0, 7800.0) } else { place(2750.0, 5600.0, 8200.0) };
+            let lp_hz = if studio { place(8200.0, 8600.0, 11200.0) } else { place(9000.0, 10500.0, 16500.0) };
             let f_zero = place(1350.0, 2350.0, 2700.0);
             let lp_zero = place(2400.0, 2300.0, 4200.0);
             let couple = |light_v: f64, strong_v: f64| -> f64 {

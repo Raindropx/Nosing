@@ -5,8 +5,8 @@ use core::arch::wasm32::*;
 
 use crate::fft::{apply_out_eq_inplace, build_out_eq_kernel, EqKernel, FftWorkspace};
 use crate::filters::{
-    nasal_zero_bw, AntiResonator, DynamicNotch, DynamicShelf, FricativeFrontCavity,
-    HiFiNasalBranch, NasalBranch, Piriform, RateConst, Resonator,
+    nasal_zero_bw, AllPassDispersion, AntiResonator, DynamicNotch, DynamicShelf,
+    FricativeFrontCavity, HiFiNasalBranch, NasalBranch, Piriform, RateConst, Resonator,
 };
 use crate::harmonics::{
     build_refine_curve, GlottalParams, LfTable, Mulberry32, VocalSource, REFINE_BODY,
@@ -259,7 +259,8 @@ impl VocalEngine {
         let mut sub_notch = if use_humanize && !raw_src { Some(DynamicNotch::new()) } else { None };
         let mut sub_notch2 = if use_humanize && !raw_src && studio { Some(DynamicNotch::new()) } else { None };
         let mut hpc_shelf = if !raw_src && studio { Some(DynamicShelf::new()) } else { None };
-        let mut pharynx_notch = if use_humanize && !raw_src && (studio || !has_piriform) {
+        let mut phase_disp = if !raw_src && studio { Some(AllPassDispersion::new(sr)) } else { None };
+        let mut pharynx_notch = if (use_humanize || studio) && !raw_src && (studio || !has_piriform) {
             Some(DynamicNotch::new())
         } else {
             None
@@ -288,7 +289,7 @@ impl VocalEngine {
         let mut air_form_res = if studio && has_upper_air { Some(Resonator::new(false)) } else { None };
         let mut air_lp1 = 0.0_f64;
         let mut air_lp2 = 0.0_f64;
-        let air_lp_coef = (-2.0 * PI * if studio { 10800.0 } else { 13500.0 } / sr).exp();
+        let air_lp_coef = (-2.0 * PI * if studio { 11200.0 } else { 13500.0 } / sr).exp();
 
         let mut fry_parity: u32 = 0;
         let mut fry_gain_cur = 1.0_f64;
@@ -310,15 +311,17 @@ impl VocalEngine {
         let mut rad_prev = 0.0_f64;
         let mut rad_y = 0.0_f64;
         let mut fric_rad_prev = 0.0_f64;
+        let mut fric_rad_y = 0.0_f64;
+        let fric_rad_coef = (-2.0 * PI * 5400.0 / sr).exp();
         let mut br_lp1 = 0.0_f64;
         let mut br_lp2 = 0.0_f64;
         let breath_lp_coef = (-2.0 * PI * if studio { 5600.0 } else { 3400.0 } / sr).exp();
         let mut sib_air_hp = 0.0_f64;
         let mut sib_air_lp1 = 0.0_f64;
         let mut sib_air_lp2 = 0.0_f64;
-        let sib_air_hp_coef = (-2.0 * PI * 6800.0 / sr).exp();
-        let sib_air_lp_coef = (-2.0 * PI * 11200.0 / sr).exp();
-        let fu_w0 = 2.0 * PI * 13200.0 / sr;
+        let sib_air_hp_coef = (-2.0 * PI * 6200.0 / sr).exp();
+        let sib_air_lp_coef = (-2.0 * PI * 9600.0 / sr).exp();
+        let fu_w0 = 2.0 * PI * 11200.0 / sr;
         let fu_cw = fu_w0.cos();
         let fu_al = fu_w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
         let fu_a0 = 1.0 + fu_al;
@@ -474,18 +477,18 @@ impl VocalEngine {
                     sn2.set(sr, hop_f, sub2_hz, 5.2, -(0.9 + 1.4 * sub_open_st) * humanize_amt, first);
                 }
                 if let Some(ref mut pn) = pharynx_notch {
-                    let px_st_hz = (4400.0 * (hum_pf_ref / 5200.0).powf(0.45)
-                        + 0.10 * (pairs[0].0 - 500.0)
-                        - 0.06 * (pairs[1].0 - 1500.0))
-                        .clamp(3800.0, 5200.0);
-                    pn.set(sr, hop_f, px_st_hz, 3.6, -2.0 * humanize_amt, first);
+                    let px_st_hz = (4560.0 * (hum_pf_ref / 5200.0).powf(0.42)
+                        + 0.08 * (pairs[0].0 - 500.0)
+                        - 0.05 * (pairs[1].0 - 1500.0))
+                        .clamp(4050.0, 5150.0);
+                    pn.set(sr, hop_f, px_st_hz, 3.4, -4.5 * (0.45 + 0.55 * humanize_amt), first);
                 }
                 if let Some(ref mut hs) = hpc_shelf {
                     hs.set(sr, hop_f, pairs[5].0, first);
                 }
                 if let Some(ref mut afr) = air_form_res {
-                    let fc_air = (5600.0 + 1.8 * pairs[1].0 - 1800.0 * c_lip).clamp(7200.0, 10800.0);
-                    afr.set(&rc, fc_air, 5200.0, first);
+                    let fc_air = (4800.0 + 1.15 * pairs[1].0 - 1400.0 * c_lip).clamp(5200.0, 7600.0);
+                    afr.set(&rc, fc_air, 6400.0, first);
                 }
                 let f_rad_st = (3400.0 + 2.2 * (pairs[0].0 - 400.0) - 2200.0 * c_lip).clamp(2600.0, 5200.0);
                 let tgt_a_rad = (-2.0 * PI * f_rad_st / sr).exp();
@@ -510,7 +513,7 @@ impl VocalEngine {
             let f0_for_turb = if f0 > 0.0 { f0 } else { 200.0 };
             let low_turb_scale = (250.0 / f0_for_turb.max(120.0)).clamp(0.85, 1.28);
             let c_st_turb_gain = if studio {
-                (eff_breath * 0.075 + 0.015 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.5 * c_abd) * (0.35 + 0.65 * c_asp_sc)
+                (eff_breath * 0.042 + 0.0085 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.2 * c_abd) * (0.35 + 0.65 * c_asp_sc)
             } else {
                 0.0
             };
@@ -526,7 +529,7 @@ impl VocalEngine {
             n_zero.set(sr, hop_f, nzf, nasal_zero_bw(np_hz, nzf), first);
             let st_is_sibilant = studio && raw_fric_hz >= 2800.0 && c_front_cavity > 0.05 && !is_breath;
             let sib_air_amt = if st_is_sibilant {
-                if raw_fric_hz >= 5000.0 { 0.88 } else if raw_fric_hz >= 3700.0 { 1.45 } else { 0.48 }
+                if raw_fric_hz >= 5000.0 { 0.22 } else if raw_fric_hz >= 3700.0 { 0.30 } else { 0.16 }
             } else {
                 0.0
             };
@@ -774,7 +777,7 @@ impl VocalEngine {
                 };
                 if studio {
                     if use_humanize && !skip_harmonics {
-                        let flow_sq = (0.22 + 1.45 * open_gate * open_gate) * 1.14;
+                        let flow_sq = (0.42 + 0.92 * open_gate) * 0.95;
                         asp_mod += (flow_sq - asp_mod) * humanize_amt * amp.min(1.0);
                         let g_white_st = glottal_noise.next() * 2.0 - 1.0;
                         mid_lp = (1.0 - mid_lp_coef) * g_white_st + mid_lp_coef * mid_lp;
@@ -883,6 +886,9 @@ impl VocalEngine {
                         y += high_source * 0.30 * amp;
                     }
                 }
+                if let Some(ref mut pd) = phase_disp {
+                    y = pd.run(y);
+                }
                 if let Some(ref mut pf) = piriform {
                     y = pf.run(y);
                 }
@@ -944,10 +950,11 @@ impl VocalEngine {
                     rad_y = (1.0 - cur_a_rad) * rad_diff + cur_a_rad * rad_y;
                     let fric_rad = friction - fric_rad_prev;
                     fric_rad_prev = friction;
+                    fric_rad_y = (1.0 - fric_rad_coef) * fric_rad + fric_rad_coef * fric_rad_y;
                     br_lp1 = (1.0 - breath_lp_coef) * fric_rad + breath_lp_coef * br_lp1;
                     br_lp2 = (1.0 - breath_lp_coef) * br_lp1 + breath_lp_coef * br_lp2;
                     breath_gate += (tgt_br_gate - breath_gate) * a_br_gate;
-                    let mut fric_rad_out = fric_rad + (br_lp2 - fric_rad) * breath_gate;
+                    let mut fric_rad_out = fric_rad_y + (br_lp2 - fric_rad_y) * breath_gate;
                     let fu_y = fu_b0 * fric_rad_out + fu_b1 * fu_x1 + fu_b2 * fu_x2 - fu_a1 * fu_y1 - fu_a2 * fu_y2;
                     fu_x2 = fu_x1;
                     fu_x1 = fric_rad_out;
@@ -977,7 +984,7 @@ impl VocalEngine {
                     let mut air_mod = 1.0_f64;
                     if !skip_harmonics {
                         if studio && use_humanize {
-                            let flow_sq_air = (0.28 + 1.35 * open_gate * open_gate) * 1.10;
+                            let flow_sq_air = (0.68 + 0.42 * open_gate) * 0.96;
                             air_mod = 1.0 + amp.min(1.0) * (flow_sq_air - 1.0);
                         } else {
                             let open = 0.5 + 0.5 * mod_sin;
