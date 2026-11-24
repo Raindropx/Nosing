@@ -165,7 +165,7 @@ pub struct LfTable {
 }
 
 #[inline]
-pub fn voiced_high_shape(hz: f64, f6: f64, wideband: bool, tract_join: bool, sb: f64) -> f64 {
+pub fn voiced_high_shape(hz: f64, f6: f64, wideband: bool, tract_join: bool, sb: f64, studio: bool) -> f64 {
     let scale = (f6 / 5200.0).clamp(0.65, 1.6);
     let mut smooth_val = 0.0;
     if sb > 0.0 {
@@ -174,7 +174,15 @@ pub fn voiced_high_shape(hz: f64, f6: f64, wideband: bool, tract_join: bool, sb:
         env_fade = env_fade * env_fade * (3.0 - 2.0 * env_fade);
         let ref_hz = (f6 * 0.96).max(5200.0);
         let slope = (hz / ref_hz).max(1.0).powf(-1.18);
-        let env_top = if hz <= 15000.0 {
+        let env_top = if studio {
+            if hz <= 15000.0 {
+                1.0
+            } else if hz >= 19500.0 {
+                0.0
+            } else {
+                0.5 + 0.5 * (PI * (hz - 15000.0) / 4500.0).cos()
+            }
+        } else if hz <= 15000.0 {
             1.0
         } else if hz >= 20000.0 {
             0.0
@@ -563,8 +571,8 @@ impl VocalSource {
                 if studio {
                     st_disp_start = (2150.0 - 380.0 * (rd_clamped - 1.0)).max(1550.0);
                     let st_rd_u = ((rd_clamped - 0.8) / 0.7).clamp(0.0, 1.0);
-                    st_coh_ceil = 0.68 - 0.30 * st_rd_u;
-                    st_coh_start = 5800.0 - 1100.0 * st_rd_u;
+                    st_coh_ceil = 0.78 - 0.24 * st_rd_u;
+                    st_coh_start = 6400.0 - 900.0 * st_rd_u;
                     if lt.rd_comp_db.len() > lf_ri + 1 {
                         rd_comp = lt.rd_comp_db[lf_ri]
                             + (lt.rd_comp_db[lf_ri + 1] - lt.rd_comp_db[lf_ri]) * lf_fr;
@@ -591,6 +599,21 @@ impl VocalSource {
                 db += (if studio { 1.0 } else { 0.68 }) * m_delta;
                 if studio {
                     db += rd_comp;
+                    if st_rd > 1.12 {
+                        let oq_u = (st_rd - 1.12).min(1.1);
+                        if k == 1 {
+                            db += 3.8 * oq_u;
+                        } else if k == 2 {
+                            db -= 1.4 * oq_u;
+                        }
+                    } else if st_rd < 0.96 {
+                        let skew_u = (0.96 - st_rd).min(0.45) / 0.45;
+                        if k == 2 {
+                            db += 2.6 * skew_u;
+                        } else if k == 3 {
+                            db += 1.4 * skew_u;
+                        }
+                    }
                 }
                 let mut tgt_off;
                 if studio {
@@ -798,8 +821,8 @@ impl VocalSource {
         let mut cw_cur = w_start.cos();
         let mut sw_cur = w_start.sin();
         let rd_high_u = ((c_rd - 0.8) / 0.7).clamp(0.0, 1.0);
-        let st_high_ceil = 0.68 - 0.30 * rd_high_u;
-        let st_high_start = 5800.0 - 1100.0 * rd_high_u;
+        let st_high_ceil = 0.78 - 0.24 * rd_high_u;
+        let st_high_start = 6400.0 - 900.0 * rd_high_u;
         let rad_a_hi = if studio { (-2.0 * PI * 3800.0 / rc.sr).exp() } else { 0.0 };
         let rad_num2_hi = (1.0 - rad_a_hi) * (1.0 - rad_a_hi);
         let rad_den_b_hi = 1.0 + rad_a_hi * rad_a_hi;
@@ -811,8 +834,8 @@ impl VocalSource {
         let mut tmp_high = [0.0_f64; 512];
         for k in k_start..self.k_cur {
             let hz = ((k + 1) as f64) * f0;
-            let ref_shape = voiced_high_shape(hz, f6, wideband, tract_join, 0.0);
-            let new_shape = if sb > 0.0 { voiced_high_shape(hz, f6, wideband, tract_join, 1.0) } else { ref_shape };
+            let ref_shape = voiced_high_shape(hz, f6, wideband, tract_join, 0.0, studio);
+            let new_shape = if sb > 0.0 { voiced_high_shape(hz, f6, wideband, tract_join, 1.0, studio) } else { ref_shape };
             let a_shape = if sb >= 1.0 { new_shape } else if sb <= 0.0 { ref_shape } else { ref_shape + (new_shape - ref_shape) * sb };
             let mut coh = 1.0;
             if studio {
@@ -822,7 +845,7 @@ impl VocalSource {
                 }
                 if hz > 9500.0 {
                     let xt_u = ((hz - 9500.0) / 4500.0).min(1.0);
-                    coh *= 1.0 - 0.35 * (xt_u * xt_u * (3.0 - 2.0 * xt_u));
+                    coh *= 1.0 - 0.22 * (xt_u * xt_u * (3.0 - 2.0 * xt_u));
                 }
             } else {
                 if use_hnm && hz > hnm_start {
@@ -864,12 +887,12 @@ impl VocalSource {
         );
         let colour = (3.0 * (pairs[1].0.max(200.0) / 1500.0).log2()).clamp(-5.0, 3.0);
         let level_db = if studio {
-            -28.2
+            -29.2
                 + 4.5 * strength
                 + (eff_tilt * 0.5).clamp(-3.0, 3.0)
                 + 0.7 * colour
                 + 1.4 * (c_rd - 1.0).max(0.0)
-                + 1.1 * source_tilt
+                + 0.75 * source_tilt
         } else {
             (if wideband { -32.5 } else { -36.0 })
                 + 10.0 * strength
@@ -884,7 +907,7 @@ impl VocalSource {
         let coh_ratio = if use_hnm && shape_only_power > 1e-30 { power / shape_only_power } else { 1.0 };
         let fraction = if has_air {
             if studio {
-                (base_fraction + 0.16 * (c_rd - 1.0).max(0.0)).clamp(0.34, 0.80)
+                (base_fraction + 0.14 * (c_rd - 1.0).max(0.0)).clamp(0.24, 0.68)
             } else if use_hnm {
                 let floor = if effort != 0.0 { 0.0 } else { base_fraction };
                 floor.max(1.0 - (1.0 - base_fraction) * coh_ratio)
