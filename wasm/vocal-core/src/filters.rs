@@ -72,6 +72,8 @@ pub struct Resonator {
     pub dg: f64,
     pub cos_w: f64,
     pub d_cos_w: f64,
+    pub cos_w_open: f64,
+    pub d_cos_w_open: f64,
     pub r_closed: f64,
     pub dr_closed: f64,
     pub r_open: f64,
@@ -85,6 +87,7 @@ impl Resonator {
             da: 0.0, db: 0.0, dc: 0.0,
             calibrated, g: 0.0, dg: 0.0,
             cos_w: 1.0, d_cos_w: 0.0,
+            cos_w_open: 1.0, d_cos_w_open: 0.0,
             r_closed: 0.0, dr_closed: 0.0,
             r_open: 0.0, dr_open: 0.0,
         }
@@ -120,16 +123,32 @@ impl Resonator {
     }
 
     #[inline]
-    pub fn set_damped(&mut self, rc: &RateConst, f: f64, mut bw: f64, damp_amt: f64, snap: bool) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_damped(
+        &mut self,
+        rc: &RateConst,
+        f: f64,
+        mut bw: f64,
+        damp_amt: f64,
+        snap: bool,
+        f_shift_ratio: f64,
+        damp_scale: f64,
+    ) {
         if !(bw > 0.0) {
             bw = 30.0;
         }
         let valid = f > 0.0 && f < rc.sr * 0.5;
+        let ds = damp_amt * damp_scale;
         let cw = if valid { (2.0 * PI * f / rc.sr).cos() } else { 1.0 };
-        let bw_c = (bw * (1.0 - 0.14 * damp_amt)).max(30.0);
-        let bw_o = (bw * (1.0 + 0.90 * damp_amt)).min(rc.sr * 0.28);
-        let r_c = if valid { (-PI * bw_c / rc.sr).exp() } else { 0.0 };
-        let r_o = if valid { (-PI * bw_o / rc.sr).exp() } else { 0.0 };
+        let cw_open = if valid && f_shift_ratio != 0.0 {
+            (2.0 * PI * (f * (1.0 + f_shift_ratio)).min(rc.sr * 0.46) / rc.sr).cos()
+        } else {
+            cw
+        };
+        let bw_c = (bw * (1.0 - 0.14 * ds)).max(30.0);
+        let bw_o = (bw * (1.0 + 0.90 * ds)).min(rc.sr * 0.28);
+        let r_c = if valid { (-PI * bw_c / rc.sr).exp().min(0.998) } else { 0.0 };
+        let r_o = if valid { (-PI * bw_o / rc.sr).exp().min(0.998) } else { 0.0 };
         if self.calibrated {
             let g = if valid { rc.rate_correction(f, bw) } else { 0.0 };
             if snap {
@@ -141,11 +160,13 @@ impl Resonator {
         }
         if snap {
             self.cos_w = cw; self.d_cos_w = 0.0;
+            self.cos_w_open = cw_open; self.d_cos_w_open = 0.0;
             self.r_closed = r_c; self.dr_closed = 0.0;
             self.r_open = r_o; self.dr_open = 0.0;
             return;
         }
         self.d_cos_w = (cw - self.cos_w) / rc.hop;
+        self.d_cos_w_open = (cw_open - self.cos_w_open) / rc.hop;
         self.dr_closed = (r_c - self.r_closed) / rc.hop;
         self.dr_open = (r_o - self.r_open) / rc.hop;
     }
@@ -170,10 +191,12 @@ impl Resonator {
     #[inline(always)]
     pub fn run_damped(&mut self, x: f64, open_gate: f64) -> f64 {
         self.cos_w += self.d_cos_w;
+        self.cos_w_open += self.d_cos_w_open;
         self.r_closed += self.dr_closed;
         self.r_open += self.dr_open;
         let r = self.r_closed + (self.r_open - self.r_closed) * open_gate;
-        let b = 2.0 * r * self.cos_w;
+        let cw = self.cos_w + (self.cos_w_open - self.cos_w) * open_gate;
+        let b = 2.0 * r * cw;
         let c = -r * r;
         let a = 1.0 - b - c;
         let y = a * x + b * self.y1 + c * self.y2;
@@ -229,6 +252,68 @@ impl DynamicNotch {
         self.db2 = (b2 - self.b2) / hop;
         self.da1 = (a1 - self.a1) / hop;
         self.da2 = (a2 - self.a2) / hop;
+    }
+
+    #[inline(always)]
+    pub fn run(&mut self, x: f64) -> f64 {
+        self.b0 += self.db0; self.b1 += self.db1; self.b2 += self.db2;
+        self.a1 += self.da1; self.a2 += self.da2;
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1; self.x1 = x;
+        self.y2 = self.y1; self.y1 = y;
+        y
+    }
+}
+
+#[inline]
+pub fn hpc_coeffs(f6: f64, sr: f64) -> [f64; 5] {
+    let f6_eff = if f6 > 0.0 { f6 } else { 5200.0 };
+    let fc = (3800.0 * (f6_eff / 5200.0)).clamp(3200.0, 4400.0);
+    let cap_a = 10.0_f64.powf(11.5 / 40.0);
+    let w0 = 2.0 * PI * fc / sr;
+    let cw0 = w0.cos();
+    let sw0 = w0.sin();
+    let alpha = sw0 / (2.0 * 0.60);
+    let tsa = 2.0 * cap_a.sqrt() * alpha;
+    let a0 = (cap_a + 1.0) - (cap_a - 1.0) * cw0 + tsa;
+    [
+        (cap_a * ((cap_a + 1.0) + (cap_a - 1.0) * cw0 + tsa)) / a0,
+        (-2.0 * cap_a * ((cap_a - 1.0) + (cap_a + 1.0) * cw0)) / a0,
+        (cap_a * ((cap_a + 1.0) + (cap_a - 1.0) * cw0 - tsa)) / a0,
+        (2.0 * ((cap_a - 1.0) - (cap_a + 1.0) * cw0)) / a0,
+        ((cap_a + 1.0) - (cap_a - 1.0) * cw0 - tsa) / a0,
+    ]
+}
+
+pub struct DynamicShelf {
+    b0: f64, b1: f64, b2: f64, a1: f64, a2: f64,
+    db0: f64, db1: f64, db2: f64, da1: f64, da2: f64,
+    x1: f64, x2: f64, y1: f64, y2: f64,
+}
+
+impl DynamicShelf {
+    pub fn new() -> Self {
+        Self {
+            b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0,
+            db0: 0.0, db1: 0.0, db2: 0.0, da1: 0.0, da2: 0.0,
+            x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0,
+        }
+    }
+
+    #[inline]
+    pub fn set(&mut self, sr: f64, hop: f64, f6: f64, snap: bool) {
+        let c = hpc_coeffs(f6, sr);
+        if snap {
+            self.b0 = c[0]; self.b1 = c[1]; self.b2 = c[2]; self.a1 = c[3]; self.a2 = c[4];
+            self.db0 = 0.0; self.db1 = 0.0; self.db2 = 0.0; self.da1 = 0.0; self.da2 = 0.0;
+            return;
+        }
+        self.db0 = (c[0] - self.b0) / hop;
+        self.db1 = (c[1] - self.b1) / hop;
+        self.db2 = (c[2] - self.b2) / hop;
+        self.da1 = (c[3] - self.a1) / hop;
+        self.da2 = (c[4] - self.a2) / hop;
     }
 
     #[inline(always)]
@@ -393,6 +478,7 @@ pub struct FricativeFrontCavity {
     r_stub: f64, r_stub_t: f64, r_stub_step: f64,
     r_j: f64, r_j_t: f64, r_j_step: f64,
     last_f: f64,
+    last_studio: bool,
     steady: bool,
     s_int: usize, s_ap: f64, int_d: usize, ap: f64,
 }
@@ -415,7 +501,7 @@ impl FricativeFrontCavity {
             r_lip: 0.36, r_lip_t: 0.36, r_lip_step: 0.0,
             r_stub: 0.4, r_stub_t: 0.4, r_stub_step: 0.0,
             r_j: 0.16, r_j_t: 0.16, r_j_step: 0.0,
-            last_f: -1.0, steady: false,
+            last_f: -1.0, last_studio: false, steady: false,
             s_int: 1, s_ap: 0.0, int_d: 1, ap: 0.0,
         }
     }
@@ -444,10 +530,11 @@ impl FricativeFrontCavity {
     }
 
     #[inline]
-    pub fn set(&mut self, sr: f64, hop: f64, hz: f64, snap: bool) {
+    pub fn set(&mut self, sr: f64, hop: f64, hz: f64, studio: bool, snap: bool) {
         let f = hz.max(1000.0);
-        if f != self.last_f {
+        if f != self.last_f || studio != self.last_studio {
             self.last_f = f;
+            self.last_studio = studio;
             let amt = self.amount;
             let t_pal = ((f - 3100.0) / (4200.0 - 3100.0)).clamp(0.0, 1.0);
             let t_alv = ((f - 4200.0) / (6100.0 - 4200.0)).clamp(0.0, 1.0);
@@ -455,8 +542,8 @@ impl FricativeFrontCavity {
                 let sx = sh + (x - sh) * t_pal;
                 sx + (s - sx) * t_alv
             };
-            let f_pole = place(2750.0, 5600.0, 8200.0);
-            let lp_hz = place(9000.0, 10500.0, 16500.0);
+            let f_pole = if studio { place(3650.0, 6100.0, 9000.0) } else { place(2750.0, 5600.0, 8200.0) };
+            let lp_hz = if studio { place(10500.0, 13000.0, 18000.0) } else { place(9000.0, 10500.0, 16500.0) };
             let f_zero = place(1350.0, 2350.0, 2700.0);
             let lp_zero = place(2400.0, 2300.0, 4200.0);
             let couple = |light_v: f64, strong_v: f64| -> f64 {

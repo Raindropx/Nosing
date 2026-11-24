@@ -18,6 +18,7 @@
   function createEngine(NSG, SR, modeB) {
   var HD = SR === 48000;
   modeB = HD && modeB === true;
+  var studioMode = false;
   var HOP = HD ? 96 : 32;         // 控制帧始终为 2ms
   var SOURCE_TOP = HD ? 20000 : 7600, SOURCE_FADE = HD ? 1000 : 400;
   var NHARM = 16;                 // 倍频振幅阶数
@@ -99,6 +100,7 @@
     this.calibrated = modeB && calibrated === true;
     this.g = 0; this.dg = 0;
     this.cosW = 1; this.dCosW = 0;
+    this.cosWOpen = 1; this.dCosWOpen = 0;
     this.rClosed = 0; this.drClosed = 0;
     this.rOpen = 0; this.drOpen = 0;
   }
@@ -119,14 +121,16 @@
     if (snap) { this.a = A; this.b = B; this.c = C; this.da = this.db = this.dc = 0; return; }
     this.da = (A - this.a) / HOP; this.db = (B - this.b) / HOP; this.dc = (C - this.c) / HOP;
   };
-  Resonator.prototype.setDamped = function (f, bw, dampAmt, snap) {
+  Resonator.prototype.setDamped = function (f, bw, dampAmt, snap, fShiftRatio, dampScale) {
     if (!(bw > 0)) bw = 30;
     var valid = f > 0 && f < SR * 0.5;
+    var ds = dampAmt * (dampScale === undefined ? 1 : dampScale);
     var cw = valid ? Math.cos(2 * Math.PI * f / SR) : 1;
-    var bwC = Math.max(30, bw * (1 - 0.14 * dampAmt));
-    var bwO = Math.min(SR * 0.28, bw * (1 + 0.90 * dampAmt));
-    var rC = valid ? Math.exp(-Math.PI * bwC / SR) : 0;
-    var rO = valid ? Math.exp(-Math.PI * bwO / SR) : 0;
+    var cwOpen = (valid && fShiftRatio) ? Math.cos(2 * Math.PI * Math.min(SR * 0.46, f * (1 + fShiftRatio)) / SR) : cw;
+    var bwC = Math.max(30, bw * (1 - 0.14 * ds));
+    var bwO = Math.min(SR * 0.28, bw * (1 + 0.90 * ds));
+    var rC = valid ? Math.min(0.998, Math.exp(-Math.PI * bwC / SR)) : 0;
+    var rO = valid ? Math.min(0.998, Math.exp(-Math.PI * bwO / SR)) : 0;
     if (this.calibrated) {
       var g = valid ? rateCorrection(f, bw) : 0;
       if (snap) { this.g = g; this.dg = 0; }
@@ -134,11 +138,13 @@
     }
     if (snap) {
       this.cosW = cw; this.dCosW = 0;
+      this.cosWOpen = cwOpen; this.dCosWOpen = 0;
       this.rClosed = rC; this.drClosed = 0;
       this.rOpen = rO; this.drOpen = 0;
       return;
     }
     this.dCosW = (cw - this.cosW) / HOP;
+    this.dCosWOpen = (cwOpen - this.cosWOpen) / HOP;
     this.drClosed = (rC - this.rClosed) / HOP;
     this.drOpen = (rO - this.rOpen) / HOP;
   };
@@ -153,9 +159,11 @@
     this.y2 = this.y1; this.y1 = y; return out;
   };
   Resonator.prototype.runDamped = function (x, openGate) {
-    this.cosW += this.dCosW; this.rClosed += this.drClosed; this.rOpen += this.drOpen;
+    this.cosW += this.dCosW; this.cosWOpen += this.dCosWOpen;
+    this.rClosed += this.drClosed; this.rOpen += this.drOpen;
     var r = this.rClosed + (this.rOpen - this.rClosed) * openGate;
-    var B = 2 * r * this.cosW, C = -r * r, A = 1 - B - C;
+    var cw = this.cosW + (this.cosWOpen - this.cosW) * openGate;
+    var B = 2 * r * cw, C = -r * r, A = 1 - B - C;
     var y = A * x + B * this.y1 + C * this.y2;
     var out = y;
     if (this.calibrated) {
@@ -189,6 +197,43 @@
     this.da1 = (a1 - this.a1) / HOP; this.da2 = (a2 - this.a2) / HOP;
   };
   DynamicNotch.prototype.run = function (x) {
+    this.b0 += this.db0; this.b1 += this.db1; this.b2 += this.db2;
+    this.a1 += this.da1; this.a2 += this.da2;
+    var y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+    return y;
+  };
+
+  function hpcCoeffs(f6, sr) {
+    var fc = Math.max(3200, Math.min(4400, 3800 * ((f6 || 5200) / 5200)));
+    var A = Math.pow(10, 11.5 / 40), w0 = 2 * Math.PI * fc / sr;
+    var cw0 = Math.cos(w0), sw0 = Math.sin(w0), alpha = sw0 / (2 * 0.60);
+    var tsa = 2 * Math.sqrt(A) * alpha;
+    var a0 = (A + 1) - (A - 1) * cw0 + tsa;
+    return [
+      (A * ((A + 1) + (A - 1) * cw0 + tsa)) / a0,
+      (-2 * A * ((A - 1) + (A + 1) * cw0)) / a0,
+      (A * ((A + 1) + (A - 1) * cw0 - tsa)) / a0,
+      (2 * ((A - 1) - (A + 1) * cw0)) / a0,
+      ((A + 1) - (A - 1) * cw0 - tsa) / a0
+    ];
+  }
+  function DynamicShelf() {
+    this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0;
+    this.db0 = 0; this.db1 = 0; this.db2 = 0; this.da1 = 0; this.da2 = 0;
+    this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
+  }
+  DynamicShelf.prototype.set = function (f6, snap) {
+    var c = hpcCoeffs(f6, SR);
+    if (snap) {
+      this.b0 = c[0]; this.b1 = c[1]; this.b2 = c[2]; this.a1 = c[3]; this.a2 = c[4];
+      this.db0 = this.db1 = this.db2 = this.da1 = this.da2 = 0;
+      return;
+    }
+    this.db0 = (c[0] - this.b0) / HOP; this.db1 = (c[1] - this.b1) / HOP; this.db2 = (c[2] - this.b2) / HOP;
+    this.da1 = (c[3] - this.a1) / HOP; this.da2 = (c[4] - this.a2) / HOP;
+  };
+  DynamicShelf.prototype.run = function (x) {
     this.b0 += this.db0; this.b1 += this.db1; this.b2 += this.db2;
     this.a1 += this.da1; this.a2 += this.da2;
     var y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
@@ -309,7 +354,7 @@
   function locusNeighbour(phones, index, resolve) {
     var nasalFallback = null, getPhone = resolve || NSG.phoneOf;
     for (var i = index + 1; i < phones.length; i++) {
-      var ph = getPhone(phones[i]);
+      var ph = getPhone(phones[i], i);
       if (ph.t === 'V' || ph.t === 'G' || ph.t === 'L') return ph;
       if (!nasalFallback && ph.t === 'N') nasalFallback = ph;
     }
@@ -423,7 +468,7 @@
       f2 = f2 * 0.45 + 1050;
       f3 = f3 * 0.65 + 950;
     } else {
-      f1 = Math.max(330, f1 * 0.83);
+      f1 = studioMode ? Math.max(310, f1 * 0.72) : Math.max(330, f1 * 0.83);
       f2 = f2 * 0.60 + 400;
       f3 = (f3 + f2 + 500) * 0.5;
     }
@@ -438,8 +483,13 @@
   /* nz（可选）：[鼻极点 Hz, 零点 Hz]，按渲染时串联的鼻极点/反共振（带宽各 100Hz）计入。 */
   var cpB = new Float64Array(6), cpC = new Float64Array(6), cpA2 = new Float64Array(6), cpCorr = new Float64Array(6);
   var LOG10_OVER_10 = Math.LN10 / 10;
+  var RAD_NOM_HZ = 3800;
   function chainPower(pairs, f0, amps, tiltDb, gl, nz, sampleRate) {
-    var rate = sampleRate || SR, calibrated = modeB && rate === 48000;
+    var rate = sampleRate || SR, calibrated = modeB && rate === 48000 && !studioMode;
+    var radShelf = modeB && studioMode && rate === SR;
+    var radA = radShelf ? Math.exp(-2 * Math.PI * RAD_NOM_HZ / rate) : 0;
+    var radNum2 = radShelf ? (1 - radA) * (1 - radA) : 1, radDenB = 1 + radA * radA, rad2A = 2 * radA;
+    var hcC = radShelf ? hpcCoeffs(pairs[5] ? pairs[5][0] : 5200, rate) : null;
     var hasNz = !!(nz && Math.abs(nz[0] - nz[1]) > 1);
     var pB = 0, pC = 0, pA2 = 1, zB = 0, zC = 0, zA2 = 1;
     if (hasNz) {
@@ -508,8 +558,14 @@
         var zR = 1 - zB * cw - zC * c2, zI = zB * sw + zC * s2;
         g2 *= (pA2 / (pR * pR + pI * pI + 1e-18)) * ((zR * zR + zI * zI) / zA2);
       }
+      if (hcC) {
+        var hNrC = hcC[0] + hcC[1] * cw + hcC[2] * c2, hNiC = -(hcC[1] * sw + hcC[2] * s2);
+        var hDrC = 1 + hcC[3] * cw + hcC[4] * c2, hDiC = -(hcC[3] * sw + hcC[4] * s2);
+        g2 *= (hNrC * hNrC + hNiC * hNiC) / (hDrC * hDrC + hDiC * hDiC + 1e-18);
+      }
       /* 唇端辐射 |1-e^{-jw}|² = 2(1-cos w)，只差一个常数因子，按比例计入即可 */
-      p += ak2 * g2 * (2 - 2 * cw);
+      var radFactor = radShelf ? radNum2 / Math.max(1e-9, radDenB - rad2A * cw) : 1;
+      p += ak2 * g2 * (2 - 2 * cw) * radFactor;
     }
     return p;
   }
@@ -524,7 +580,7 @@
 
   var refPowerCache = null, refPowerKey = '';
   function refPower(timbre) {
-    var key = [timbre.height, NSG.genValue(timbre), timbre.fScale || 1, timbre.warp || 0, timbre.glottal || 0,
+    var key = [studioMode ? 1 : 0, timbre.height, NSG.genValue(timbre), timbre.fScale || 1, timbre.warp || 0, timbre.glottal || 0,
       timbre.bwScale, timbre.hiShift, timbre.lip,
       (timbre.vowelSpace || []).join(','), timbre.harmTailDb, timbre.tiltDb || 0, timbre.pitchTilt || 0, timbre.refF0 || 220,
       (timbre.fRatio || []).join(','), (timbre.bwRatio || []).join(','),
@@ -532,9 +588,35 @@
       (timbre.outEq || []).join(',')].join('|');
     if (refPowerCache !== null && refPowerKey === key) return refPowerCache;
     var pm = NSG.formantsOf(NSG.PHONES.a, timbre).pairs;
+    if (studioMode) applyHawksMillerBw(pm, timbre);
     refPowerCache = chainPower(pm, 220, timbre.harm || NSG.defaultHarm(), pitchTiltAt(timbre, 220), NSG.sourceFilterOf(timbre));
     refPowerKey = key;
     return refPowerCache;
+  }
+
+  function applyHawksMillerBw(pairs, timbre) {
+    var bwS = Math.max(0.7, Math.min(1.5, timbre.bwScale || 1));
+    var br = Array.isArray(timbre.bwRatio) ? timbre.bwRatio : null;
+    var f1 = pairs[0][0], f2 = pairs[1][0], f3 = pairs[2][0];
+    var b1Min = (62 + 165 / (1 + Math.pow(f1 / 250, 2)) + 0.095 * f1) * bwS * (br && br[0] > 0 ? br[0] : 1);
+    var b2Min = (118 + 0.075 * f2) * bwS * (br && br[1] > 0 ? br[1] : 1);
+    var b3Min = (132 + 0.058 * f3) * bwS * (br && br[2] > 0 ? br[2] : 1);
+    if (pairs[0][1] < b1Min) pairs[0][1] = b1Min;
+    if (pairs[1][1] < b2Min) pairs[1][1] = b2Min;
+    if (pairs[2][1] < b3Min) pairs[2][1] = b3Min;
+    if (pairs[3]) {
+      var b4Min = (140 + 0.036 * pairs[3][0]) * bwS;
+      if (pairs[3][1] < b4Min) pairs[3][1] = b4Min;
+    }
+    if (pairs[4]) {
+      var b5Min = (185 + 0.042 * pairs[4][0]) * bwS;
+      if (pairs[4][1] < b5Min) pairs[4][1] = b5Min;
+    }
+    if (pairs[5]) {
+      var b6Min = (240 + 0.048 * pairs[5][0]) * bwS;
+      if (pairs[5][1] < b6Min) pairs[5][1] = b6Min;
+    }
+    return pairs;
   }
 
   /* ---------- 声道送气噪声 ----------
@@ -551,7 +633,12 @@
     var poles = lpHz > 0 ? (lpPoles || 1) : 0;
     var soft = softness > 0 ? softness : 0;
     var aSoft = soft > 0 ? Math.exp(-2 * Math.PI * 1800 / SR) : 0;
-    var correction = modeB ? pairs.map(function (pair) { return rateCorrection(pair[0], pair[1]); }) : null;
+    var radShelfN = studioMode && modeB;
+    var useCorr = modeB && !studioMode;
+    var radAN = radShelfN ? Math.exp(-2 * Math.PI * RAD_NOM_HZ / SR) : 0;
+    var radNum2N = radShelfN ? (1 - radAN) * (1 - radAN) : 1, radDenBN = 1 + radAN * radAN, rad2AN = 2 * radAN;
+    var hcN = radShelfN ? hpcCoeffs(pairs[5] ? pairs[5][0] : 5200, SR) : null;
+    var correction = useCorr ? pairs.map(function (pair) { return rateCorrection(pair[0], pair[1]); }) : null;
     var coefficients = pairs.map(function (pair) {
       var f = pair[0], bw = pair[1];
       if (!(f > 20) || f >= SR * 0.5) return null;
@@ -565,7 +652,12 @@
         var cf = coefficients[q]; if (!cf) continue;
         var A = cf[0], B = cf[1], C = cf[2], dR = 1 - B * cw - C * c2, dI = B * sw + C * s2;
         g2 *= A * A / (dR * dR + dI * dI + 1e-18);
-        if (modeB) g2 *= Math.pow(1 + correction[q] * (1 - cw), 2);
+        if (useCorr) g2 *= Math.pow(1 + correction[q] * (1 - cw), 2);
+      }
+      if (hcN) {
+        var hNrN = hcN[0] + hcN[1] * cw + hcN[2] * c2, hNiN = -(hcN[1] * sw + hcN[2] * s2);
+        var hDrN = 1 + hcN[3] * cw + hcN[4] * c2, hDiN = -(hcN[3] * sw + hcN[4] * s2);
+        g2 *= (hNrN * hNrN + hNiN * hNiN) / (hDrN * hDrN + hDiN * hDiN + 1e-18);
       }
       if (poles > 0) {
         g2 *= Math.pow((1 - aLp) * (1 - aLp) / (1 + aLp * aLp - 2 * aLp * cw), poles);
@@ -577,7 +669,8 @@
         g2 *= sRe * sRe + sIm * sIm;
       }
       if (eq) g2 *= Math.pow(10, NSG.outEqDbAt(eq, w * SR / (2 * Math.PI)) / 10);
-      p += g2 * (2 - 2 * cw);
+      var radFactorN = radShelfN ? radNum2N / Math.max(1e-9, radDenBN - rad2AN * cw) : 1;
+      p += g2 * (2 - 2 * cw) * radFactorN;
     }
     return p / NB;
   }
@@ -595,11 +688,14 @@
         aspirationGrid.push([Math.cos(w), Math.sin(w), Math.cos(2 * w), Math.sin(2 * w)]);
       }
     }
-    var key = airMix + ':' + (Array.isArray(eq) ? eq.join(',') : '');
+    var stKey = studioMode && modeB ? 'S:' : '';
+    var key = stKey + airMix + ':' + (Array.isArray(eq) ? eq.join(',') : '');
     if (key !== aspirationWeightKey) {
       aspirationWeights = new Float64Array(bins);
-      var asp = Math.exp(-2 * Math.PI * 1000 / SR), air = Math.exp(-2 * Math.PI * 6500 / SR);
+      var asp = Math.exp(-2 * Math.PI * (studioMode && modeB ? 950 : 1000) / SR), air = Math.exp(-2 * Math.PI * 6500 / SR);
       var body = Math.exp(-2 * Math.PI * 2800 / SR), source = Math.exp(-2 * Math.PI * 6000 / SR);
+      var radASt = studioMode && modeB ? Math.exp(-2 * Math.PI * RAD_NOM_HZ / SR) : 0;
+      var radNum2A = (1 - radASt) * (1 - radASt), radDenBA = 1 + radASt * radASt, rad2AA = 2 * radASt;
       for (var j = 0; j < bins; j++) {
         var cw = aspirationGrid[j][0], sw = aspirationGrid[j][1];
         function lp(a) {
@@ -607,18 +703,26 @@
           return [(1 - a) * (1 - a * cw) / den, -(1 - a) * a * sw / den];
         }
         var low = lp(asp), hi = lp(air), mid = lp(body);
-        var re = low[0] + airMix * (hi[0] - mid[0]), im = low[1] + airMix * (hi[1] - mid[1]);
-        var power = (re * re + im * im) * (1 - source) * (1 - source) / (1 + source * source - 2 * source * cw);
+        var power;
+        if (studioMode && modeB) {
+          var l2 = low[0] * low[0] + low[1] * low[1];
+          power = (l2 * l2) * (1 - source) * (1 - source) / (1 + source * source - 2 * source * cw);
+        } else {
+          var re = low[0] + airMix * (hi[0] - mid[0]), im = low[1] + airMix * (hi[1] - mid[1]);
+          power = (re * re + im * im) * (1 - source) * (1 - source) / (1 + source * source - 2 * source * cw);
+        }
         if (Array.isArray(eq)) power *= Math.pow(10, NSG.outEqDbAt(eq, (j + 0.5) * SR / (2 * bins)) / 10);
-        aspirationWeights[j] = power * (2 - 2 * cw);
+        var radFA = studioMode && modeB ? radNum2A / Math.max(1e-9, radDenBA - rad2AA * cw) : 1;
+        aspirationWeights[j] = power * (2 - 2 * cw) * radFA;
       }
       aspirationWeightKey = key;
     }
     var coefficients = pairs.map(function (p) {
       var f = p[0], bw = p[1], r = Math.exp(-Math.PI * bw / SR);
       var b = 2 * r * Math.cos(2 * Math.PI * f / SR), c = -r * r;
-      return f > 20 && f < SR / 2 ? [1 - b - c, b, c, rateCorrection(f, bw)] : null;
+      return f > 20 && f < SR / 2 ? [1 - b - c, b, c, studioMode ? 0 : rateCorrection(f, bw)] : null;
     });
+    var hcA = (studioMode && modeB) ? hpcCoeffs(pairs[5] ? pairs[5][0] : 5200, SR) : null;
     var sum = 0;
     for (var k = 0; k < bins; k++) {
       var grid = aspirationGrid[k], g2 = aspirationWeights[k];
@@ -628,6 +732,11 @@
         var numerator = cf[0] * (1 + cf[3] * (1 - grid[0]));
         g2 *= numerator * numerator / (dr * dr + di * di + 1e-18);
       }
+      if (hcA) {
+        var hNrA = hcA[0] + hcA[1] * grid[0] + hcA[2] * grid[2], hNiA = -(hcA[1] * grid[1] + hcA[2] * grid[3]);
+        var hDrA = 1 + hcA[3] * grid[0] + hcA[4] * grid[2], hDiA = -(hcA[3] * grid[1] + hcA[4] * grid[3]);
+        g2 *= (hNrA * hNrA + hNiA * hNiA) / (hDrA * hDrA + hDiA * hDiA + 1e-18);
+      }
       sum += g2;
     }
     return sum / bins;
@@ -635,7 +744,7 @@
   // 声带通路：s×0.30，av 帧值再乘 0.92；正弦平均功率 1/2；噪声为 [-1,1] 均匀分布，方差 1/3。
   /* 带通噪声（爆破、/f/）不经声道，电平原本只对默认音色标定；
      元音更响的音色里它们会低 8dB 左右。按参考元音功率之比换算回来。 */
-  var defaultRef = null;
+  var defaultRef = null, defaultRefStudio = null;
   // 带通噪声（中心 fc、带宽 bw）经输出均衡后的平均功率增益：按谐振峰形状加权，
   // 不取单点——撅取得到的 EQ 曲线起伏大，单点值会把整段噪声补偏好几 dB。
   function bandEqPower(eq, fc, bw) {
@@ -648,9 +757,16 @@
   }
   // fc/bw：带通中心频率与带宽。输出均衡会在最终输出上再改变这段噪声，参考元音却已计入 EQ，这里抵消掉。
   function bandNoiseScale(timbre, fc, bw) {
-    if (defaultRef === null) defaultRef = refPower(NSG.defaultTimbre());
+    var defRef;
+    if (studioMode) {
+      if (defaultRefStudio === null) defaultRefStudio = refPower(NSG.defaultTimbre());
+      defRef = defaultRefStudio;
+    } else {
+      if (defaultRef === null) defaultRef = refPower(NSG.defaultTimbre());
+      defRef = defaultRef;
+    }
     var ref = refPower(timbre);
-    var s = defaultRef > 1e-12 && ref > 1e-12 ? Math.max(0.5, Math.min(4, Math.sqrt(ref / defaultRef))) : 1;
+    var s = defRef > 1e-12 && ref > 1e-12 ? Math.max(0.5, Math.min(4, Math.sqrt(ref / defRef))) : 1;
     if (fc > 0 && Array.isArray(timbre.outEq)) s *= Math.max(0.5, Math.min(2, 1 / Math.sqrt(bandEqPower(timbre.outEq, fc, bw || 1200))));
     return s;
   }
@@ -722,7 +838,7 @@
     this.rLip = 0.36; this.rLipT = 0.36; this.rLipStep = 0;
     this.rStub = 0.4; this.rStubT = 0.4; this.rStubStep = 0;
     this.rJ = 0.16; this.rJT = 0.16; this.rJStep = 0;
-    this._lastF = -1; this._lastAmt = -1; this._steady = false;
+    this._lastF = -1; this._lastAmt = -1; this._lastStudio = false; this._steady = false;
     this._sInt = 1; this._sAp = 0; this._intD = 1; this._ap = 0;
   }
   FricativeFrontCavity.prototype._cacheSteady = function () {
@@ -736,16 +852,16 @@
   FricativeFrontCavity.prototype.set = function (hz, snap) {
     var f = Math.max(1000, hz);
     var amt = this.amount;
-    if (f !== this._lastF || amt !== this._lastAmt) {
-      this._lastF = f; this._lastAmt = amt;
+    if (f !== this._lastF || amt !== this._lastAmt || studioMode !== this._lastStudio) {
+      this._lastF = f; this._lastAmt = amt; this._lastStudio = studioMode;
       var tPal = Math.max(0, Math.min(1, (f - 3100) / (4200 - 3100)));
       var tAlv = Math.max(0, Math.min(1, (f - 4200) / (6100 - 4200)));
       function place(sh, x, s) {
         var sx = sh + (x - sh) * tPal;
         return sx + (s - sx) * tAlv;
       }
-      var fPole = place(2750, 5600, 8200);
-      var lpHz = place(9000, 10500, 16500);
+      var fPole = studioMode ? place(3650, 6100, 9000) : place(2750, 5600, 8200);
+      var lpHz = studioMode ? place(10500, 13000, 18000) : place(9000, 10500, 16500);
       var fZero = place(1350, 2350, 2700);
       var lpZero = place(2400, 2300, 4200);
       function couple(lightVal, strongVal) {
@@ -1139,6 +1255,41 @@
       var isRomance = /^(es|pt|it|fr|ro)$/.test(noteLang);
       var isEsperanto = noteLang === 'eo';
       var isMandarinLike = noteLang === 'zh' || noteLang === 'zh-x-sichuan';
+      function studioZhVowelPhone(phonesList, idx, nucIdx, phBase) {
+        if (!(studioMode && isMandarinLike && phBase && phBase.t === 'V')) return phBase;
+        var id = phonesList[idx];
+        if (id === 'a') {
+          return { t: 'V', f: [740, 1290, 2480], b: [70, 92, 132], nz: 0, lip: 0 };
+        }
+        if (id === 'E' && idx + 1 < phonesList.length && phonesList[idx + 1] === 'n') {
+          return { t: 'V', f: [565, 1460, 2480], b: [70, 92, 132], nz: 0, lip: 0 };
+        }
+        if (id === 'e' && idx > 0 && phonesList[idx - 1] === 'u_medial' && idx + 1 < phonesList.length && phonesList[idx + 1] === 'I') {
+          return { t: 'V', f: [440, 1280, 2420], b: [70, 92, 132], nz: 0, lip: 0.03 };
+        }
+        if (id === 'o' && idx > 0 && phonesList[idx - 1] === 'u_medial') {
+          return { t: 'V', f: [555, 980, 2450], b: [70, 92, 132], nz: 0, lip: 0.05 };
+        }
+        if (id === 'o_ou') {
+          return { t: 'V', f: [475, 1040, 2450], b: [70, 92, 132], nz: 0, lip: 0.04 };
+        }
+        if (id === 'U_ou') {
+          return { t: 'V', f: [360, 820, 2320], b: [70, 92, 132], nz: 0, lip: 0.09, coda: 0.160, glide: true };
+        }
+        if (id === 'Ao') {
+          return { t: 'V', f: [725, 1140, 2440], b: [70, 92, 132], nz: 0, lip: 0 };
+        }
+        if (idx > nucIdx && id === 'I') {
+          return { t: 'V', f: [350, 2140, 2750], b: [70, 92, 132], nz: 0, lip: 0, coda: phBase.coda, glide: phBase.glide };
+        }
+        return phBase;
+      }
+      function notePhoneAt(idx) {
+        return studioZhVowelPhone(phones, idx, nuc, notePhone(phones[idx]));
+      }
+      function locusResolve(id, idx) {
+        return idx !== undefined ? notePhoneAt(idx) : notePhone(id);
+      }
       var zhNasalCoda = isMandarinLike && nuc === phones.length - 2 &&
         NSG.phoneOf(phones[nuc]).t === 'V' && /^(n|ng)$/.test(phones[phones.length - 1]) ? phones[phones.length - 1] : '';
       function isGermanAspStop(index) {
@@ -1154,7 +1305,7 @@
         if (phone.t === 'A') {
           if (isMandarinLike && index < nuclei[0]) {
             if (phones[index] === 'ts_r') return 0.40;
-            if (phones[index] === 'tsh_j') return 0.18;
+            if (phones[index] === 'tsh_j') return studioMode ? 0.26 : 0.18;
           }
           return phone.closure === undefined ? 0.30 : phone.closure;
         }
@@ -1173,7 +1324,15 @@
         if (clear === 'T') return 0.042 * consScale;
         if (clear === 'L') return 0.082 * consScale;
         // 韵尾保留可辨认的持阻段；短音仍受原有 55% 预算约束，声母 n 不受影响。
-        if (zhNasalCoda && index === phones.length - 1) return (zhNasalCoda === 'n' ? 0.105 : 0.125) * consScale;
+        if (zhNasalCoda && index === phones.length - 1) {
+          if (studioMode) {
+            var nCodaDur = zhNasalCoda === 'n'
+              ? Math.min(0.250, 0.075 + Math.max(0, dur - 0.35) * 0.14)
+              : Math.min(0.340, 0.095 + Math.max(0, dur - 0.35) * 0.18);
+            return nCodaDur * consScale;
+          }
+          return (zhNasalCoda === 'n' ? 0.105 : 0.125) * consScale;
+        }
         // 留出可辨认的唇齿擦音尾；短音仍服从 55% 的辅音总预算。
         if ((isEnglish || isRomance || isEsperanto) && /^(f|fy_ru)$/.test(phones[index])) return 0.115 * consScale;
         if ((isEnglish || isRomance || isEsperanto || noteLang === 'tlh') && /^(v|vy_ru)$/.test(phones[index])) return 0.095 * consScale;
@@ -1186,16 +1345,29 @@
           (phone.t === 'F' || phone.t === 'A' || (phone.t === 'S' && phone.asp)) && dur < 0.18) ?
           (dur <= 0.08 ? 0.78 : 0.78 + 0.22 * ((dur - 0.08) / 0.10)) : 1;
         if (isMandarinLike && phones[index] === 'tsh_j' && index < nuclei[0]) {
-          var qBase = dur >= 0.25 ? 0.165 : dur <= 0.12 ? 0.135 : 0.135 + 0.030 * ((dur - 0.12) / 0.13);
+          var qBase = studioMode
+            ? (dur >= 0.25 ? 0.125 : dur <= 0.12 ? 0.105 : 0.105 + 0.020 * ((dur - 0.12) / 0.13))
+            : (dur >= 0.25 ? 0.165 : dur <= 0.12 ? 0.135 : 0.135 + 0.030 * ((dur - 0.12) / 0.13));
           return qBase * consScale * zhShortScale;
         }
+        if (studioMode && isMandarinLike && index < nuclei[0] && /^(ts|ts_j|ts_r)$/.test(phones[index])) {
+          var uAffrBase = phones[index] === 'ts' ? 0.068 : phones[index] === 'ts_j' ? 0.072 : 0.080;
+          return uAffrBase * consScale * zhShortScale;
+        }
         if (index < nuc) {
-          if (phones[index] === 'u_medial') return adaptiveMedialDur(0.045, 0.065, 0.35);
+          if (phones[index] === 'u_medial') return (studioMode && isMandarinLike) ? adaptiveMedialDur(0.056, 0.085, 0.36) : adaptiveMedialDur(0.045, 0.065, 0.35);
           if (phones[index] === 'u_labial') return adaptiveMedialDur(0.050, 0.070, 0.35);
           if (phones[index] === 'y_medial') return adaptiveMedialDur(0.055, 0.075, 0.38);
           if (phones[index] === 'y_ue') return adaptiveMedialDur(0.085, 0.110, 0.40);
+          if (studioMode && isMandarinLike && phones[index] === 'i') return adaptiveMedialDur(0.055, 0.085, 0.34);
         }
         if (/^(hak|nan-x-teochew)$/.test(noteLang) && index > nuc && /^(i|u)(~)?$/.test(phones[index])) return 0.090;
+        if (studioMode && isMandarinLike && index > nuc) {
+          if (phones[index] === 'I') return Math.max(0.088, Math.min(0.135, dur * 0.44));
+          if (phones[index] === 'U_a') return Math.max(0.110, Math.min(0.220, dur * 0.38));
+          if (phones[index] === 'U_ou') return Math.max(0.115, Math.min(0.215, dur * 0.38));
+          if (phones[index] === 'U') return Math.max(0.095, Math.min(0.185, dur * 0.36));
+        }
         return phoneDur(phone, phone.glide ? 'coda' : index < nuc ? 'onset' : 'coda') * (phone.t === 'V' ? 1 : consScale * zhShortScale);
       }
       function segmentDur(index) {
@@ -1248,7 +1420,7 @@
         else if (e.kind === 'F' && e.release) { ratio = 0.65; floor = 0.012; }
         else if (e.kind === 'S' || e.kind === 'VB') { ratio = 0.65; floor = 0.018; }
         else if (e.kind === 'N' || e.kind === 'G') { ratio = 0.55; floor = 0.032; }
-        else if (e.kind === 'V') { ratio = isEarly ? 0.50 : 0.65; floor = isEarly ? 0.034 : 0.048; }
+        else if (e.kind === 'V') { ratio = isEarly ? 0.50 : (studioMode && e.glideFrom ? 0.72 : 0.65); floor = isEarly ? 0.034 : (studioMode && e.glideFrom ? 0.058 : 0.048); }
         else { ratio = 0.65; floor = 0.020; }
         return Math.min(d0, Math.max(d0 * ratio, Math.min(d0, floor)));
       }
@@ -1258,7 +1430,7 @@
         else if (e.kind === 'F' && e.release) { ratio = 0.45; floor = 0.010; }
         else if (e.kind === 'S' || e.kind === 'VB') { ratio = 0.45; floor = 0.014; }
         else if (e.kind === 'N' || e.kind === 'G') { ratio = 0.35; floor = 0.024; }
-        else if (e.kind === 'V') { ratio = isEarly ? 0.38 : 0.42; floor = isEarly ? 0.024 : 0.028; }
+        else if (e.kind === 'V') { ratio = isEarly ? 0.38 : (studioMode && e.glideFrom ? 0.55 : 0.42); floor = isEarly ? 0.024 : (studioMode && e.glideFrom ? 0.044 : 0.028); }
         else { ratio = 0.45; floor = 0.016; }
         return Math.min(prefMin, Math.max(d0 * ratio, Math.min(d0, floor)));
       }
@@ -1518,6 +1690,8 @@
             lead = 0.028; fade = 0.024; leadFrac = 0.60; fadeFrac = 0.52;
           } else if (phones[0] === 'h' && 0 < nuclei[0]) {
             fade = 0.060; fadeFrac = 0.60;
+          } else if (studioMode && /^(tsh|tsh_r|tsh_j|ts|ts_r|ts_j)$/.test(phones[0]) && 0 < nuclei[0]) {
+            lead = 0; fade = 0;
           } else if (phones[0] === 'tsh' && 0 < nuclei[0]) {
             lead = 0.024; fade = 0.015; leadFrac = 0.74; fadeFrac = 0.46;
           } else if (phones[0] === 'tsh_r' && 0 < nuclei[0]) {
@@ -1666,15 +1840,25 @@
         notes[n] = note;
         continue;
       }
-      var basePairs = NSG.formantsOf(notePhone(phones[nuc]), timbre).pairs;
+      var basePh = notePhoneAt(nuc);
+      var basePairs = NSG.formantsOf(basePh, timbre).pairs;
+      if (studioMode) {
+        if (basePh.t === 'V') applyHawksMillerBw(basePairs, timbre);
+        else if (Array.isArray(basePh.b)) {
+          var bS0 = timbre.bwScale || 1, br0 = Array.isArray(timbre.bwRatio) ? timbre.bwRatio : null;
+          for (var bk0 = 0; bk0 < Math.min(3, basePh.b.length); bk0++) basePairs[bk0][1] = Math.max(30, basePh.b[bk0] * bS0 * (br0 && br0[bk0] > 0 ? br0[bk0] : 1));
+        }
+      }
       /* 该音符的等力度增益：复韵母按几个元音的平均功率算，
          否则 /ai/ 这种“前音响、后音轻”的音节会被按后音补偿而整体过响 */
       var pSum = 0, pN = 0, f0n = NSG.mtof(note.pitch || 60), ha = timbre.harm || NSG.defaultHarm();
       var noteTilt = pitchTiltAt(timbre, f0n);
       for (var cv = 0; cv < phones.length; cv++) {
-        var phv = notePhone(phones[cv]);
+        var phv = notePhoneAt(cv);
         if (phv.t !== 'V') continue;
-        var vp = NSG.formantsOf(phv, timbre).pairs; pSum += chainPower(phv.nz >= 0.5 ? nasalVowelPairs(vp) : vp, f0n, ha, noteTilt, NSG.sourceFilterOf(timbre), phv.nz >= 0.5 ? nasalVowelNz(phv, timbre) : null);
+        var vp = NSG.formantsOf(phv, timbre).pairs;
+        if (studioMode) applyHawksMillerBw(vp, timbre);
+        pSum += chainPower(phv.nz >= 0.5 ? nasalVowelPairs(vp) : vp, f0n, ha, noteTilt, NSG.sourceFilterOf(timbre), phv.nz >= 0.5 ? nasalVowelNz(phv, timbre) : null);
         pN++;
       }
       // 成音节鼻音（毋 m、黄 ng 等）没有元音，也要按鼻音声道做等力度补偿；
@@ -1708,13 +1892,15 @@
       var gl0 = NSG.sourceFilterOf(timbre);
       function nearestVowel(index) {
         var best = -1;
-        for (var q = 0; q < phones.length; q++) if (notePhone(phones[q]).t === 'V' &&
+        for (var q = 0; q < phones.length; q++) if (notePhoneAt(q).t === 'V' &&
           (best < 0 || Math.abs(q - index) < Math.abs(best - index) || (Math.abs(q - index) === Math.abs(best - index) && q > index))) best = q;
-        return best < 0 ? null : notePhone(phones[best]);
+        return best < 0 ? null : notePhoneAt(best);
       }
       function consonantPairsVowel(index) {
         var nb = nearestVowel(index);
-        return nb ? NSG.formantsOf(nb, timbre).pairs : basePairs;
+        var p = nb ? NSG.formantsOf(nb, timbre).pairs : basePairs;
+        if (studioMode && nb && nb.t === 'V') applyHawksMillerBw(p, timbre);
+        return p;
       }
       function relLevel(pairs, vowelPairs, level, nz, maxAv) {
         var pv = chainPower(vowelPairs, f0n, ha, noteTilt, gl0);
@@ -1724,8 +1910,17 @@
       var firstNucleus = -1, lastNucleus = -1, lastVowel = -1, lastSonorant = -1;
       for (var c2 = 0; c2 < phones.length; c2++) {
         var phoneEv0 = ev.length;
-        var ph = notePhone(phones[c2]);
+        var ph = notePhoneAt(c2);
         var fm = NSG.formantsOf(ph, timbre);
+        if (studioMode) {
+          if (ph.t === 'V') applyHawksMillerBw(fm.pairs, timbre);
+          else if ((ph.t === 'N' || ph.t === 'L' || ph.t === 'G' || ph.t === 'T') && Array.isArray(ph.b)) {
+            var bSc = timbre.bwScale || 1, brP = Array.isArray(timbre.bwRatio) ? timbre.bwRatio : null;
+            for (var bpk = 0; bpk < Math.min(3, ph.b.length); bpk++) {
+              fm.pairs[bpk][1] = Math.max(30, ph.b[bpk] * bSc * (brP && brP[bpk] > 0 ? brP[bpk] : 1));
+            }
+          }
+        }
         var nearestNucleus = 0;
         for (var nc = 1; nc < nuclei.length; nc++) {
           if (Math.abs(nuclei[nc] - c2) <= Math.abs(nuclei[nearestNucleus] - c2)) nearestNucleus = nc;
@@ -1737,7 +1932,7 @@
         // 反而会改变已标定的韵尾摩擦（英语 -dʒ、闽南语 -p/-t/-k）。
         var onsetCons = c2 < nuclei[nearestNucleus];
         var clear = hasVowel ? clearSonorant(phones[c2], noteLang, onsetCons) : '';
-        var locus = onsetCons ? locusPairs(ph, locusNeighbour(phones, c2, notePhone), timbre) : null;
+        var locus = onsetCons ? locusPairs(ph, locusNeighbour(phones, c2, locusResolve), timbre) : null;
         if (locus && ph.t !== 'F') consonantPairs = locus;
         // cap 已为主元音保留至少 45%；另设 45ms 下限会让短音符越过下一起音。
         var d = nuclei.indexOf(c2) < 0 ? (c2 < preN ? onsetDurs[c2] : segmentDur(c2) * f)
@@ -1755,11 +1950,12 @@
           var isDialectGlide = /^(hak|nan-x-teochew)$/.test(noteLang) && c2 > nuc && /^(i|u)(~)?$/.test(phones[c2]);
           var nextNasal = nasalTract && !(ph.nz >= 0.5) && c2 + 1 < phones.length && notePhone(phones[c2 + 1]).t === 'N' ?
             notePhone(phones[c2 + 1]) : null;
+          var isStudioZhCodaVowel = !!(studioMode && zhNasalCoda && c2 === nuc && nextNasal);
           ev.push({ t0: t0, t1: t1, kind: 'V', pairs: ph.nz >= 0.5 ? nasalVowelPairs(fm.pairs) : fm.pairs, av: (phones[c2] === 'J_ro' ? 0.35 : 1) * segmentComp, fric: 0, nasal: ph.nz || 0,
             az: ph.nz >= 0.5 ? nasalVowelNz(ph, timbre)[1] : 0,
-            closeNasal: nextNasal ? 0.48 : 0,
-            closeMix: nextNasal ? 0.28 : 0,
-            closeAz: nextNasal ? (nextNasal.az || 1700) * nasalScale(timbre) : 0,
+            closeNasal: nextNasal ? (isStudioZhCodaVowel ? 0.65 : 0.48) : 0,
+            closeMix: nextNasal ? (isStudioZhCodaVowel ? 0.50 : 0.28) : 0,
+            closeAz: nextNasal ? ((isStudioZhCodaVowel && zhNasalCoda === 'ng') ? 2250 : (nextNasal.az || 1700)) * nasalScale(timbre) : 0,
             closeTo: zhNasalCoda && c2 === nuc ? mandarinNasalApproach(ph, zhNasalCoda, timbre) :
               /^(ko|vi|yue|nan|hak|nan-x-teochew)$/.test(noteLang) && c2 === phones.length - 2 && KO_VI_CODA[phones[c2 + 1]] ?
                 locusPairs({ pl: KO_VI_CODA[phones[c2 + 1]] }, ph, timbre) :
@@ -1780,24 +1976,38 @@
             lastNucleus = phoneEv0;
           }
         } else if (ph.t === 'N') {
-          var nPairs = nasalTarget(fm.pairs, !hasVowel), nZ = (ph.az || 1700) * nasalScale(timbre);
+          var nPairs = copyPairs(nasalTarget(fm.pairs, !hasVowel)), nZ = (ph.az || 1700) * nasalScale(timbre);
+          var isStudioCodaN = !!(studioMode && zhNasalCoda && c2 === phones.length - 1 && hasVowel);
+          var nVowelPairs = hasVowel ? consonantPairsVowel(c2) : null;
+          if (isStudioCodaN && zhNasalCoda === 'ng' && nVowelPairs) {
+            var ngScale = nasalScale(timbre);
+            nZ = 2250 * ngScale;
+            var velarF2 = Math.max(950 * ngScale, Math.min(1550 * ngScale, nVowelPairs[1][0] * 0.70));
+            nPairs[1][0] = Math.min(nPairs[1][0], velarF2);
+            nPairs[1][1] = Math.max(nPairs[1][1], 360);
+            nPairs[2][0] = Math.min(nPairs[2][0], Math.max(nPairs[1][0] + 380, 2250 * ngScale));
+            nPairs[2][1] = Math.max(nPairs[2][1], 420);
+          }
           // User-selected C: carry the labial/alveolar/palatal oral locus
           // into the vowel opening. The nasal hold and source stay unchanged.
-          var nNb = nasalRelease && onsetCons && /^(m|n|ny|my_ru)$/.test(phones[c2]) ? locusNeighbour(phones, c2, notePhone) : null;
+          var nNb = nasalRelease && onsetCons && /^(m|n|ny|my_ru)$/.test(phones[c2]) ? locusNeighbour(phones, c2, locusResolve) : null;
           var nLocus = nNb ? locusPairs({pl: phones[c2] === 'm' ? 'lab' : (phones[c2] === 'ny' || phones[c2] === 'my_ru') ? 'pal' : 'alv'}, phones[c2] === 'n' ? Object.assign({}, nNb, { lip: (nNb.lip || 0) * 0.25 }) : nNb, timbre) : null;
           // Open oral release keeps its natural F2/F3 bandwidths so place transitions remain audible.
+          var useNasalRms = (clear === 'N' || isStudioCodaN);
           var nRelLvl = clear === 'N' ? (phones[c2] === 'm' ? 0.46 : 0.50) :
-            noteLang === 'de' && ph.syllabic ? 0.55 : zhNasalCoda && c2 === phones.length - 1 ? 0.48 : NASAL_LEVEL;
-          var nVowelPairs = hasVowel ? consonantPairsVowel(c2) : null;
-          var nTargetRms = hasVowel && clear === 'N' ? nRelLvl * Math.sqrt(chainPower(nVowelPairs, f0n, ha, noteTilt, gl0)) * segmentComp : 0;
+            noteLang === 'de' && ph.syllabic ? 0.55 : isStudioCodaN ? 0.72 : zhNasalCoda && c2 === phones.length - 1 ? 0.48 : NASAL_LEVEL;
+          var nTargetRms = hasVowel && useNasalRms ? nRelLvl * Math.sqrt(chainPower(nVowelPairs, f0n, ha, noteTilt, gl0)) * segmentComp : 0;
           ev.push({ t0: t0, t1: t1, kind: 'N', pairs: nPairs,
             av: (hasVowel ? relLevel(nPairs, nVowelPairs, nRelLvl,
-              [NASAL_POLE * nasalScale(timbre), nZ], clear === 'N' ? 8 : 1.5) : (noteLang === 'de' && ph.syllabic ? 1.0 : NASAL_SYLLABIC)) * segmentComp,
+              [NASAL_POLE * nasalScale(timbre), nZ], useNasalRms ? 8 : 1.5) : (noteLang === 'de' && ph.syllabic ? 1.0 : NASAL_SYLLABIC)) * segmentComp,
             nasalTargetRms: nTargetRms || undefined,
             nasalMaxAv: nTargetRms ? 8 * segmentComp : undefined,
             nasalF0: nTargetRms ? f0n : undefined,
             // 成音节鼻音（嗯、毋、黄 ng）是长音核，不加零点：高音区持阻谱的电平落差超出 VEL 可补范围。
-            fric: 0, nasal: hasVowel ? 0.9 : 0.2, az: hasVowel ? nZ : 0, sonorant: clear || undefined, voiceTau: clear ? 0.006 : undefined, nasalLocus: nLocus || undefined });
+            fric: 0, nasal: hasVowel ? 0.9 : 0.2, az: hasVowel ? nZ : 0,
+            sonorant: clear || (isStudioCodaN ? 'N' : undefined),
+            voiceTau: clear ? 0.006 : (isStudioCodaN ? 0.014 : undefined),
+            nasalLocus: nLocus || undefined });
           if (nuclei.indexOf(c2) >= 0) {
             if (firstNucleus < 0) firstNucleus = phoneEv0;
             lastSonorant = phoneEv0;
@@ -1808,7 +2018,7 @@
         } else if (ph.t === 'L' || ph.t === 'G') {
           // 边音不带鼻腔耦合，否则与 n 的差别只剩几 dB。
           var enClearL = noteLang === 'en' && onsetCons && phones[c2] === 'l';
-          var lNb = onsetCons && hasVowel && (phones[c2] === 'l_zh' || enClearL) ? locusNeighbour(phones, c2, notePhone) : null;
+          var lNb = onsetCons && hasVowel && (phones[c2] === 'l_zh' || enClearL) ? locusNeighbour(phones, c2, locusResolve) : null;
           var enDarkL = noteLang === 'en' && !onsetCons && phones[c2] === 'l' && geminateRole[c2] !== 'first';
           var lPairs = lNb && lNb.f ? mandarinLateral(lNb, timbre) :
             enDarkL ? NSG.formantsOf({ f: [340, 760, 2650], lip: 0.02 }, timbre).pairs : fm.pairs;
@@ -1914,7 +2124,7 @@
           // 普通话 h 以连续气流为主；固定带通只留弱摩擦，缓起避免像塞音一样冒出硬头。
           // 共用 h 的其他语种和显式韵尾保留原有电平、包络与时序。
           if (mandarinH) {
-            var hNeighbour = locusNeighbour(phones, c2);
+            var hNeighbour = locusNeighbour(phones, c2, locusResolve);
             var roundedH = hNeighbour && hNeighbour.f[1] <= 1000 && hNeighbour.lip >= 0.10;
             var hEvent = ev[ev.length - 1];
             // hu/hua/hui：圆唇声道的入口容易鼓起，再留一段较缓的气流淡入。
@@ -1946,6 +2156,8 @@
           var mandarinCh = isMandarinLike && phones[c2] === 'tsh_r' && onsetCons;
           var mandarinZh = isMandarinLike && phones[c2] === 'ts_r' && onsetCons;
           var mandarinQ = isMandarinLike && phones[c2] === 'tsh_j' && onsetCons;
+          var mandarinZ = isMandarinLike && phones[c2] === 'ts' && onsetCons;
+          var mandarinJ = isMandarinLike && phones[c2] === 'ts_j' && onsetCons;
           // 噪声绕过元音声道；按音色频段增益与当前音节相对基准电平的比例标定（与采样率无关）。
           var enAffrFc = ph.na ? ph.na.f : 3100, enAffrBw = ph.na ? ph.na.b : 1100;
           var enAffrRef = Math.sqrt(Math.max(1e-18, refPower(timbre)));
@@ -1962,30 +2174,51 @@
           } else {
             var baseAcRatio = stopClosureRatio(c2);
             var acD = d * (geminateRole[c2] === 'second' ? (0.50 * baseAcRatio) / (1 - 0.50 * baseAcRatio) : baseAcRatio);
+            var isAspMandarinAffr = !!(mandarinC || mandarinCh || mandarinQ);
+            if (studioMode && !voicedAffricate && ev.length > 0 && ev[ev.length - 1].av > 0 && Math.abs(ev[ev.length - 1].t1 - t0) < 0.005) {
+              acD = Math.min(acD, isAspMandarinAffr
+                ? Math.max(0.024, Math.min(0.036, d * 0.32))
+                : Math.max(0.018, Math.min(0.026, d * 0.28)));
+            }
             affricateClosure(t0, t0 + acD, consonantPairs);
+            var isStudioMandarinVlessAffr = !!(studioMode && isMandarinLike && onsetCons && ph.na && !ph.na.v);
+            var affrBurstFc = (mandarinQ || mandarinJ) ? 3600 : (mandarinCh || mandarinZh) ? 2300 : 2700;
+            var affrBurstGain = isStudioMandarinVlessAffr
+              ? ((mandarinQ || mandarinJ ? 0.24 : 0.30) * BURST_GAIN * bandNoiseScale(timbre, affrBurstFc, 1600)) : 0;
             ev.push({
               t0: t0 + acD, t1: t1, kind: 'F', pairs: consonantPairs,
               // /dʒ/ 原来的元音式带声盖过摩擦，/ɪdʒ/ 容易听成元音后直接收声。
               // 局部标定英语塞擦音的噪声通路，并快速减低释放段的声带音。
               av: ph.na && ph.na.v ? (englishAffricate ? 0.14 : 0.28) * segmentComp : 0,
               // c 的高频摩擦略收，保留闭塞与送气对立，避免 cao/cong 的起音抢过元音。
-              fric: (ph.na ? ph.na.g : 0.3) * affricateGain * (mandarinZh || mandarinC ? 0.85 : 1),
-              burstBoost: englishAffricate && ph.na && !ph.na.v ? 0.40 : klingonUvularAffricate ? 0.35 : 0,
+              fric: (ph.na ? ph.na.g : 0.3) * affricateGain * (studioMode ? (mandarinC ? 0.60 : mandarinQ ? 0.78 : mandarinCh ? 0.98 : mandarinZh ? 0.88 : mandarinZ ? 0.90 : mandarinJ ? 0.88 : 1) : (mandarinZh || mandarinC ? 0.85 : 1)),
+              burstBoost: isStudioMandarinVlessAffr ? (isAspMandarinAffr ? 0.50 : 0.45) : (englishAffricate && ph.na && !ph.na.v ? 0.40 : klingonUvularAffricate ? 0.35 : 0),
+              affricateBurst: affrBurstGain,
+              flowAttack: isStudioMandarinVlessAffr ? 0.004 : undefined,
               voiceTau: englishAffricate && ph.na && ph.na.v ? 0.006 : undefined,
               fc: ph.na ? ph.na.f : 4000, fbw: ph.na ? ph.na.b : 1200, nasal: 0
             });
             if (mandarinC || mandarinCh || mandarinQ) {
               var aspRelease = ev[ev.length - 1];
-              var aspNeighbour = locusNeighbour(phones, c2);
+              var aspNeighbour = locusNeighbour(phones, c2, locusResolve);
               aspRelease.aspPairs = aspNeighbour ? NSG.formantsOf(aspNeighbour, timbre).pairs : basePairs;
-              aspRelease.aspStart = mandarinCh ? 0.38 : mandarinQ ? 0.52 : 0.40;  // 释放段前段为摩擦，余段平滑过渡；随辅音速度一同伸缩。
-              if (mandarinC) {
-                // 10ms 平滑起音；短辅音仍按段长限制淡入，送气电平与时序保持原有标定。
-                aspRelease.flowAttack = 0.010;
+              if (studioMode) {
+                aspRelease.aspStart = mandarinC ? 0.24 : mandarinQ ? 0.30 : 0.30;
+                aspRelease.aspEnd = mandarinC ? 0.58 : mandarinQ ? 0.66 : 0.68;
+                aspRelease.aspFricFloor = mandarinC ? 0.02 : mandarinQ ? 0.05 : 0.08;
+                var affrTnLp = mandarinQ ? 4200 : 3400;
+                aspRelease.tnLpHz = affrTnLp;
+                aspRelease.tn = tractNoiseGain(aspRelease.aspPairs, timbre, mandarinC ? 0.78 : mandarinCh ? 0.82 : 0.72, affrTnLp, 2);
+              } else {
+                aspRelease.aspStart = mandarinCh ? 0.38 : mandarinQ ? 0.52 : 0.40;  // 释放段前段为摩擦，余段平滑过渡；随辅音速度一同伸缩。
+                if (mandarinC) {
+                  // 10ms 平滑起音；短辅音仍按段长限制淡入，送气电平与时序保持原有标定。
+                  aspRelease.flowAttack = 0.010;
+                }
+                if (mandarinCh) { aspRelease.aspEnd = 0.88; aspRelease.aspFricFloor = 0.05; }
+                if (mandarinQ) { aspRelease.aspEnd = 0.96; aspRelease.aspFricFloor = 0.22; }
+                aspRelease.tn = tractNoiseGain(aspRelease.aspPairs, timbre, mandarinCh ? 0.28 : mandarinQ ? 0.18 : 0.22);
               }
-              if (mandarinCh) { aspRelease.aspEnd = 0.88; aspRelease.aspFricFloor = 0.05; }
-              if (mandarinQ) { aspRelease.aspEnd = 0.96; aspRelease.aspFricFloor = 0.22; }
-              aspRelease.tn = tractNoiseGain(aspRelease.aspPairs, timbre, mandarinCh ? 0.28 : mandarinQ ? 0.18 : 0.22);
             }
           }
         } else {
@@ -1993,7 +2226,10 @@
           var baseStopClos = stopClosureRatio(c2);
           var closD = d * (geminateRole[c2] === 'second' ? (0.50 * baseStopClos) / (1 - 0.50 * baseStopClos) : baseStopClos);
           var voicedStop = ph.na && ph.na.v;
-          var nbStop = onsetCons ? locusNeighbour(phones, c2, notePhone) : null;
+          if (studioMode && !voicedStop && ev.length > 0 && ev[ev.length - 1].av > 0 && Math.abs(ev[ev.length - 1].t1 - t0) < 0.005) {
+            closD = Math.min(closD, Math.max(0.014, Math.min(0.036, d * 0.45)));
+          }
+          var nbStop = onsetCons ? locusNeighbour(phones, c2, locusResolve) : null;
           var vowelPairs = nbStop ? NSG.formantsOf(nbStop, timbre).pairs :
             (noteLang === 'en' && hasVowel ? consonantPairsVowel(c2) : basePairs);
           if (noteLang === 'en' && !onsetCons && hasVowel) consonantPairs = vowelPairs;
@@ -2302,7 +2538,18 @@
       for (var k2 = 0; k2 < NH; k2++) dRow[k2] = Math.max(-18, Math.min(12, mag[ri2][k2] - refRow[k2]));
       magDelta[ri2] = dRow;
     }
-    lfTableCache = { phase: phase, magDelta: magDelta, oq: oqArr, ta: taArr, nh: NH, nrd: NRD, rdMin: RD_MIN, rdStep: RD_STEP };
+    var rdCompDb = new Float64Array(NRD);
+    for (var ri3 = 0; ri3 < NRD; ri3++) {
+      var wSum = 0, pSumLf = 0;
+      for (var k3 = 0; k3 < Math.min(10, NH); k3++) {
+        var wk = 1 / ((k3 + 1) * (k3 + 1));
+        wSum += wk;
+        pSumLf += wk * Math.pow(10, magDelta[ri3][k3] / 10);
+      }
+      var shiftDb = 10 * Math.log10(Math.max(1e-6, pSumLf / wSum));
+      rdCompDb[ri3] = Math.max(-5, Math.min(7, -0.85 * shiftDb));
+    }
+    lfTableCache = { phase: phase, magDelta: magDelta, rdCompDb: rdCompDb, oq: oqArr, ta: taArr, nh: NH, nrd: NRD, rdMin: RD_MIN, rdStep: RD_STEP };
     return lfTableCache;
   }
 
@@ -2331,6 +2578,161 @@
         notes[i]._chainEnd = chainEnd;
         notes[i]._phonationOnset = onset;
         notes[i]._phonationEnd = release;
+      }
+      first = end;
+    }
+  }
+
+  function analyzeDryPhrases(notes, pit, timbre) {
+    var cleanPit = (pit && pit.length) ? NSG.TUNING.pitPoints(pit) : null;
+    var nLen = notes.length;
+    var rawExpPitch = new Uint8Array(nLen);
+    var rawExpDyn = new Uint8Array(nLen);
+    var rawExpVib = new Uint8Array(nLen);
+    var pitCur = 0;
+    for (var i = 0; i < nLen; i++) {
+      var ni = notes[i];
+      if (ni._rest || ni._breath) continue;
+      var hasP = false;
+      if (Array.isArray(ni.pb)) {
+        for (var pi = 0; pi < ni.pb.length; pi++) {
+          if (Math.abs(ni.pb[pi][1]) > 0.5) { hasP = true; break; }
+        }
+      }
+      if (!hasP && Array.isArray(ni.pitchPoints) && ni.pitchPoints.length > 2) hasP = true;
+      if (!hasP && cleanPit && cleanPit.length) {
+        var bLo = ni.start - 0.05, bHi = ni.start + ni.dur + 0.05;
+        while (pitCur > 0 && cleanPit[pitCur][0] >= bLo) pitCur--;
+        while (pitCur < cleanPit.length && cleanPit[pitCur][0] < bLo) pitCur++;
+        for (var pk = pitCur; pk < cleanPit.length && cleanPit[pk][0] <= bHi; pk++) {
+          if (Math.abs(cleanPit[pk][1]) > 0.5) { hasP = true; break; }
+        }
+      }
+      rawExpPitch[i] = hasP ? 1 : 0;
+
+      var hasD = false;
+      if (Array.isArray(ni.gainPoints)) {
+        for (var gi = 0; gi < ni.gainPoints.length; gi++) {
+          if (Math.abs(ni.gainPoints[gi][1] - 1) > 0.015) { hasD = true; break; }
+        }
+      }
+      if (!hasD && Number.isFinite(+ni.vel) && Math.abs(+ni.vel - 96) >= 2) hasD = true;
+      if (!hasD && Array.isArray(ni.effortPoints) && ni.effortPoints.length > 0) hasD = true;
+      rawExpDyn[i] = hasD ? 1 : 0;
+
+      rawExpVib[i] = (ni.vibrato || ni.vib === 0) ? 1 : 0;
+    }
+
+    var vibConf = (timbre && timbre.vib) || {};
+    var baseRate = (vibConf.rate > 0) ? vibConf.rate : 5.2;
+    var baseDepth = (vibConf.depth > 0) ? vibConf.depth * 100 * 1.35 : 22;
+
+    for (var first = 0; first < nLen;) {
+      if (notes[first]._rest || notes[first]._breath) { first++; continue; }
+      var end = first + 1;
+      while (end < nLen && !notes[end]._rest && !notes[end]._breath &&
+          notes[end]._start - notes[end - 1]._end < 0.06) end++;
+      var phrHasPitch = false, phrHasDyn = false;
+      var pMin = Infinity, pMax = -Infinity;
+      for (var k = first; k < end; k++) {
+        if (rawExpPitch[k]) phrHasPitch = true;
+        if (rawExpDyn[k]) phrHasDyn = true;
+        var ptc = notes[k].pitch || 60;
+        if (ptc < pMin) pMin = ptc;
+        if (ptc > pMax) pMax = ptc;
+      }
+      var pStartSec = notes[first]._start;
+      var pEndSec = notes[end - 1]._end;
+      var pDurSec = Math.max(0.05, pEndSec - pStartSec);
+      var pSpan = Math.max(4, pMax - pMin);
+
+      for (var k2 = first; k2 < end; k2++) {
+        var nk = notes[k2];
+        var expP = rawExpPitch[k2] || (phrHasPitch && Array.isArray(nk.pb) && nk.pb.length >= 2);
+        var expD = rawExpDyn[k2] || (phrHasDyn && Array.isArray(nk.gainPoints) && nk.gainPoints.length >= 2);
+        var expV = rawExpVib[k2];
+        var seedVal = (((k2 + 1) * 2654435761) ^ ((nk.pitch | 0) * 97531) ^ Math.round((nk.start || 0) * 1000)) >>> 0;
+        var prnd = mulberry32(seedVal);
+        var r1 = prnd(), r2 = prnd(), r3 = prnd(), r4 = prnd(), r5 = prnd();
+        var r6 = prnd(), r7 = prnd(), r8 = prnd(), r9 = prnd();
+        var isPStart = k2 === first;
+        var isPEnd = k2 === end - 1;
+        var durSec = Math.max(0.01, nk._end - nk._start);
+        var prevN = k2 > first ? notes[k2 - 1] : null;
+        var nextN = k2 + 1 < end ? notes[k2 + 1] : null;
+        var nextExpP = nextN ? (rawExpPitch[k2 + 1] || (phrHasPitch && Array.isArray(nextN.pb) && nextN.pb.length >= 2)) : true;
+
+        var scoopCents = 0, scoopDur = 0;
+        if (isPStart && durSec >= 0.20) {
+          scoopCents = -(38 + 26 * r1) * (nk.pitch < 60 ? 1.15 : 1.0);
+          scoopDur = Math.min(durSec * 0.34, 0.075 + 0.045 * r2);
+        }
+
+        var overCents = 0, overPeakT = 0, overSettleT = 0, dipCents = 0, dipDur = 0;
+        if (!isPStart && prevN && !nk._slur && durSec >= 0.16) {
+          var dp = nk.pitch - prevN.pitch;
+          if (Math.abs(dp) >= 2) {
+            overCents = (dp > 0 ? 1 : -1) * Math.min(26, (6 + 2.4 * Math.abs(dp)) * (0.75 + 0.5 * r3));
+            overPeakT = Math.min(durSec * 0.22, 0.065);
+            overSettleT = Math.min(durSec * 0.38, 0.11);
+          } else if (dp === 0 && durSec >= 0.20) {
+            dipCents = -(14 + 10 * r3);
+            dipDur = Math.min(durSec * 0.32, 0.055);
+          }
+        }
+
+        var preLeapCents = 0, preLeapDur = 0;
+        if (!isPEnd && nextN && !nextN._slur && !nextExpP && durSec >= 0.18) {
+          var nextDp = nextN.pitch - nk.pitch;
+          if (Math.abs(nextDp) >= 4) {
+            preLeapCents = -(nextDp > 0 ? 1 : -1) * 8;
+            preLeapDur = Math.min(durSec * 0.22, 0.035);
+          }
+        }
+
+        var fallCents = 0, fallDur = 0;
+        if (isPEnd && durSec >= 0.36) {
+          fallCents = -(20 + 22 * r4);
+          fallDur = Math.min(durSec * 0.32, 0.13 + 0.06 * r5);
+        }
+
+        var sustainArchCents = durSec >= 0.45 ? (r6 * 2 - 1) * 5.5 : 0;
+        var dryVib = !expV;
+        var vibAllow = dryVib && ((isPEnd && durSec >= 0.38) || durSec >= 0.68);
+        var vibRateBase = baseRate * (0.94 + 0.12 * r7);
+        var vibDepthBase = Math.max(18, Math.min(34, baseDepth)) * (isPEnd ? 1.15 : 0.85) * (0.85 + 0.30 * r8);
+        var vibDelay = Math.min(durSec * 0.42, 0.20 + 0.14 * r9);
+
+        var pitchRel = ((nk.pitch || 60) - pMin) / pSpan;
+        var noteArchDb = (isPStart ? -0.7 : 0) + 1.35 * (pitchRel - 0.45) - (isPEnd ? 0.6 : 0);
+
+        nk._expr = {
+          dryPitch: !expP,
+          dryDyn: !expD,
+          dryVib: dryVib,
+          isPStart: isPStart,
+          isPEnd: isPEnd,
+          pStartSec: pStartSec,
+          pEndSec: pEndSec,
+          pDurSec: pDurSec,
+          scoopCents: scoopCents,
+          scoopDur: scoopDur,
+          overCents: overCents,
+          overPeakT: overPeakT,
+          overSettleT: overSettleT,
+          dipCents: dipCents,
+          dipDur: dipDur,
+          preLeapCents: preLeapCents,
+          preLeapDur: preLeapDur,
+          fallCents: fallCents,
+          fallDur: fallDur,
+          sustainArchCents: sustainArchCents,
+          vibAllow: vibAllow,
+          vibRateBase: vibRateBase,
+          vibDepthBase: vibDepthBase,
+          vibDelay: vibDelay,
+          noteArchDb: noteArchDb
+        };
       }
       first = end;
     }
@@ -2511,7 +2913,7 @@
     vArr[idx] = decay * (v0 - w * c * dt);
   }
 
-  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening, organicAmt, humanizeAmt, frameRange, articMorphAmt) {
+  function scoreToControl(score, timbre, tm, lang, research, balanceAspiration, japaneseFriction, japaneseVoicedFriction, nasalRelease, aspAirMix, nasalTract, highVowelOpening, organicAmt, humanizeAmt, frameRange, articMorphAmt, autoExpressOpt) {
     var built = buildEvents(score, timbre, tm, lang, japaneseFriction, japaneseVoicedFriction, undefined, nasalRelease, nasalTract);
     var ev = built.ev, notes = built.notes;
     var pitchModel = NSG.TUNING.pitchModel(notes, built.pit);
@@ -2554,7 +2956,7 @@
       }
     }
     var curFric = 0, curTn = 0, curTnLpHz = 0, curFricF = 5000, curFricB = 1200, curNasal = 0, curAv = 0, curMidi = notes.length ? notes[0].pitch : 60;
-    var curJaFricF = curFricF, curJaFricB = curFricB, curFrontCavity = 0;
+    var curJaFricF = curFricF, curJaFricB = curFricB, curFrontCavity = 0, curLip = baseLip;
 
     var aForm = 1 - Math.exp(-dt / 0.012);     // 共振峰时间常数 12ms，约 36ms 到 95%
     // 鼻音的闭塞/除阻是突变：12ms 的平滑会让 n→元音 变成 l 那样的缓慢滑移。
@@ -2581,13 +2983,17 @@
     var lastVoicedHighGate = 1;
     var aspirationScale = 1, aspirationTarget = 1, aspirationReference = 1;
     var airMixCtrl = typeof aspAirMix === 'number' ? aspAirMix : (research ? 0.18 : 0);
-    if (balanceAspiration && timbre.breath > 0) {
+    if (balanceAspiration && (studioMode || timbre.breath > 0)) {
       var referencePairs = NSG.formantsOf(NSG.PHONES.a, timbre).pairs;
+      if (studioMode) applyHawksMillerBw(referencePairs, timbre);
       aspirationReference = refPower(timbre) / Math.max(1e-24, aspirationPower(referencePairs, timbre.outEq, airMixCtrl));
     }
 
     var ci = 0, noteIdx = 0, velocity = 1, mixGain = 1, lastF0 = NSG.mtof(curMidi);
     var sungEffort = 0, effortTilt = 0, effortAlpha = 1 - Math.exp(-dt / 0.025);
+    var abductLevel = studioMode ? 1.0 : 0, aAbdClose = 1 - Math.exp(-dt / 0.008), aAbdAdduct = 1 - Math.exp(-dt / 0.020);
+    var dynOctCur = 0, aDynOct = 1 - Math.exp(-dt / 0.035);
+    var postVlPitchBoost = 0, prevWasVoicelessObs = false, aPostVlPitch = 1 - Math.exp(-dt / 0.032);
     var orgAmt = clampUnit(organicAmt);
     var humAmt = clampUnit(humanizeAmt);
     var org = null, orgGate = 0, orgVoicedSec = 0, orgGateAlpha = 1 - Math.exp(-dt / 0.030);
@@ -2604,9 +3010,15 @@
         air: makePinkBand(ornd, 1.2, 4.5, dt)
       };
     }
+    var nasScHum = nasalScale(timbre);
+    var humCenterHz = timbre.refF0 ? timbre.refF0 : Math.max(145, Math.min(350, 210 * Math.pow(nasScHum, 1.45)));
+    var isHighVoiceHum = humCenterHz >= 240;
     var humBaseRd = 1.05, humCurRd = 1.05, humRdAlpha = 1 - Math.exp(-dt / 0.022);
     var humPassHz = 320, lfTab = null;
     var releaseTaper = 1, releaseBreath = 1;
+    var autoExpress = autoExpressOpt === undefined ? studioMode : !!autoExpressOpt;
+    var exprDynCur = 0, aExprDyn = 1 - Math.exp(-dt / 0.040);
+    var stVibPhase = 0, stVibActive = false;
     if (humAmt > 0) {
       lfTab = getLfTable();
       // Base vocal-fold tension from timbre cues: breathier/softer -> higher Rd,
@@ -2614,8 +3026,9 @@
       humBaseRd = Math.max(0.75, Math.min(1.45,
         1.05 + 1.8 * ((timbre.breath || 0) - 0.035) - 0.25 * (timbre.glottal || 0) - 0.015 * (timbre.tiltDb || 0)));
       humCurRd = humBaseRd;
-      humPassHz = 310 * Math.pow(nasalScale(timbre), 0.78);
+      humPassHz = (studioMode ? 305 : 310) * Math.pow(nasScHum, studioMode ? 0.85 : 0.78);
       markPhonationPhrases(notes, ev);
+      if (studioMode && autoExpress) analyzeDryPhrases(notes, built.pit, timbre);
     }
     for (var fr = frStart; fr < frEnd; fr++) {
       var ctrlIdx = fr - frStart;
@@ -2640,9 +3053,10 @@
         tgtPairs = released;
       }
       if (e && e.glideFrom) {
-        var gr = Math.min(1, Math.max(0, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
+        var grSpan = Math.max(1e-6, (e.t1 - e.t0) * (studioMode ? 0.76 : 1.0));
+        var gr = Math.min(1, Math.max(0, (t - e.t0) / grSpan));
         gr = gr * gr * (3 - 2 * gr);
-        var glideStartBias = (morphAmt > 0 && ci > 0 && !ev[ci - 1].closeTo && ev[ci - 1].kind === 'V') ? 0.25 * morphAmt : 0;
+        var glideStartBias = (morphAmt > 0 && ci > 0 && !ev[ci - 1].closeTo && ev[ci - 1].kind === 'V') ? (studioMode ? 0.30 : 0.25) * morphAmt : 0;
         var grEff = glideStartBias + (1 - glideStartBias) * gr;
         var glided = new Array(6);
         for (var gk = 0; gk < 6; gk++) glided[gk] = [e.glideFrom[gk][0] + (e.pairs[gk][0] - e.glideFrom[gk][0]) * grEff,
@@ -2651,10 +3065,10 @@
         if (e.glideFrom._lip !== undefined) tgtLip = e.glideFrom._lip + (tgtLip - e.glideFrom._lip) * grEff;
       } else if (morphAmt > 0 && e && e.kind === 'V' && !e.closeTo && ci + 1 < ev.length && ev[ci + 1].glideFrom && Math.abs(ev[ci + 1].t0 - e.t1) < 1e-6) {
         var nextGlideEv = ev[ci + 1];
-        var pgDurCtrl = Math.min(0.16, (e.t1 - e.t0) * 0.32);
+        var pgDurCtrl = Math.min(studioMode ? 0.14 : 0.16, (e.t1 - e.t0) * (studioMode ? 0.36 : 0.32));
         var pgrCtrl = Math.max(0, Math.min(1, 1 - (e.t1 - t) / Math.max(1e-6, pgDurCtrl)));
         if (pgrCtrl > 0) {
-          pgrCtrl = pgrCtrl * pgrCtrl * (3 - 2 * pgrCtrl) * 0.25 * morphAmt;
+          pgrCtrl = pgrCtrl * pgrCtrl * (3 - 2 * pgrCtrl) * (studioMode ? 0.30 : 0.25) * morphAmt;
           var preGlided = new Array(6);
           for (var pgk = 0; pgk < 6; pgk++) preGlided[pgk] = [tgtPairs[pgk][0] + (nextGlideEv.pairs[pgk][0] - tgtPairs[pgk][0]) * pgrCtrl,
             tgtPairs[pgk][1] + (nextGlideEv.pairs[pgk][1] - tgtPairs[pgk][1]) * pgrCtrl];
@@ -2677,6 +3091,7 @@
           if (e.closeTo._lip !== undefined) tgtLip = tgtLip + (e.closeTo._lip - tgtLip) * cr;
         }
       }
+      var burstImp = 0, burstAmp = 0, isAffrBurst = false;
       if (e && e.kind === 'F') {
         // An advanced neighbour fades this tail itself; do not release its
         // friction early at the shortened scheduler boundary as well.
@@ -2725,7 +3140,18 @@
           tgtFric *= (e.asp || 0) / BURST_GAIN + (1 - (e.asp || 0) / BURST_GAIN) * Math.exp(-elapsed / 0.005);
           // 送气在爆破后 3ms 起、到声带起振前 12ms 内淡出，与元音起音交叠而不留缝。
           tgtTn *= Math.min(1, Math.max(0, elapsed - 0.002) / 0.004) * Math.min(1, left / Math.min(0.012, length * 0.5));
-        } else tgtTn *= attack * release;
+          if (studioMode && !e.sonorant && e.fric > 0 && elapsed < 0.006) {
+            burstImp = elapsed < dt * 1.05 ? 1.0 : Math.exp(-(elapsed - dt) / 0.0018) * 0.65;
+            burstAmp = e.fric * velocity;
+          }
+        } else {
+          tgtTn *= attack * release;
+          if (studioMode && e.affricateBurst > 0 && elapsed < 0.008) {
+            burstImp = elapsed < dt * 1.05 ? 1.0 : Math.exp(-(elapsed - dt) / 0.0024) * 0.55;
+            burstAmp = e.affricateBurst * velocity;
+            isAffrBurst = true;
+          }
+        }
       }
       // 在闭塞开始前的最后 4ms 收声，避免把一个短闭塞全耗在 38ms 拖尾里。
       var nextEvent = ev[ci + 1];
@@ -2780,11 +3206,27 @@
       // sustains. Limit the opening to keep each vowel's F1 distinct from F2.
       var firstTarget = tgtPairs[0][0];
       var rawJawLift = 0;
-      if (highVowelOpening > 0 && e && e.kind === 'V' && lastF0 > 260 && lastF0 > firstTarget) {
-        var register = lastF0 >= 350 ? (0.25 + 0.75 * Math.min(1, (lastF0 - 350) / 200)) : (0.25 * (lastF0 - 260) / 90);
-        var lift = Math.max(0, Math.min(lastF0 - firstTarget, firstTarget * 0.44, tgtPairs[1][0] * 0.80 - firstTarget));
-        rawJawLift = lift * highVowelOpening * register * (inXf ? xr : 1);
-        if (!articState) firstTarget += rawJawLift;
+      if (highVowelOpening > 0 && e && e.kind === 'V') {
+        if (studioMode) {
+          var lift = 0;
+          if (firstTarget >= 420 && lastF0 > 290 && humCurRd < 1.42) {
+            var regHi = Math.max(0, Math.min(1, (lastF0 - 290) / 140));
+            var mixGate = Math.max(0, Math.min(1, (1.42 - humCurRd) / 0.35));
+            var targetF1Mix = Math.min(lastF0 * 1.92, firstTarget * 1.52, tgtPairs[1][0] * 0.78, 1080);
+            lift = Math.max(0, targetF1Mix - firstTarget) * regHi * mixGate;
+          } else if (firstTarget < 420 && lastF0 > 260 && lastF0 * 1.12 > firstTarget) {
+            var regClose = lastF0 >= 350 ? (0.30 + 0.70 * Math.min(1, (lastF0 - 350) / 180)) : (0.30 * (lastF0 - 260) / 90);
+            var targetF1Close = Math.min(lastF0 * 1.12, firstTarget * 1.62, tgtPairs[1][0] * 0.76);
+            lift = Math.max(0, targetF1Close - firstTarget) * regClose;
+          }
+          rawJawLift = lift * highVowelOpening * (inXf ? xr : 1);
+          if (!articState) firstTarget += rawJawLift;
+        } else if (lastF0 > 260 && lastF0 > firstTarget) {
+          var register = lastF0 >= 350 ? (0.25 + 0.75 * Math.min(1, (lastF0 - 350) / 200)) : (0.25 * (lastF0 - 260) / 90);
+          var liftOld = Math.max(0, Math.min(lastF0 - firstTarget, firstTarget * 0.44, tgtPairs[1][0] * 0.80 - firstTarget));
+          rawJawLift = liftOld * highVowelOpening * register * (inXf ? xr : 1);
+          if (!articState) firstTarget += rawJawLift;
+        }
       }
       var vbRel = !!e && e.kind === 'F' && !!prevEv && prevEv.kind === 'VB' && Math.abs(e.t0 - prevEv.t1) < 1e-6;
       if (articState) {
@@ -2866,6 +3308,7 @@
           cur[0][1] *= 1 + 0.14 * jawOpenRatio;
         }
       } else {
+        curLip += (tgtLip - curLip) * aForm;
         for (var k = 0; k < 6; k++) {
           var aK = tapEdge && k === 0 ? aFormFast : latEdge && k < 2 ? aFormLat : aF;
           cur[k][0] += ((k === 0 ? firstTarget : tgtPairs[k][0]) - cur[k][0]) * aK;
@@ -2875,8 +3318,8 @@
       // Coarticulated anticipatory velum opening on vowels approaching a coda nasal.
       var ncr = 0;
       if (e && e.closeNasal > 0) {
-        var nCloseMax = 0.075 + 0.145 * morphAmt;
-        var nCloseFrac = 0.28 + 0.18 * morphAmt;
+        var nCloseMax = studioMode ? (0.120 + 0.240 * morphAmt) : (0.075 + 0.145 * morphAmt);
+        var nCloseFrac = studioMode ? (0.34 + 0.18 * morphAmt) : (0.28 + 0.18 * morphAmt);
         var nCloseDur = Math.min(nCloseMax, (e.t1 - e.t0) * nCloseFrac);
         ncr = Math.max(0, Math.min(1, 1 - (e.t1 - t) / Math.max(1e-6, nCloseDur)));
         ncr = ncr * ncr * (3 - 2 * ncr);
@@ -2959,7 +3402,9 @@
           curAv = Math.min(curAv, e.av * Math.sqrt(vowelPower / releasePower));
         }
       }
-      var fricSilent = curFric < 1e-5; curFric += (tgtFric - curFric) * (e && e.kind === 'S' ? aClose : aFric);
+      var fricSilent = curFric < 1e-5;
+      var fricRateEnv = (e && e.kind === 'S') || (studioMode && e && e.affricateBurst > 0 && tgtFric > curFric) ? aClose : aFric;
+      curFric += (tgtFric - curFric) * fricRateEnv;
       curTn += (tgtTn - curTn) * (e && e.kind === 'S' ? aClose : aTn);
       if (e && e.tnLpHz) curTnLpHz = e.tnLpHz;
       else if (tgtTn > 0 && !(e && e.tnLpHz)) curTnLpHz = 0;
@@ -2998,41 +3443,155 @@
       else curMidi = tgtMidi;
 
       var f0 = NSG.mtof(curMidi);
-      lastF0 = f0;
-      var vc = 0;
-      if (active && !active._rest && !active._breath) {
-        var tt = t - (active._legato === undefined ? active._start : active._legato);
-        var vibElapsed = active.vibrato
-          ? t - tm.secOf(active.start + active.dur * (1 - NSG.TUNING.vibrato(active.vibrato).length / 100))
-          : 0;
-        vc = NSG.TUNING.vibCents(active, rel, duration, timbre, tt, vibElapsed);
-        if (vc) f0 *= Math.pow(2, vc / 1200);
-      }
-
       var voicedNote = active && !active._rest && !active._breath;
-      var requestedEffort = voicedNote && active.effortPoints ? NSG.TUNING.envelopeAt(active.effortPoints, rel) - 1 : 0;
-      sungEffort += (requestedEffort - sungEffort) * effortAlpha;
-      if (Math.abs(sungEffort) < 1e-6 && !requestedEffort) sungEffort = 0;
-      var vibNorm = vc ? Math.max(-1, Math.min(1, vc / 35)) : 0;
-      var orgTremolo = 1, orgTiltMod = 0, orgAirMod = 1;
+      var ex = (studioMode && autoExpress && humAmt > 0 && voicedNote) ? active._expr : null;
+      if (ex && ex.dryPitch) {
+        var exEl = Math.max(0, t - active._start);
+        var exLeft = Math.max(0, active._end - t);
+        var exDur = Math.max(0.01, active._end - active._start);
+        var exprCents = 0;
+        if (ex.scoopCents && exEl < ex.scoopDur) {
+          var uSc = exEl / Math.max(1e-4, ex.scoopDur);
+          exprCents += ex.scoopCents * (0.5 + 0.5 * Math.cos(Math.PI * uSc));
+        }
+        if (ex.overCents && exEl < ex.overPeakT + ex.overSettleT) {
+          if (exEl <= ex.overPeakT) {
+            var uOv1 = exEl / Math.max(1e-4, ex.overPeakT);
+            exprCents += ex.overCents * uOv1 * uOv1 * (3 - 2 * uOv1);
+          } else {
+            var uOv2 = (exEl - ex.overPeakT) / Math.max(1e-4, ex.overSettleT);
+            exprCents += ex.overCents * (0.5 + 0.5 * Math.cos(Math.PI * uOv2));
+          }
+        }
+        if (ex.dipCents && exEl < ex.dipDur) {
+          exprCents += ex.dipCents * Math.sin(Math.PI * (exEl / Math.max(1e-4, ex.dipDur)));
+        }
+        if (ex.sustainArchCents) {
+          var uArc = Math.max(0, Math.min(1, exEl / exDur));
+          exprCents += ex.sustainArchCents * Math.sin(Math.PI * uArc);
+        }
+        if (ex.preLeapCents && exLeft < ex.preLeapDur) {
+          var uPreL = 1 - exLeft / Math.max(1e-4, ex.preLeapDur);
+          exprCents += ex.preLeapCents * uPreL * uPreL * (3 - 2 * uPreL);
+        }
+        if (ex.fallCents && exLeft < ex.fallDur) {
+          var uFall = 1 - exLeft / Math.max(1e-4, ex.fallDur);
+          exprCents += ex.fallCents * uFall * uFall;
+        }
+        if (exprCents) f0 *= Math.pow(2, (exprCents * humAmt) / 1200);
+      }
+      lastF0 = f0;
+
+      var orgActive = false, orgEff = 0, nF0 = 0, nTilt = 0, nAir = 0;
       if (org) {
-        var orgActive = voicedNote && curAv >= 1e-3 && e && (e.kind === 'V' || e.kind === 'G' || e.kind === 'L' || e.kind === 'N');
+        orgActive = voicedNote && curAv >= 1e-3 && e && (e.kind === 'V' || e.kind === 'G' || e.kind === 'L' || e.kind === 'N');
         if (orgActive) orgVoicedSec += dt;
         else orgVoicedSec = Math.max(0, orgVoicedSec - dt * 4);
         var orgRamp = Math.min(1, orgVoicedSec / 0.18);
         orgRamp = orgRamp * orgRamp * (3 - 2 * orgRamp);
         var orgTargetGate = orgActive ? ((e.kind === 'V' ? 1 : 0.55) * (0.28 + 0.72 * orgRamp)) : 0;
         orgGate += (orgTargetGate - orgGate) * orgGateAlpha;
-        var orgEff = orgAmt * orgGate;
-        var nF0 = org.f0();
-        var nTilt = org.tilt();
-        var nAir = org.air();
+        orgEff = orgAmt * orgGate;
+        nF0 = org.f0();
+        nTilt = org.tilt();
+        nAir = org.air();
+      }
+
+      var vc = 0;
+      if (voicedNote) {
+        if (ex && ex.dryVib) {
+          var vTime = Math.max(0, t - active._start);
+          var vTot = Math.max(0.01, active._end - active._start);
+          if (ex.vibAllow && vTime > ex.vibDelay && vTime < vTot) {
+            if (!stVibActive) { stVibPhase = 0; stVibActive = true; }
+            var vSpan = Math.max(0.05, vTot - ex.vibDelay);
+            var fadeInSec = Math.min(0.24, vSpan * 0.45);
+            var fadeOutSec = Math.min(0.16, vSpan * 0.30);
+            var envIn = Math.min(1, (vTime - ex.vibDelay) / Math.max(1e-4, fadeInSec));
+            envIn = envIn * envIn * (3 - 2 * envIn);
+            var envOut = ex.isPEnd ? Math.min(1, (vTot - vTime) / Math.max(1e-4, fadeOutSec)) : Math.min(1, (vTot - vTime) / 0.06);
+            envOut = envOut * envOut * (3 - 2 * envOut);
+            var vibRateInst = ex.vibRateBase * (0.93 + 0.07 * envIn + 0.045 * nAir);
+            stVibPhase += 2 * Math.PI * vibRateInst * dt;
+            if (stVibPhase > 6.283185307179586e3) stVibPhase -= Math.floor(stVibPhase / (2 * Math.PI)) * (2 * Math.PI);
+            vc = ex.vibDepthBase * humAmt * envIn * envOut * Math.sin(stVibPhase);
+          } else {
+            stVibActive = false;
+          }
+        } else {
+          stVibActive = false;
+          var tt = t - (active._legato === undefined ? active._start : active._legato);
+          var vibElapsed = active.vibrato
+            ? t - tm.secOf(active.start + active.dur * (1 - NSG.TUNING.vibrato(active.vibrato).length / 100))
+            : 0;
+          vc = NSG.TUNING.vibCents(active, rel, duration, timbre, tt, vibElapsed);
+          if (vc && !studioMode) f0 *= Math.pow(2, vc / 1200);
+        }
+      } else {
+        stVibActive = false;
+      }
+
+      var requestedEffort = voicedNote && active.effortPoints ? NSG.TUNING.envelopeAt(active.effortPoints, rel) - 1 : 0;
+      sungEffort += (requestedEffort - sungEffort) * effortAlpha;
+      if (Math.abs(sungEffort) < 1e-6 && !requestedEffort) sungEffort = 0;
+      var frameMixGain = active ? NSG.TUNING.noteGain(active, (tm.beatOf(t) - active.start) / Math.max(1e-6, active.dur)) : 1;
+      var targetDynDb = 0;
+      if (ex && ex.dryDyn) {
+        var phrEl = Math.max(0, t - ex.pStartSec);
+        var phrLeft = Math.max(0, ex.pEndSec - t);
+        var swIn = Math.min(1, phrEl / 0.14);
+        var swellDb = -1.4 * (1 - swIn) * (1 - swIn);
+        var decSpan = Math.min(0.45, ex.pDurSec * 0.30);
+        var uDec = decSpan > 1e-4 ? Math.max(0, Math.min(1, 1 - phrLeft / decSpan)) : 0;
+        var decDb = -2.8 * uDec * uDec * (3 - 2 * uDec);
+        targetDynDb = (ex.noteArchDb + swellDb + decDb) * humAmt;
+      }
+      exprDynCur += (targetDynDb - exprDynCur) * aExprDyn;
+      if (ex && ex.dryDyn) frameMixGain *= Math.pow(10, exprDynCur / 20);
+      var effAbd = 0;
+      if (studioMode) {
+        var isVlessFr = !e || e.kind === 'B' || e.kind === 'S' || (e.kind === 'F' && !(e.av > 0)) || (active && (active._rest || active._breath));
+        var isVlessObs = !!(e && (e.kind === 'S' || (e.kind === 'F' && !(e.av > 0))));
+        if (isVlessFr) {
+          abductLevel += (1.0 - abductLevel) * aAbdClose;
+          if (isVlessObs) prevWasVoicelessObs = true;
+        } else {
+          if (prevWasVoicelessObs && /^(V|G|L|N)$/.test(e.kind)) {
+            postVlPitchBoost = 12;
+            prevWasVoicelessObs = false;
+          }
+          if (curAv >= 0.02 && e.kind !== 'VB' && e.kind !== 'F') {
+            abductLevel += (0.0 - abductLevel) * aAbdAdduct;
+          }
+        }
+        if (postVlPitchBoost > 0.01) {
+          if (voicedNote && e && e.kind !== 'S') f0 *= Math.pow(2, postVlPitchBoost / 1200);
+          postVlPitchBoost *= (1 - aPostVlPitch);
+        } else postVlPitchBoost = 0;
+        var preAbd = 0;
+        if (!isVlessFr && nextEvent && (nextEvent.kind === 'S' || (nextEvent.kind === 'F' && !nextEvent.av)) &&
+            nextEvent.t0 - t >= 0 && nextEvent.t0 - t < 0.030) {
+          var uPreA = (0.030 - (nextEvent.t0 - t)) / 0.030;
+          preAbd = uPreA * uPreA * (3 - 2 * uPreA) * 0.45;
+        }
+        effAbd = Math.max(abductLevel, preAbd);
+        var dynOctTgt = voicedNote ? Math.max(-1.2, Math.min(0.8, Math.log2(Math.max(0.15, frameMixGain)))) : 0;
+        dynOctCur += (dynOctTgt - dynOctCur) * aDynOct;
+      }
+      var vibNorm = vc ? Math.max(-1, Math.min(1, vc / 35)) : 0;
+      var orgTremolo = 1, orgTiltMod = 0, orgAirMod = 1;
+      if (org) {
+        if (studioMode && vc) {
+          vc *= 1 + 0.14 * orgAmt * nAir;
+          vibNorm = Math.max(-1, Math.min(1, vc / 35));
+        }
         if (orgEff > 1e-5) f0 *= Math.pow(2, (6.5 * orgEff * nF0) / 1200);
-        if (vc) orgTremolo = 1 + 0.045 * orgAmt * vibNorm;
+        if (vc) orgTremolo = 1 + (studioMode ? 0.025 : 0.045) * orgAmt * vibNorm;
         orgTiltMod = 0.55 * orgEff * nTilt + 0.35 * orgAmt * vibNorm;
         orgAirMod = Math.max(0.7, 1 + 0.14 * orgEff * nAir);
       }
-      var humTremolo = 1, humEndTaper = releaseTaper, humBreathBoost = releaseBreath, humFry = 0;
+      if (studioMode && vc) f0 *= Math.pow(2, vc / 1200);
+      var humTremolo = 1, humEndTaper = releaseTaper, humBreathBoost = releaseBreath, humFry = 0, humOnsetSwell = 1;
       var humRdOut = humBaseRd, humOqOut = 0.65, humTaOut = 0.04;
       if (humAmt > 0) {
         var tgtRd = curAv >= 1e-3 ? humCurRd : humBaseRd;
@@ -3048,30 +3607,66 @@
           // 1) Vocal effort (VEL -> lower Rd pressed, softer VEL -> higher Rd breathy)
           tgtRd -= 0.38 * Math.max(-1.2, Math.min(1.0, hVelNorm));
           // 2) Pitch register / passaggio: higher notes gently soften into mixed/head voice unless belted
-          if (f0 > humPassHz) {
-            var reg = Math.min(1, Math.log(f0 / humPassHz) / (Math.LN2 * 1.25));
-            tgtRd += 0.42 * reg * (1 - 0.45 * Math.max(0, hVelNorm));
+          if (studioMode) {
+            var octReg = Math.log2(Math.max(60, f0) / humCenterHz);
+            var effDrive = Math.max(0, Math.min(1.25, 0.65 + 0.55 * (hVelNorm + 0.55 * dynOctCur + sungEffort)));
+            if (octReg < 0.08) {
+              var lowRel = Math.max(0, Math.min(1, (0.08 - octReg) / 0.85));
+              var beltSup = Math.max(0, Math.min(0.70, 0.55 * Math.max(0, hVelNorm + 0.55 * dynOctCur + sungEffort)));
+              tgtRd += (isHighVoiceHum ? 0.85 : 0.45) * Math.pow(lowRel, 1.15) * (1 - beltSup);
+            }
+            if (octReg > 0.05 && octReg < 0.88) {
+              var mixU = (octReg - 0.05) / 0.83;
+              var mixBell = Math.sin(Math.PI * mixU);
+              tgtRd -= (isHighVoiceHum ? 0.18 : 0.12) * mixBell * effDrive;
+              var driveVal = hVelNorm + 0.5 * dynOctCur;
+              if (driveVal < -0.25) {
+                var softHead = Math.max(0, Math.min(1, (-0.25 - driveVal) / 0.9));
+                tgtRd += 0.45 * mixBell * softHead;
+              }
+            }
+            if (octReg > 0.78) {
+              var hiReg = Math.max(0, Math.min(1, (octReg - 0.78) / 0.65));
+              tgtRd += 0.42 * hiReg * (1 - 0.45 * Math.max(0, hVelNorm + 0.5 * dynOctCur));
+            }
+          } else {
+            if (f0 > humPassHz) {
+              var reg = Math.min(1, Math.log(f0 / humPassHz) / (Math.LN2 * 1.25));
+              tgtRd += 0.42 * reg * (1 - 0.45 * Math.max(0, hVelNorm));
+            }
           }
           // 3) Syllable attack micro-engagement
           tgtRd -= 0.12 * Math.exp(-Math.min(hElapsed, phraseElapsed) / 0.085);
-          // 4) Phrase onset soft glottal engagement (first ~70ms)
-          if (phraseElapsed < 0.070) {
-            var uOn = phraseElapsed / 0.070;
+          // 4) Phrase onset soft glottal engagement
+          var onSpan = studioMode ? 0.085 : 0.070;
+          if (phraseElapsed < onSpan) {
+            var uOn = phraseElapsed / onSpan;
             var sOn = 1 - uOn * uOn * (3 - 2 * uOn);
-            tgtRd += 0.45 * sOn;
-            humBreathBoost += 0.55 * Math.max(0, 1 - phraseElapsed / 0.055) * humAmt;
-            if (f0 < 170) humFry = Math.max(humFry, 0.75 * sOn * Math.min(1, (170 - f0) / 50));
+            tgtRd += (studioMode ? 0.42 : 0.45) * sOn;
+            humBreathBoost += (studioMode ? 0.40 * sOn : 0.55 * Math.max(0, 1 - phraseElapsed / 0.055)) * humAmt;
+            if (studioMode && phraseElapsed < 0.035 && (!prevEv || (e && e.t0 - prevEv.t1 > 0.02) || prevEv.kind === 'B' || prevEv.kind === 'S')) {
+              var uSw = phraseElapsed / 0.035;
+              humOnsetSwell = 0.78 + 0.22 * uSw * uSw * (3 - 2 * uSw);
+            }
+            var fryOnCeil = studioMode ? Math.min(225, humCenterHz * 0.88) : 170;
+            if (f0 < fryOnCeil) humFry = Math.max(humFry, (studioMode ? 0.55 : 0.75) * sOn * Math.min(1, (fryOnCeil - f0) / (studioMode ? 55 : 50)));
           }
-          // 5) Phrase offset breathy glottal relaxation (last ~160ms on sustained phrase ends)
+          // 5) Phrase offset breathy glottal relaxation
           var voicedSpan = active._phonationEnd - active._phonationOnset;
-          var tailLen = Math.min(0.165, voicedSpan * 0.36);
+          var tailLen = Math.min(studioMode ? 0.230 : 0.165, voicedSpan * (studioMode ? 0.38 : 0.36));
           if (tailLen > 0 && hLeft < tailLen) {
             var uEnd = Math.max(0, Math.min(1, 1 - hLeft / Math.max(1e-4, tailLen)));
             var sEnd = uEnd * uEnd * (3 - 2 * uEnd) * Math.min(1, voicedSpan / 0.28);
-            tgtRd += 0.78 * sEnd;
-            humBreathBoost += 0.70 * sEnd * humAmt;
-            humEndTaper = 1 - 0.22 * sEnd * humAmt;
-            if (f0 < 175) humFry = Math.max(humFry, 0.55 * sEnd * Math.min(1, (175 - f0) / 55));
+            tgtRd += (studioMode ? 0.92 : 0.78) * sEnd;
+            humBreathBoost += (studioMode ? 0.85 : 0.70) * sEnd * humAmt;
+            humEndTaper = 1 - (studioMode ? 0.28 : 0.22) * sEnd * humAmt;
+            var fryEndCeil = studioMode ? Math.min(225, humCenterHz * 0.88) : 175;
+            if (f0 < fryEndCeil) humFry = Math.max(humFry, (studioMode ? 0.45 : 0.55) * sEnd * Math.min(1, (fryEndCeil - f0) / 55));
+          }
+          if (studioMode) {
+            tgtRd -= 0.52 * dynOctCur;
+            tgtRd += 0.68 * effAbd;
+            humBreathBoost += 1.25 * effAbd;
           }
           // 6) Vibrato physiological coupling (glottal tension + subglottal tremolo)
           if (vc) {
@@ -3081,13 +3676,16 @@
           // A slow fluctuation in breath support moves level, fold tension and
           // leakage together; keep the scored pitch and independent jitter intact.
           var support = org ? humAmt * orgEff * nF0 : 0;
-          humTremolo *= 1 + 0.095 * support;
+          humTremolo *= 1 + (studioMode ? 0.032 : 0.095) * support;
           tgtRd -= 0.16 * support;
           humBreathBoost *= 1 - 0.08 * support;
           releaseTaper = humEndTaper;
           releaseBreath = humBreathBoost;
+        } else if (studioMode && effAbd > 0) {
+          tgtRd += 0.68 * effAbd;
+          humBreathBoost += 1.25 * effAbd;
         }
-        tgtRd = Math.max(0.35, Math.min(2.65, tgtRd));
+        tgtRd = studioMode ? Math.max(0.58, Math.min(2.50, tgtRd)) : Math.max(0.35, Math.min(2.65, tgtRd));
         humCurRd += (tgtRd - humCurRd) * humRdAlpha;
         humRdOut = 1.05 + (humCurRd - 1.05) * humAmt;
         var rdPos = Math.max(0, Math.min(lfTab.nrd - 1.0001, (humRdOut - lfTab.rdMin) / lfTab.rdStep));
@@ -3113,6 +3711,7 @@
       // Keep guardTilt on the base effort contour so organic/vibrato micro-tilt
       // does not thrash guardRefCache or fight natural brightness modulation.
       sourceTilt += 1.6 * sungEffort;
+      if (studioMode) sourceTilt += 0.85 * dynOctCur;
       var guardTilt = pitchTiltAt(timbre, f0) + sourceTilt;
       if (org) sourceTilt += orgTiltMod;
       if (humAmt > 0 && vc) sourceTilt += 0.45 * humAmt * vibNorm;
@@ -3156,13 +3755,15 @@
           pEff = pNow * avRat * avRat;
         }
         var excess = pRef > 1e-12 && pEff > 1e-12 ? 10 * Math.log10(pEff / pRef) : 0;
-        guardT = excess > 2 ? Math.pow(10, -(excess - 2) / 20) : 1;
+        guardT = studioMode
+          ? (excess > 2.5 ? Math.pow(10, -(excess - 2.5) * 0.85 / 20) : 1)
+          : (excess > 2 ? Math.pow(10, -(excess - 2) / 20) : 1);
         guardIdle = false;
       }
       // 鼻音进出时谐波可能直接落在鼻极点上，过冲只有几毫秒，8ms 的平滑来不及压。
       if (onsetNow || (guardT < guard && (nasalEdge || (e && e.kind === 'N')))) guard = guardT;
       else guard += (guardT - guard) * (guardT < guard ? aGuardD : aGuardU);
-      if (balanceAspiration && timbre.breath > 0 && voicedNote && curAv >= 1e-3) {
+      if (balanceAspiration && (studioMode || timbre.breath > 0) && voicedNote && curAv >= 1e-3) {
         if (onsetNow || fr % 4 === 0) {
           var voicePower = computedBasePower >= 0 ? computedBasePower : chainPower(cur, f0, ha, guardTilt, glG);
           var airPower = aspirationPower(cur, timbre.outEq, airMixCtrl);
@@ -3181,7 +3782,7 @@
       // a quiet phrase's fading voice/noise jump back to full volume.
       if (active) velocity = !active._rest && !active._breath ?
         NSG.TUNING.clamp(Number.isFinite(+active.vel) && active.vel != null ? +active.vel : 96, 1, 127) / 96 : 1;
-      if (active) mixGain = NSG.TUNING.noteGain(active, (tm.beatOf(t) - active.start) / active.dur);
+      if (active) mixGain = frameMixGain;
       var fbOut = copyPairs(cur);
       var fLim = SR * 0.48;
       if (org) {
@@ -3205,23 +3806,70 @@
         fbOut[1][0] = Math.max(fbOut[0][0] + 120, Math.min(fLim, fbOut[1][0] * (1 + 0.010 * humAmt * vibNorm)));
       }
       var fricFOut = curFricF, fricBOut = curFricB;
-      if (humAmt > 0 && e && e.kind === 'B') {
-        // Two-stage inhalation resonance: pharyngeal (~1350 Hz) -> oral/teeth (~2550 Hz) -> soft close (~1750 Hz).
-        var bU2 = Math.max(0, Math.min(1, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
-        var bFreq = bU2 < 0.65 ? (1350 + 1200 * (bU2 / 0.65)) : (2550 - 800 * ((bU2 - 0.65) / 0.35));
-        fricFOut = curFricF + (bFreq - curFricF) * humAmt;
-        fricBOut = curFricB + (1450 - curFricB) * humAmt;
+      var liveLipOut = articState ? articState.lip : curLip;
+      if (studioMode) {
+        if (e && e.kind === 'V' && curAv >= 0.02) applyHawksMillerBw(fbOut, timbre);
+        var rdOpenBw = Math.max(0, humRdOut - 1.0);
+        if (rdOpenBw > 0) {
+          fbOut[0][1] = Math.max(30, fbOut[0][1] * (1 + 0.65 * rdOpenBw));
+          fbOut[1][1] = Math.max(30, fbOut[1][1] * (1 + 0.42 * rdOpenBw));
+          fbOut[2][1] = Math.max(30, fbOut[2][1] * (1 + 0.28 * rdOpenBw));
+        }
+        var frontNormH = (fbOut[1][0] - 1400) / 1000;
+        var jawNormH = (fbOut[0][0] - 500) / 500;
+        var pitchOctH = Math.max(-1, Math.min(1, Math.log2(Math.max(80, f0) / (timbre.refF0 || 220))));
+        var hiMod = 1 + 0.025 * frontNormH - 0.015 * jawNormH + 0.028 * pitchOctH;
+        for (var hfk = 3; hfk < 6; hfk++) {
+          fbOut[hfk][0] = Math.max(fbOut[hfk - 1][0] + 150, Math.min(fLim, fbOut[hfk][0] * hiMod));
+        }
+        if (e && e.kind === 'V' && curAv >= 0.02) {
+          var ringGate = Math.max(0, Math.min(1, (pitchOctH - 0.25) / 0.55)) * Math.max(0, Math.min(1, (1.20 - humRdOut) / 0.30));
+          if (ringGate > 0.01) {
+            var sfTarget = isHighVoiceHum ? 3250 : 2800;
+            var f3Goal = sfTarget - 220, f4Goal = sfTarget + 280;
+            if (fbOut[2][0] < f3Goal) fbOut[2][0] = Math.min(f3Goal, fbOut[2][0] * (1 + 0.06 * ringGate));
+            else fbOut[2][0] = Math.max(f3Goal, fbOut[2][0] * (1 - 0.04 * ringGate));
+            if (fbOut[3][0] > f4Goal) fbOut[3][0] = Math.max(fbOut[2][0] + 280, Math.max(f4Goal, fbOut[3][0] * (1 - 0.07 * ringGate)));
+            fbOut[2][1] = Math.max(90, fbOut[2][1] * (1 - 0.28 * ringGate));
+            fbOut[3][1] = Math.max(90, fbOut[3][1] * (1 - 0.28 * ringGate));
+          }
+        }
+        fricFOut *= 1 - 0.14 * Math.max(0, Math.min(0.4, liveLipOut));
       }
+      if (humAmt > 0 && e && e.kind === 'B') {
+        // Two-stage inhalation resonance: pharyngeal -> oral/teeth -> soft close.
+        var bU2 = Math.max(0, Math.min(1, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
+        if (studioMode) {
+          var bFreqSt = bU2 < 0.65 ? (1100 + 950 * (bU2 / 0.65)) : (2050 - 600 * ((bU2 - 0.65) / 0.35));
+          fricFOut = curFricF + (bFreqSt - curFricF) * humAmt;
+          fricBOut = curFricB + (1550 - curFricB) * humAmt;
+        } else {
+          var bFreq = bU2 < 0.65 ? (1350 + 1200 * (bU2 / 0.65)) : (2550 - 800 * ((bU2 - 0.65) / 0.35));
+          fricFOut = curFricF + (bFreq - curFricF) * humAmt;
+          fricBOut = curFricB + (1450 - curFricB) * humAmt;
+        }
+      }
+      var effBreathCtrl = studioMode ? Math.max(0.016, timbre.breath || 0) : (timbre.breath || 0);
+      var effNasalScale = studioMode ? Math.max(0.16, timbre.nasal || 0.4) : (timbre.nasal || 0.4);
       ctrl[ctrlIdx] = {
-        t: t, f0: f0, av: curAv * 0.92 * velocity * guard * orgTremolo * humTremolo * humEndTaper,
-        ah: (balanceAspiration ? (timbre.breath || 0) * aspirationScale : (timbre.breath || 0) * (0.5 + curAv * 0.5)) * orgAirMod * humBreathBoost,
+        t: t, f0: f0, av: curAv * 0.92 * velocity * guard * orgTremolo * humTremolo * humEndTaper * humOnsetSwell,
+        ah: (balanceAspiration ? effBreathCtrl * aspirationScale : effBreathCtrl * (0.5 + curAv * 0.5)) * orgAirMod * humBreathBoost,
         /* 必须逐帧复制：cur 是不断被改写的同一组数组，直接引用会让整首歌
            只用到最后一帧的声道形状（等于全程一个元音） */
         fb: fbOut,
         fric: curFric * velocity, tn: curTn * velocity, fricF: fricFOut, fricB: fricBOut, vel: velocity,
-        nasal: Math.min(1, curNasal * (timbre.nasal || 0.4) * 2.4),
+        nasal: Math.min(1, curNasal * effNasalScale * 2.4),
         np: poleHz, nzf: curZ, nmix: curMix, mixGain: mixGain
       };
+      if (studioMode) {
+        ctrl[ctrlIdx].lip = liveLipOut;
+        ctrl[ctrlIdx].abduct = effAbd;
+        ctrl[ctrlIdx].aspirationScale = aspirationScale;
+        ctrl[ctrlIdx].burstImpulse = burstImp;
+        ctrl[ctrlIdx].burstAmp = burstAmp;
+        ctrl[ctrlIdx].isAffricateBurst = isAffrBurst;
+        ctrl[ctrlIdx].isBreath = !!(e && e.kind === 'B');
+      }
       if (curTnLpHz > 0) ctrl[ctrlIdx].tnLpHz = curTnLpHz;
       if ((curTn < 1e-6 && (!e || !e.tnLpHz)) || (active && active._rest)) curTnLpHz = 0;
       if (research || org || humAmt > 0 || sungEffort) ctrl[ctrlIdx].sourceTilt = sourceTilt;
@@ -3243,7 +3891,7 @@
         if (curFrontCavity < 1e-8) curFrontCavity = 0;
         ctrl[ctrlIdx].frontCavity = curFrontCavity;
         if (e) {
-          lastVoicedHighGate = e.kind === 'F' || e.kind === 'S' ? 0 : 1;
+          lastVoicedHighGate = e.kind === 'F' || e.kind === 'S' || (studioMode && e.kind === 'N') ? 0 : 1;
           ctrl[ctrlIdx].voicedHighGate = /^(V|G|L)$/.test(e.kind) ? 1 : 0;
         } else {
           if (curAv < 1e-6) lastVoicedHighGate = 1;
@@ -3269,7 +3917,7 @@
   NSG.FRIC_TRIM = FRIC_TRIM;
   NSG.TAIL_DB_OCT = TAIL_DB_OCT;
 
-  function makeSource(timbre, wideband, organicAmt, humanizeAmt) {
+  function makeSource(timbre, wideband, organicAmt, humanizeAmt, seedSalt) {
     var amps = timbre.harm || NSG.defaultHarm();
     var rnd = mulberry32(0x9e3779b9);
     // 512 partials cover 20 kHz down to F0=40 Hz. Reference/ordinary paths
@@ -3293,12 +3941,18 @@
       }
     }
     var randPhase = null, phaseOff = null, phaseOffTarget = null, phaseOffStep = null, lfTable = null;
+    var partPhaseJit = null, partPhaseVel = null, partRnd = null;
     if (humanizeAmt > 0) {
       randPhase = new Float64Array(ph);
       phaseOff = new Float64Array(ph);
       phaseOffTarget = new Float64Array(ph);
       phaseOffStep = new Float64Array(count);
       lfTable = getLfTable();
+      if (studioMode) {
+        partPhaseJit = new Float64Array(count);
+        partPhaseVel = new Float64Array(count);
+        partRnd = mulberry32((0x517cc1b7 ^ (seedSalt || 0)) >>> 0);
+      }
     }
     return { phase: ph, amp: amp, target: new Float64Array(count), step: new Float64Array(count), amps: amps, K: count, wideband: !!wideband, nextK: 0, activeK: 0,
       lowActiveK: 0, highActiveK: 0,
@@ -3307,7 +3961,8 @@
       highAmp: modeB ? new Float64Array(count) : null, highTarget: modeB ? new Float64Array(count) : null,
       highStep: modeB ? new Float64Array(count) : null, airAmp: 0, airTarget: 0, airStep: 0,
       harmDrift: harmDrift, harmDriftCoef: harmDriftCoef, harmDriftGain: harmDriftGain, harmDriftOut: harmDriftOut, harmRnd: harmRnd,
-      masterPhase: 0, randPhase: randPhase, phaseOff: phaseOff, phaseOffTarget: phaseOffTarget, phaseOffStep: phaseOffStep, lfTable: lfTable };
+      masterPhase: 0, randPhase: randPhase, phaseOff: phaseOff, phaseOffTarget: phaseOffTarget, phaseOffStep: phaseOffStep, lfTable: lfTable,
+      partPhaseJit: partPhaseJit, partPhaseVel: partPhaseVel, partRnd: partRnd };
   }
 
   var LOG10_OVER_20_SRC = Math.LN10 / 20;
@@ -3354,9 +4009,12 @@
     }
     var useLf = humanizeAmt > 0 && !!src.lfTable;
     var lfP0 = null, lfP1 = null, lfModal = null, lfM0 = null, lfM1 = null, lfFr = 0, lfNh = 0, fCoh = 2400;
+    var stDispStart = 1550, stRd = 1.05, stCohCeil = 0.25, stCohStart = 4800, stDt = HOP / SR;
+    var stJit = src.partPhaseJit, stVel = src.partPhaseVel, stRnd = src.partRnd;
     if (useLf) {
       var lt = src.lfTable;
       var rdClamped = Math.max(lt.rdMin, Math.min(lt.rdMin + (lt.nrd - 1) * lt.rdStep, rd !== undefined ? rd : 1.05));
+      stRd = rdClamped;
       var rPos = (rdClamped - lt.rdMin) / lt.rdStep;
       var rI = Math.min(lt.nrd - 2, rPos | 0);
       lfFr = rPos - rI;
@@ -3366,28 +4024,61 @@
       lfNh = lt.nh;
       // Tighter chest voice stays phase-coherent higher; breathy voice disperses earlier.
       fCoh = Math.max(1500, Math.min(3000, 2650 - 480 * (rdClamped - 1.0)));
+      if (studioMode) {
+        stDispStart = Math.max(1550, 2150 - 380 * (rdClamped - 1.0));
+        var stRdU = Math.max(0, Math.min(1, (rdClamped - 0.8) / 0.7));
+        stCohCeil = 0.68 - 0.30 * stRdU;
+        stCohStart = 5800 - 1100 * stRdU;
+      }
+      var rdComp = (studioMode && lt.rdCompDb) ? (lt.rdCompDb[rI] + (lt.rdCompDb[rI + 1] - lt.rdCompDb[rI]) * lfFr) : 0;
     }
     for (var k = 1; k <= K; k++) {
       var oct = harmonicOctaves[k];                 // 以 H1 为 0 倍频程
       var db = k <= n ? src.amps[k - 1] : last + tailDb * (oct - lastOctave);
       db += tiltDb * oct + pitchDb;
+      if (studioMode && useLf && stRd > 1.35 && oct > 0.85) db -= 1.15 * (stRd - 1.35) * (oct - 0.85);
       var khz = k * f0;
       if (gl) db += NSG.sourceDbAt(gl, khz, SR);
       if (useLf) {
         var mIdx = k <= lfNh ? k - 1 : lfNh - 1;
         var mDelta = lfM0[mIdx] + (lfM1[mIdx] - lfM0[mIdx]) * lfFr;
         // The frame's Rd already blends toward modal at low humanize settings.
-        db += 0.68 * mDelta;
-        var wCoh = khz <= fCoh ? 1 : (khz >= fCoh + 2200 ? 0 : 1 - (khz - fCoh) / 2200);
-        wCoh = wCoh * wCoh * (3 - 2 * wCoh) * humanizeAmt;
-        var rp = src.randPhase[k - 1];
-        var tgtOff = rp;
-        if (wCoh > 1e-6 && k <= lfNh) {
-          var pA = lfP0[k - 1], pB = lfP1[k - 1];
-          // Choose the turn once at modal phonation. Re-selecting the
-          // shortest arc as Rd moves flips the blended partial at half a turn.
-          var lfPh = pA + (pB - pA) * lfFr;
-          tgtOff = rp + wCoh * (lfPh - rp - Math.round(lfModal[k - 1] - rp));
+        db += (studioMode ? 1.0 : 0.68) * mDelta;
+        if (studioMode) db += rdComp;
+        var tgtOff;
+        if (studioMode && stJit) {
+          var lfPhSt = k <= lfNh ? (lfP0[k - 1] + (lfP1[k - 1] - lfP0[k - 1]) * lfFr) : 0;
+          if (khz > stDispStart) {
+            var uDisp = Math.min(1, (khz - stDispStart) / 3400);
+            var wDecoh = uDisp * uDisp * (3 - 2 * uDisp);
+            var rpSt = src.randPhase[k - 1];
+            var basePh = lfPhSt + wDecoh * (rpSt - lfPhSt - Math.round(rpSt - lfPhSt));
+            var dispRate = 5 + 14 * uDisp;
+            var dispAmp = (0.022 + 0.085 * Math.pow(uDisp, 1.35)) * (0.75 + 0.45 * Math.min(1.0, Math.max(0, stRd - 0.85)));
+            var aD = Math.exp(-2 * Math.PI * dispRate * stDt);
+            var uTri = (stRnd() + stRnd() - 1) * 2.44948974;
+            var vD = aD * stVel[k - 1] + Math.sqrt(Math.max(0, 1 - aD * aD)) * uTri;
+            stVel[k - 1] = vD;
+            var jD = aD * stJit[k - 1] + (1 - aD) * (dispAmp * 1.4 * vD);
+            stJit[k - 1] = jD;
+            tgtOff = basePh + jD;
+          } else {
+            stVel[k - 1] *= 0.7;
+            stJit[k - 1] *= 0.7;
+            tgtOff = lfPhSt + stJit[k - 1];
+          }
+        } else {
+          var wCoh = khz <= fCoh ? 1 : (khz >= fCoh + 2200 ? 0 : 1 - (khz - fCoh) / 2200);
+          wCoh = wCoh * wCoh * (3 - 2 * wCoh) * humanizeAmt;
+          var rp = src.randPhase[k - 1];
+          tgtOff = rp;
+          if (wCoh > 1e-6 && k <= lfNh) {
+            var pA = lfP0[k - 1], pB = lfP1[k - 1];
+            // Choose the turn once at modal phonation. Re-selecting the
+            // shortest arc as Rd moves flips the blended partial at half a turn.
+            var lfPh = pA + (pB - pA) * lfFr;
+            tgtOff = rp + wCoh * (lfPh - rp - Math.round(lfModal[k - 1] - rp));
+          }
         }
         if (snapPhase) {
           var pSnap = tgtOff - Math.floor(tgtOff);
@@ -3397,6 +4088,10 @@
         } else {
           var curOff = src.phaseOff[k - 1];
           var dOff = tgtOff - curOff; dOff -= Math.round(dOff);
+          if (studioMode) {
+            if (dOff > 0.14) dOff = 0.14;
+            else if (dOff < -0.14) dOff = -0.14;
+          }
           // Keep phaseOff strictly >= 0 across the entire HOP so inner loop can use fast | 0 instead of Math.floor.
           if (curOff + dOff < 0) curOff += 1;
           src.phaseOff[k - 1] = curOff;
@@ -3412,6 +4107,11 @@
       var a = legacyPow ? Math.pow(10, db / 20) : Math.exp(db * LOG10_OVER_20_SRC);
       if (modeB) src.fullTarget[k - 1] = a;
       var target = a < 1e-6 ? 0 : a;
+      if (useLf && studioMode && khz > stCohStart && target > 0) {
+        var xtC = Math.min(1, (khz - stCohStart) / (9500 - stCohStart));
+        var sCoh = xtC * xtC * (3 - 2 * xtC);
+        target *= 1 - (1 - stCohCeil) * sCoh;
+      }
       if (xfStart > 0 && khz > xfStart) {
         var xr = Math.min(1, (khz - xfStart) / 1400);
         target *= 1 - sb * xr * xr * (3 - 2 * xr);
@@ -3482,8 +4182,11 @@
   var modeBF02EqKey = null;
   function modeBRefinementOf(timbre) {
     if (timbre.modeBOutEq || !Array.isArray(timbre.outEq)) return null;
-    if (modeBF02EqKey === null) modeBF02EqKey = NSG.presetById('f2').outEq.join(',');
-    return timbre.outEq.join(',') === modeBF02EqKey ? modeBSelectedD : null;
+    if (modeBF02EqKey === null) {
+      var f2p = NSG.presetById('f2');
+      modeBF02EqKey = (f2p && Array.isArray(f2p.outEq)) ? f2p.outEq.join(',') : '';
+    }
+    return modeBF02EqKey && timbre.outEq.join(',') === modeBF02EqKey ? modeBSelectedD : null;
   }
   function refineDb(anchors, hz) {
     if (hz <= anchors[0][0]) return anchors[0][1];
@@ -3541,42 +4244,60 @@
     var sb = smoothBlend === true ? 1 : smoothBlend === false ? 0 : (typeof smoothBlend === 'number' && isFinite(smoothBlend) ? Math.max(0, Math.min(1, smoothBlend)) : 0);
     var pb = perturbBlend === true ? 1 : perturbBlend === false ? 0 : (typeof perturbBlend === 'number' && isFinite(perturbBlend) ? Math.max(0, Math.min(1, perturbBlend)) : 0);
     var f6 = NSG.formantsOf(NSG.PHONES.a, timbre).pairs[5][0], curve = [];
+    var radASt = studioMode ? Math.exp(-2 * Math.PI * RAD_NOM_HZ / SR) : 0;
     for (var i = 0; i < 64; i++) {
       var hz = 50 * Math.pow(400, i / 63);
-      // Natural turbulent upper-air roll-off above 8 kHz + smooth cosine taper
-      // from 13.5 kHz to 20 kHz, avoiding a flat 8-18 kHz plateau and the
-      // 19-20 kHz FIR stopband cliff.
-      var aOld = sb < 1 ? voicedHighShape(hz, f6, true, tractJoin, 0) * Math.pow(Math.max(1, hz / 7800), -2.0) *
-        (hz <= 13500 ? 1 : hz >= 19500 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 13500) / 6000)) : 0;
-      var aNew = sb > 0 ? voicedHighShape(hz, f6, true, tractJoin, 1) * Math.pow(Math.max(1, hz / 7200), -0.55) *
-        (hz <= 15500 ? 1 : hz >= 20000 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 15500) / 4500)) : 0;
-      var a = (sb >= 1 ? aNew : sb <= 0 ? aOld : aOld + (aNew - aOld) * sb) *
-        Math.sqrt(2 - 2 * Math.cos(2 * Math.PI * hz / SR));
-      curve.push(Math.max(-120, 20 * Math.log10(Math.max(1e-6, a))));
+      if (studioMode) {
+        var fadeSt = Math.max(0, Math.min(1, (hz - 6200) / 2000));
+        fadeSt = fadeSt * fadeSt * (3 - 2 * fadeSt);
+        var rollSt = Math.pow(Math.max(1, hz / 7800), -2.25);
+        var topSt = hz <= 13500 ? 1 : hz >= 18500 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 13500) / 5000);
+        curve.push(Math.max(-120, 20 * Math.log10(Math.max(1e-6, fadeSt * rollSt * topSt))));
+      } else {
+        // Natural turbulent upper-air roll-off above 8 kHz + smooth cosine taper
+        // from 13.5 kHz to 20 kHz, avoiding a flat 8-18 kHz plateau and the
+        // 19-20 kHz FIR stopband cliff.
+        var aOld = sb < 1 ? voicedHighShape(hz, f6, true, tractJoin, 0) * Math.pow(Math.max(1, hz / 7800), -2.0) *
+          (hz <= 13500 ? 1 : hz >= 19500 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 13500) / 6000)) : 0;
+        var aNew = sb > 0 ? voicedHighShape(hz, f6, true, tractJoin, 1) * Math.pow(Math.max(1, hz / 7200), -0.55) *
+          (hz <= 15500 ? 1 : hz >= 20000 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (hz - 15500) / 4500)) : 0;
+        var a = (sb >= 1 ? aNew : sb <= 0 ? aOld : aOld + (aNew - aOld) * sb) *
+          Math.sqrt(2 - 2 * Math.cos(2 * Math.PI * hz / SR));
+        curve.push(Math.max(-120, 20 * Math.log10(Math.max(1e-6, a))));
+      }
     }
     var power = 0, bins = 2048;
+    var nomResR = Math.exp(-Math.PI * 5200 / SR), nomResB = 2 * nomResR * Math.cos(2 * Math.PI * 8400 / SR), nomResC = -nomResR * nomResR, nomResA2 = (1 - nomResB - nomResC) * (1 - nomResB - nomResC);
+    var nomLpA = Math.exp(-2 * Math.PI * 10500 / SR), nomLpNum = (1 - nomLpA) * (1 - nomLpA);
     for (var b = 0; b < bins; b++) {
       var f = (b + 0.5) * SR / (2 * bins);
       var db = NSG.outEqDbAt(curve, f);
       if (compensateEq && Array.isArray(timbre.outEq)) db += NSG.outEqDbAt(timbre.outEq, f);
-      power += Math.pow(10, db / 10) / (3 * bins); // uniform white noise variance = 1/3
+      var bPow = Math.pow(10, db / 10) / (3 * bins);
+      if (studioMode) {
+        var wb = 2 * Math.PI * f / SR, cwb = Math.cos(wb), swb = Math.sin(wb), c2b = cwb * cwb - swb * swb, s2b = 2 * cwb * swb;
+        var drb = 1 - nomResB * cwb - nomResC * c2b, dib = nomResB * swb + nomResC * s2b;
+        bPow *= (nomResA2 / (drb * drb + dib * dib + 1e-18)) * (nomLpNum / Math.max(1e-9, 1 + nomLpA * nomLpA - 2 * nomLpA * cwb));
+      }
+      power += bPow; // uniform white noise variance = 1/3
     }
     // Apply D AFTER estimating the original budget. Including this attenuation
     // in power would normalize away the accepted reduction in upper air.
-    if (refine) for (var ai = 0; ai < curve.length; ai++)
+    if (refine && !studioMode) for (var ai = 0; ai < curve.length; ai++)
       curve[ai] += refineDb(refine.air, 50 * Math.pow(400, ai / 63));
     // Concave breath scaling: normal voices (~0.04) retain clear upper harmonics
     // instead of saturating at 70% noise, while breathier voices (~0.10) stay airy.
     // Under HNM mode, allow sufficient upper turbulence budget so high-frequency
     // harmonics fade smoothly into silky air without FM beating.
-    var brNorm = Math.min(1, Math.max(0, timbre.breath || 0) / 0.065);
+    var effBr = studioMode ? Math.max(0.016, timbre.breath || 0) : (timbre.breath || 0);
+    var brNorm = Math.min(1, Math.max(0, effBr) / 0.065);
     var fracOld = 0.64 * Math.pow(brNorm, 0.50);
-    var fracNew = Math.max(0.26, 0.72 * Math.pow(brNorm, 0.45));
+    var fracNew = studioMode ? (0.36 + 0.30 * Math.pow(brNorm, 0.55)) : Math.max(0.26, 0.72 * Math.pow(brNorm, 0.45));
     var profile = NSG.validEffortProfile(timbre.effortProfile) ? timbre.effortProfile : NSG.defaultEffortProfile;
     return { eq: curve, power: power, profile: profile,
       kernels: null,
-      fraction: pb >= 1 ? fracNew : pb <= 0 ? fracOld : fracOld + (fracNew - fracOld) * pb,
-      trimGain: soften ? Math.pow(10, -3 / 20) : 1 };
+      fraction: studioMode ? fracNew : (pb >= 1 ? fracNew : pb <= 0 ? fracOld : fracOld + (fracNew - fracOld) * pb),
+      trimGain: (soften && !studioMode) ? Math.pow(10, -3 / 20) : 1 };
   }
 
   // Keep a periodic core and budget breath-linked turbulence separately.
@@ -3637,23 +4358,40 @@
     var cwStep = Math.cos(dw), swStep = Math.sin(dw);
     var cwCur = Math.cos(wStart), swCur = Math.sin(wStart);
     var legacyTrig = !!NSG.LEGACY_SOUND;
+    var rdHigh = c.rd !== undefined ? c.rd : 1.05;
+    var rdHighU = Math.max(0, Math.min(1, (rdHigh - 0.8) / 0.7));
+    var stHighCeil = 0.68 - 0.30 * rdHighU;
+    var stHighStart = 5800 - 1100 * rdHighU;
+    var radAHi = studioMode ? Math.exp(-2 * Math.PI * RAD_NOM_HZ / SR) : 0;
+    var radNum2Hi = (1 - radAHi) * (1 - radAHi), radDenBHi = 1 + radAHi * radAHi, rad2AHi = 2 * radAHi;
     for (var k = kStart; k < src.K; k++) {
       var hz = (k + 1) * f0;
       var refShape = voicedHighShape(hz, f6, wideband, tractJoin, 0);
       var newShape = sb > 0 ? voicedHighShape(hz, f6, wideband, tractJoin, 1) : refShape;
       var aShape = sb >= 1 ? newShape : sb <= 0 ? refShape : refShape + (newShape - refShape) * sb;
       var coh = 1;
-      if (useHnm && hz > hnmStart) {
-        var xt = Math.min(1, (hz - hnmStart) / hnmSpan);
-        var hnmCoh = 0.22 + 0.78 * Math.max(0, 1 - xt * xt * (3 - 2 * xt));
-        coh = 1 - pb * (1 - hnmCoh);
-      }
-      if (effort) {
-        var p = air.profile, kHz = hz / 1000;
-        var band = kHz < 7 ? ep : ep + 1;
-        var u = clampUnit(kHz < 7 ? (kHz - 5) / 2 : (kHz - 7) / 3);
-        var residual = p[band] + u * (p[band + 1] - p[band]);
-        coh = Math.sqrt(Math.max(0, coh * coh + Math.abs(effort) * ((1 - residual) / (1 - baseFraction) - coh * coh)));
+      if (studioMode) {
+        if (hz > stHighStart) {
+          var xtS = Math.min(1, (hz - stHighStart) / (9500 - stHighStart));
+          coh = 1 - (1 - stHighCeil) * (xtS * xtS * (3 - 2 * xtS));
+        }
+        if (hz > 9500) {
+          var xtU = Math.min(1, (hz - 9500) / 4500);
+          coh *= 1 - 0.35 * (xtU * xtU * (3 - 2 * xtU));
+        }
+      } else {
+        if (useHnm && hz > hnmStart) {
+          var xt = Math.min(1, (hz - hnmStart) / hnmSpan);
+          var hnmCoh = 0.22 + 0.78 * Math.max(0, 1 - xt * xt * (3 - 2 * xt));
+          coh = 1 - pb * (1 - hnmCoh);
+        }
+        if (effort) {
+          var p = air.profile, kHz = hz / 1000;
+          var band = kHz < 7 ? ep : ep + 1;
+          var u = clampUnit(kHz < 7 ? (kHz - 5) / 2 : (kHz - 7) / 3);
+          var residual = p[band] + u * (p[band + 1] - p[band]);
+          coh = Math.sqrt(Math.max(0, coh * coh + Math.abs(effort) * ((1 - residual) / (1 - baseFraction) - coh * coh)));
+        }
       }
       var aBase = src.fullTarget[k] * aShape;
       var a = aBase * coh;
@@ -3665,7 +4403,8 @@
         swCur = swCur * cwStep + cwCur * swStep;
         cwCur = nextCw;
       }
-      var w = eq * eq * (2 - 2 * cosVal);
+      var radFHi = studioMode ? radNum2Hi / Math.max(1e-9, radDenBHi - rad2AHi * cosVal) : 1;
+      var w = eq * eq * (2 - 2 * cosVal) * radFHi;
       power += a * a * w;
       shapeOnlyPower += aBase * aBase * w;
       var aRef = src.fullTarget[k] * refShape;
@@ -3676,7 +4415,9 @@
     var effTilt = pitchTiltAt(timbre, f0);
     var bodyPower = chainPower(c.fb, f0, src.amps, effTilt + (c.sourceTilt || 0), sourceFilter);
     var colour = Math.max(-5, Math.min(3, 3 * Math.log2(Math.max(200, c.fb[1][0]) / 1500)));
-    var levelDb = (wideband ? -32.5 : -36) + 10 * strength + Math.max(-4, Math.min(3, effTilt * 0.5)) + colour + 2 * (c.sourceTilt || 0);
+    var levelDb = studioMode
+      ? (-28.2 + 4.5 * strength + Math.max(-3, Math.min(3, effTilt * 0.5)) + 0.7 * colour + 1.4 * Math.max(0, rdHigh - 1.0) + 1.1 * (c.sourceTilt || 0))
+      : ((wideband ? -32.5 : -36) + 10 * strength + Math.max(-4, Math.min(3, effTilt * 0.5)) + colour + 2 * (c.sourceTilt || 0));
     var budget = Math.max(0, bodyPower) * Math.exp(levelDb * LOG10_OVER_10);
     // Anchor gain against the un-attenuated envelope reference so trimming >9 kHz
     // shelf energy or rolling off upper harmonics never pushes excess level down into 6-9 kHz.
@@ -3684,7 +4425,7 @@
     var calSmooth = Math.max(shapeOnlyPower, refPower * 0.90);
     var calPower = sb >= 1 ? calSmooth : sb <= 0 ? calBase : calBase + (calSmooth - calBase) * sb;
     var cohRatio = useHnm && shapeOnlyPower > 1e-30 ? power / shapeOnlyPower : 1;
-    var fraction = air ? (useHnm ? Math.max(effort ? 0 : baseFraction, 1 - (1 - baseFraction) * cohRatio) : baseFraction) : 0;
+    var fraction = air ? (studioMode ? Math.max(0.34, Math.min(0.80, baseFraction + 0.16 * Math.max(0, rdHigh - 1.0))) : (useHnm ? Math.max(effort ? 0 : baseFraction, 1 - (1 - baseFraction) * cohRatio) : baseFraction)) : 0;
     var gain = strength > 0 && calPower > 1e-30 ? gate * Math.sqrt(budget * (1 - baseFraction) / calPower) : 0;
     var airGain = air && air.power > 1e-30 ? gate * Math.sqrt(0.5 * budget * fraction / air.power) * air.trimGain : 0;
     src.airTarget = airGain; src.airStep = (airGain - src.airAmp) / HOP;
@@ -3909,8 +4650,10 @@
 
   function buildVocalControl(score, timbre, opt) {
     opt = opt || {};
+    var studio = modeB && !opt.rawSource && !NSG.LEGACY_SOUND && opt.studio !== false;
+    studioMode = studio;
     var research = HD && opt.modeBSource !== false && opt.hdResearch !== false;
-    var refine = modeB && !opt.rawSource && opt.modeBRefinement !== false ? modeBRefinementOf(timbre) : null;
+    var refine = modeB && !opt.rawSource && !studio && opt.modeBRefinement !== false ? modeBRefinementOf(timbre) : null;
     var nasalRelease = !opt.rawSource && opt.modeBRefinement !== false && opt.modeBNasalRelease !== false;
     var balanceAspiration = modeB && !opt.rawSource && opt.modeBAspiration !== false;
     var highStrength = typeof timbre.modeBHigh === 'number' && isFinite(timbre.modeBHigh) ? Math.max(0, Math.min(1, timbre.modeBHigh)) : 0.4;
@@ -3940,17 +4683,18 @@
     }
     var tm = NSG.TEMPO.map(score);
     var nasalTract = modeB && !opt.rawSource && opt.modeBNasalTract !== false && opt.modeBNasalTract !== 'off';
-    var organicAmt = opt.rawSource ? 0 : resolveOrganicMicroVar(opt);
-    var humanizeAmt = opt.rawSource ? 0 : resolveHumanizeCore(opt);
+    var organicAmt = opt.rawSource ? 0 : (studio && opt.organicMicroVar === undefined ? 0.65 : resolveOrganicMicroVar(opt));
+    var humanizeAmt = opt.rawSource ? 0 : (studio && opt.humanizeCore === undefined ? 1.0 : resolveHumanizeCore(opt));
     var sliceRange = Array.isArray(opt.sliceRange) && opt.sliceRange.length === 2 ? opt.sliceRange : null;
-    var articMorphAmt = resolveArticMorph(timbre, opt);
+    var articMorphAmt = opt.rawSource ? 0 : (studio && opt.articMorph === undefined ? 0.65 : resolveArticMorph(timbre, opt));
+    var autoExpress = studio && !opt.rawSource && opt.autoExpress !== false;
     var r0 = scoreToControl(score, timbre, tm, score.lang, research, balanceAspiration,
       !opt.rawSource && opt.modeBJapaneseFriction !== false,
       !opt.rawSource && opt.modeBJapaneseVoicedFriction !== false, nasalRelease, aspAirMix, nasalTract,
       !opt.rawSource && !NSG.LEGACY_SOUND && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0,
-      organicAmt, humanizeAmt, sliceRange, articMorphAmt);
+      organicAmt, humanizeAmt, sliceRange, articMorphAmt, autoExpress);
     return {
-      r0: r0, timbre: timbre, research: research, refine: refine, nasalRelease: nasalRelease,
+      r0: r0, timbre: timbre, research: research, refine: refine, nasalRelease: nasalRelease, studio: studio,
       balanceAspiration: balanceAspiration, highStrength: highStrength, voicedHigh: voicedHigh,
       wideband: wideband, perturbBlend: perturbBlend, smoothBlend: smoothBlend, aspAirMix: aspAirMix,
       tractJoin: tractJoin, compensateHighEq: compensateHighEq, nasalTract: nasalTract,
@@ -4034,6 +4778,8 @@
     var endFrame = r0.endFrame || ctrl.length;
     var sampleOffset = startFrame * HOP;
     var sliceTotal = ctrl.length * HOP;
+    var studio = !!prep.studio;
+    studioMode = studio;
     var useWasmVocal = !!(NSG.VOCAL_WASM && NSG.VOCAL_WASM.enabled && NSG.VOCAL_WASM.ready);
     var out = useWasmVocal ? null : new Float32Array(sliceTotal);
     var bodyStage = (!useWasmVocal && refine) ? new Float32Array(sliceTotal) : null;
@@ -4044,11 +4790,13 @@
     var rawSrc = !!opt.rawSource;
 
     var res = useWasmVocal ? null : [];
-    if (res) for (var i = 0; i < 6; i++) res.push(new Resonator(true));
+    if (res) for (var i = 0; i < 6; i++) res.push(new Resonator(!studio));
     var nas = useWasmVocal ? null : (nasalTract ? new HiFiNasalBranch() : new NasalBranch());
     var nasScale = nasalScale(timbre), nasBwScale = Math.max(0.7, Math.min(1.5, timbre.bwScale || 1));
     var nPole = useWasmVocal ? null : new Resonator(), nZero = useWasmVocal ? null : new AntiResonator();
     var fricRes = useWasmVocal ? null : new Resonator(), fricHp = useWasmVocal ? null : new Resonator();
+    var shockRes = (!useWasmVocal && studio) ? new Resonator() : null;
+    var lastShockHz = 5000, lastShockBw = 1200;
     var wgRaw = opt.modeBFricWaveguide;
     var wgProfile = 'off';
     if (modeB && !opt.rawSource && wgRaw !== false && wgRaw !== 'off') {
@@ -4069,35 +4817,41 @@
       return NSG.outEqDbAt(timbre.outEq, hz) + refineDb(modeBSelectedD.friction, hz);
     });
 
-    var src = useWasmVocal ? null : makeSource(timbre, wideband, organicAmt, humanizeAmt);
+    var seedSalt = startFrame ? ((startFrame * 2654435761) >>> 0) : 0;
+    var src = useWasmVocal ? null : makeSource(timbre, wideband, organicAmt, humanizeAmt, seedSalt);
     var useOrganic = organicAmt > 0;
     var useHumanize = humanizeAmt > 0;
-    var seedSalt = startFrame ? ((startFrame * 2654435761) >>> 0) : 0;
     var orgCycleRnd = (!useWasmVocal && useOrganic) ? mulberry32((0x94d049bb ^ seedSalt) >>> 0) : null;
     var orgCycleAlpha = 1 - Math.exp(-1 / (SR * 0.0015));
+    var orgJitAlpha = 1 - Math.exp(-1 / (SR * (studio ? 0.00065 : 0.0015)));
     var orgShimCur = 1, orgShimTgt = 1, orgJitCur = 1, orgJitTgt = 1;
     var prevOrgAir = 1;
     var glottalNoise = (!useWasmVocal && useHumanize) ? mulberry32((0x3c6ef372 ^ seedSalt) >>> 0) : null;
     var midLp = 0, midHp = 0;
-    var midLpCoef = Math.exp(-2 * Math.PI * 4800 / SR), midHpCoef = Math.exp(-2 * Math.PI * 1600 / SR);
+    var midLpCoef = Math.exp(-2 * Math.PI * (studio ? 4800 : 4800) / SR), midHpCoef = Math.exp(-2 * Math.PI * (studio ? 1450 : 1600) / SR);
     // Normalize 1-pole LP(4800) - LP(1600) white-noise band to ~unit RMS regardless of SR.
-    var midNorm = HD ? 3.2 : 2.1;
+    var midNorm = studio ? 3.10 : (HD ? 3.2 : 2.1);
     var subNotch = (!useWasmVocal && useHumanize && !rawSrc) ? new DynamicNotch() : null;
+    var subNotch2 = (!useWasmVocal && useHumanize && !rawSrc && studio) ? new DynamicNotch() : null;
+    var hpcShelf = (!useWasmVocal && !rawSrc && studio) ? new DynamicShelf() : null;
     var pharynxNotch = null;
     var humPfRef = useHumanize ? NSG.formantsOf(NSG.PHONES.a, timbre).pairs[5][0] : 5200;
     var fryParity = 0, fryGainCur = 1, fryGainTgt = 1, fryAlpha = 1 - Math.exp(-1 / (SR * 0.0012));
     var prevRd = 1.05, prevOq = 0.65, prevTa = 0.04;
     var velvetRem = 0, velvetPos = 0, velvetSign = 1, velvetLen = 5, airApZ = 0;
-    var air = voicedHigh && wideband && timbre.breath > 0 ?
+    var effBreath = studio ? Math.max(0.016, timbre.breath || 0) : (timbre.breath || 0);
+    var air = voicedHigh && wideband && effBreath > 0 ?
       makeVoicedAir(timbre, compensateHighEq, opt.modeBAirSoftness !== false, refine, tractJoin, smoothBlend, perturbBlend) : null;
-    if (air && ctrl.some(function (c) { return c.effort; })) {
+    if (air && !studio && ctrl.some(function (c) { return c.effort; })) {
       air.kernels = [effortAirKernel(air.profile, 0, air.eq), effortAirKernel(air.profile, 4, air.eq)];
     }
+    var airFormRes = (!useWasmVocal && studio && air) ? new Resonator() : null;
+    var airLp1 = 0, airLpCoef = Math.exp(-2 * Math.PI * (studio ? 10500 : 13500) / SR);
     var upperAir = (!useWasmVocal && air) ? new Float32Array(sliceTotal) : null, airNoise = (!useWasmVocal && air) ? mulberry32((0x73e91a45 ^ seedSalt) >>> 0) : null;
     // Piriform fossa anti-resonance (~4.2-5.4 kHz spectral dip) for HiFi voices
     // that lack an extracted speaker outEq (which already encodes recording dips).
     var piriform = null;
-    if (modeB && !opt.rawSource && opt.modeBPiriform !== false && !Array.isArray(timbre.outEq)) {
+    if (modeB && !opt.rawSource && opt.modeBPiriform !== false && !studio && !Array.isArray(timbre.outEq)) {
       var pfRef = NSG.formantsOf(NSG.PHONES.a, timbre).pairs[5][0];
       var pfHz = Math.max(4200, Math.min(5400, 4650 * Math.pow(pfRef / 5200, 0.35)));
       var pfA = Math.pow(10, -4.5 / 40), pfW = 2 * Math.PI * pfHz / SR;
@@ -4107,7 +4861,7 @@
         a1: pfC / pfA0, a2: (1 - pfAl / pfA) / pfA0, x1: 0, x2: 0, y1: 0, y2: 0
       };
     }
-    if (useHumanize && !rawSrc && !piriform) {
+    if (useHumanize && !rawSrc && (studio || !piriform)) {
       pharynxNotch = new DynamicNotch();
     }
     var noise = mulberry32((0x1234567 ^ seedSalt) >>> 0);
@@ -4118,7 +4872,10 @@
     var jit = timbre.jitter || 0;
     var jrnd = jit > 0 ? mulberry32((0x5bf03635 ^ seedSalt) >>> 0) : null;
     var gl = NSG.sourceFilterOf(timbre);
-    var hfY = 0, radPrev = 0, lastF0 = -1;
+    var hfY = 0, radPrev = 0, radY = 0, fricRadPrev = 0, lastF0 = -1;
+    var brLp1 = 0, brLp2 = 0, breathLpCoef = Math.exp(-2 * Math.PI * 3400 / SR), breathGate = 0, aBrGate = 1 - Math.exp(-1 / (SR * 0.003));
+    var curARad = Math.exp(-2 * Math.PI * RAD_NOM_HZ / SR), tgtARad = curARad, radStep = 0;
+    var prevBurstImp = 0, shockEnv = 0, shockAmp = 0, shockIsAffr = false, shockAlpha = Math.exp(-1 / (SR * 0.0022)), shockAlphaAffr = Math.exp(-1 / (SR * 0.0028)), shockPhase = 1, shockPhaseStep = 1 / (SR * 0.00035);
     // 男声1试听选定的 G：只柔化两条辅音噪声，不经过声带谐波或元音气声。
     // 旧工程缺省为 0；保留原运算路径，避免影响其他音色与历史工程。
     var consonantSoftness = typeof timbre.consonantSoftness === 'number' && isFinite(timbre.consonantSoftness) ?
@@ -4151,29 +4908,40 @@
     /* 气声噪声先过一阶低通（−6dB/oct，Klatt 做法）：白噪再经唇端辐射是 +6dB/oct 的
        “蓝噪”，会在 3–5kHz 的高阶共振峰簇里变成刺耳的嘶声。拐点 1000Hz，乘 1.41
        使 1kHz 附近的气声电平与旧版相当，只削去高频的上翘（4kHz 约 −9dB）。 */
-    var aspCoef = Math.exp(-2 * Math.PI * 1000 / SR), aspLp = 0;
+    var aspCoef = Math.exp(-2 * Math.PI * (studio ? 950 : 1000) / SR), aspLp = 0, aspLp2 = 0;
     // Breath colour is independent of consonant noise: retain a low body and add
     // a restrained 2.8–6.5 kHz air band, then keep the original tract shaping.
     var airCoef = Math.exp(-2 * Math.PI * 6500 / SR), bodyCoef = Math.exp(-2 * Math.PI * 2800 / SR);
     var aspAir = 0, aspBody = 0;
     // Six symmetric numerators add six samples of delay to the oral branch.
     // Align the parallel nasal/friction branches, then remove the common delay.
-    var modeBDelay = (!useWasmVocal && modeB && !rawSrc) ? new Float64Array(18) : null, delayIndex = 0;
+    var modeBDelay = (!useWasmVocal && modeB && !rawSrc && !studio) ? new Float64Array(18) : null, delayIndex = 0;
 
     if (useWasmVocal) {
-      var stride = NSG.VOCAL_WASM.FRAME_STRIDE || 37;
+      var stride = NSG.VOCAL_WASM.FRAME_STRIDE || 46;
       var frames = new Float64Array(ctrl.length * stride);
       var prevAmpW = 0, prevCavW = 0, velSW = velS, cavGainW = 1;
       for (var wfr = 0; wfr < ctrl.length; wfr++) {
         var wc = ctrl[wfr], wfb = wc.fb, wFirst = wfr === 0;
-        var wFricHz = wc.jaFricF || wc.fricF || 5000, wFricBw = wc.jaFricB || wc.fricB || 1200;
+        var wRawFricHz = wc.jaFricF || wc.fricF || 5000;
+        var wFricHz = wRawFricHz, wFricBw = wc.jaFricB || wc.fricB || 1200;
+        var wStIsSibilant = studio && wFricHz >= 2800 && (!(wc.burstAmp > 0) || wc.isAffricateBurst) && !wc.isBreath;
+        if (wStIsSibilant) {
+          if (wFricHz >= 5000) wFricHz = Math.min(9200, wFricHz * 1.34);
+          else if (wFricHz >= 3700) wFricHz = Math.min(6800, wFricHz * 1.32);
+          else wFricHz = Math.min(5000, wFricHz * 1.28);
+          wFricBw = Math.min(3800, wFricBw * 1.48);
+        } else if (studio && wc.isBreath) {
+          wFricBw = Math.max(wFricBw, 2200);
+        }
+        var wRawCavFc = Math.round(wRawFricHz / 25) * 25;
         if (frontCavity) {
           var wCavFc = Math.round(wFricHz / 25) * 25, wCavBw = Math.round(wFricBw / 25) * 25;
-          frontCavity.set(wCavFc, wFirst);
+          frontCavity.set(studio ? wRawCavFc : wCavFc, wFirst);
           if (wc.frontCavity > 0 || prevCavW > 0) {
-            var wCavKey = wCavFc + ':' + wCavBw;
+            var wCavKey = (studio ? wRawCavFc + ':' : '') + wCavFc + ':' + wCavBw;
             cavGainW = cavityCache[wCavKey];
-            if (cavGainW === undefined) cavityCache[wCavKey] = cavGainW = Math.max(0.25, Math.min(4,
+            if (cavGainW === undefined) cavityCache[wCavKey] = cavGainW = Math.max(0.25, Math.min(studio ? 8 : 4,
               Math.sqrt(frictionPower(wCavFc, wCavBw, consonantSoftness, SR, cavityEq) /
                 Math.max(1e-18, frictionPower(wCavFc, wCavBw, consonantSoftness, SR, cavityEq, frontCavity)))));
           }
@@ -4183,13 +4951,15 @@
         velSW = prevAmpW < 0.02 * velSW ? wvNow : velSW + (wvNow - velSW) * aVelS;
         var wvk = velSW / wvNow;
         var wcAv = wc.av * wvk, wcAh = wc.ah || 0, wcFric = wc.fric * wvk, wcTn = (wc.tn || 0) * wvk;
-        if (modeB && !rawSrc && wcFric > 0) {
+        var wfGain = 1;
+        if (modeB && !rawSrc && (wcFric > 0 || (studio && wc.burstAmp > 0))) {
           var wfc = Math.round((wc.fricF || 5000) / 25) * 25, wbw = Math.round((wc.fricB || 1200) / 25) * 25;
-          var wfKey = wfc + ':' + wbw, wfGain = frictionCache[wfKey];
+          var wfKey = wfc + ':' + wbw;
+          wfGain = frictionCache[wfKey];
           if (wfGain === undefined) {
             wfGain = Math.sqrt(frictionReference * frictionPower(wfc, wbw, consonantSoftness, 16000) /
               Math.max(1e-18, frictionPower(wfc, wbw, consonantSoftness, SR)));
-            frictionCache[wfKey] = wfGain = Math.max(0.25, Math.min(4, wfGain));
+            frictionCache[wfKey] = wfGain = Math.max(0.25, Math.min(studio ? 8 : 4, wfGain));
           }
           wcFric *= wfGain;
           if (wc.jaFricF) {
@@ -4198,13 +4968,16 @@
             if (wJaGain === undefined) {
               wJaGain = Math.sqrt(frictionPower(wfc, wbw, consonantSoftness, SR, timbre.outEq) /
                 Math.max(1e-18, frictionPower(wJaFc, wJaBw, consonantSoftness, SR, timbre.outEq)));
-              frictionCache[wJaKey] = wJaGain = Math.max(0.25, Math.min(4, wJaGain));
+              frictionCache[wJaKey] = wJaGain = Math.max(0.25, Math.min(studio ? 8 : 4, wJaGain));
             }
             wcFric *= wJaGain;
           }
         }
+        if (wStIsSibilant) wcFric *= 2.25 / Math.max(1, wFricHz / wRawFricHz);
+        else if (studio && wc.isBreath) wcFric *= 2.65;
+        var wBurstGain = (studio && wc.burstAmp > 0) ? wc.burstAmp * wvk * wfGain * fricTrim : 0;
         var wf0 = wc.f0 > 0 ? wc.f0 : 100;
-        if (jrnd) wf0 *= 1 + jit * (jrnd() * 2 - 1);
+        if (jrnd && !studio) wf0 *= 1 + jit * (jrnd() * 2 - 1);
         var wEffTilt = pitchTiltAt(timbre, wf0);
         var wSrcTilt = wc.sourceTilt || 0;
         var wb = wfr * stride;
@@ -4239,6 +5012,15 @@
         frames[wb + 34] = wEffTilt;
         frames[wb + 35] = wSrcTilt;
         frames[wb + 36] = wc.effort || 0;
+        frames[wb + 37] = wRawCavFc;
+        frames[wb + 38] = studio ? (wc.lip || 0) : 0;
+        frames[wb + 39] = studio ? (wc.abduct || 0) : 0;
+        frames[wb + 40] = studio && wc.aspirationScale !== undefined ? wc.aspirationScale : 1;
+        frames[wb + 41] = studio ? (wc.burstImpulse || 0) : 0;
+        frames[wb + 42] = wBurstGain;
+        frames[wb + 43] = (studio && wc.isAffricateBurst) ? 1 : 0;
+        frames[wb + 44] = wRawFricHz;
+        frames[wb + 45] = (studio && wc.isBreath) ? 1 : 0;
         prevAmpW = wcAv;
         prevCavW = wc.frontCavity || 0;
       }
@@ -4252,9 +5034,9 @@
         (compensateHighEq ? 256 : 0) | (nasalTract ? 512 : 0) | (useOrganic ? 1024 : 0) |
         (useHumanize ? 2048 : 0) | (frontCavity ? 4096 : 0) | (air ? 8192 : 0) |
         (piriform ? 16384 : 0) | (NSG.LEGACY_SOUND ? 32768 : 0) | (glObj ? 65536 : 0) |
-        (srcEqArr ? 131072 : 0) | (outEqArr ? 262144 : 0);
+        (srcEqArr ? 131072 : 0) | (outEqArr ? 262144 : 0) | (studio ? 524288 : 0);
       var lfTabW = useHumanize ? getLfTable() : null;
-      var cfg = new Float64Array(71);
+      var cfg = new Float64Array(73);
       if (air && air.kernels) { cfg.set(air.kernels[0], 45); cfg.set(air.kernels[1], 58); }
       cfg.set(air ? air.profile : NSG.defaultEffortProfile, 37);
       cfg[0] = SR; cfg[1] = HOP; cfg[2] = flags >>> 0; cfg[3] = seedSalt >>> 0;
@@ -4270,6 +5052,7 @@
       cfg[31] = lfTabW ? lfTabW.rdMin : 0; cfg[32] = lfTabW ? lfTabW.rdStep : 0;
       cfg[33] = outEqArr ? outEqArr.length : 0; cfg[34] = air && air.eq ? air.eq.length : 0;
       cfg[35] = harmArr.length; cfg[36] = sliceTotal;
+      cfg[71] = effBreath; cfg[72] = jit;
       var wasmOut = NSG.VOCAL_WASM.render(cfg, harmArr, srcEqArr, outEqArr, air ? air.eq : null, lfTabW, frames, ctrl.length);
       if (wasmOut) {
         if (sliceRange) {
@@ -4283,16 +5066,20 @@
       // Fallback to JS path if WASM render returned null
       out = new Float32Array(sliceTotal);
       if (refine) { bodyStage = new Float32Array(sliceTotal); fricStage = new Float32Array(sliceTotal); bodyMask = new Float32Array(sliceTotal); }
-      res = []; for (var ri = 0; ri < 6; ri++) res.push(new Resonator(true));
+      res = []; for (var ri = 0; ri < 6; ri++) res.push(new Resonator(!studio));
       nas = nasalTract ? new HiFiNasalBranch() : new NasalBranch();
       nPole = new Resonator(); nZero = new AntiResonator();
       fricRes = new Resonator(); fricHp = new Resonator();
-      src = makeSource(timbre, wideband, organicAmt, humanizeAmt);
+      shockRes = studio ? new Resonator() : null;
+      src = makeSource(timbre, wideband, organicAmt, humanizeAmt, seedSalt);
       if (useOrganic) orgCycleRnd = mulberry32((0x94d049bb ^ seedSalt) >>> 0);
       if (useHumanize) glottalNoise = mulberry32((0x3c6ef372 ^ seedSalt) >>> 0);
       if (useHumanize && !rawSrc) subNotch = new DynamicNotch();
+      if (useHumanize && !rawSrc && studio) subNotch2 = new DynamicNotch();
+      if (!rawSrc && studio) hpcShelf = new DynamicShelf();
       if (air) { upperAir = new Float32Array(sliceTotal); airNoise = mulberry32((0x73e91a45 ^ seedSalt) >>> 0); }
-      if (modeB && !rawSrc) modeBDelay = new Float64Array(18);
+      if (air && studio) airFormRes = new Resonator();
+      if (modeB && !rawSrc && !studio) modeBDelay = new Float64Array(18);
       if (jit > 0) jrnd = mulberry32((0x5bf03635 ^ seedSalt) >>> 0);
     }
 
@@ -4301,8 +5088,13 @@
       var fb = c.fb;
       var first = fr === 0;
       if (useHumanize) {
-        res[0].setDamped(fb[0][0], fb[0][1], humanizeAmt, first);
-        for (var r = 1; r < 6; r++) res[r].set(fb[r][0], fb[r][1], first);
+        res[0].setDamped(fb[0][0], fb[0][1], humanizeAmt, first, studio ? 0.035 : 0, 1);
+        if (studio) {
+          res[1].setDamped(fb[1][0], fb[1][1], humanizeAmt, first, 0, 0.45);
+          for (var r = 2; r < 6; r++) res[r].set(fb[r][0], fb[r][1], first);
+        } else {
+          for (var rb = 1; rb < 6; rb++) res[rb].set(fb[rb][0], fb[rb][1], first);
+        }
       } else {
         for (var r0i = 0; r0i < 6; r0i++) res[r0i].set(fb[r0i][0], fb[r0i][1], first);
       }
@@ -4311,15 +5103,48 @@
       var cTa = useHumanize && c.ta !== undefined ? c.ta : 0.04;
       var cFry = useHumanize && c.fry > 0 ? c.fry : 0;
       if (first && useHumanize) { prevRd = cRd; prevOq = cOq; prevTa = cTa; }
-      if (subNotch) {
-        var subHz = Math.max(900, Math.min(2200, 1340 * nasScale));
-        var subOpen = Math.max(0, Math.min(1, (cRd - 0.65) / 1.5));
-        subNotch.set(subHz, 5.5, -(1.6 + 1.9 * subOpen) * humanizeAmt, first);
+      if (studio) {
+        var subOpenSt = Math.max(0, Math.min(1, (cRd - 0.65) / 1.5));
+        if (subNotch) {
+          var sub1Hz = Math.max(460, Math.min(820, 600 * nasScale));
+          subNotch.set(sub1Hz, 4.2, -(1.3 + 2.2 * subOpenSt) * humanizeAmt, first);
+        }
+        if (subNotch2) {
+          var sub2Hz = Math.max(1080, Math.min(1620, 1280 * Math.pow(nasScale, 0.78)));
+          subNotch2.set(sub2Hz, 5.2, -(0.9 + 1.4 * subOpenSt) * humanizeAmt, first);
+        }
+        if (pharynxNotch) {
+          var pxStHz = Math.max(3800, Math.min(5200, 4400 * Math.pow(humPfRef / 5200, 0.45) + 0.10 * (fb[0][0] - 500) - 0.06 * (fb[1][0] - 1500)));
+          pharynxNotch.set(pxStHz, 3.6, -3.0 * humanizeAmt, first);
+        }
+        if (hpcShelf) hpcShelf.set(fb[5][0], first);
+        if (airFormRes) {
+          var fcAir = Math.max(7200, Math.min(10800, 5600 + 1.8 * fb[1][0] - 1800 * (c.lip || 0)));
+          airFormRes.set(fcAir, 5200, first);
+        }
+        var fRadSt = Math.max(2600, Math.min(5200, 3400 + 2.2 * (fb[0][0] - 400) - 2200 * (c.lip || 0)));
+        tgtARad = Math.exp(-2 * Math.PI * fRadSt / SR);
+        if (first) curARad = tgtARad;
+        radStep = (tgtARad - curARad) / HOP;
+      } else {
+        if (subNotch) {
+          var subHz = Math.max(900, Math.min(2200, 1340 * nasScale));
+          var subOpen = Math.max(0, Math.min(1, (cRd - 0.65) / 1.5));
+          subNotch.set(subHz, 5.5, -(1.6 + 1.9 * subOpen) * humanizeAmt, first);
+        }
+        if (pharynxNotch) {
+          var pxHz = Math.max(4100, Math.min(5400, 4680 * Math.pow(humPfRef / 5200, 0.35) + 0.08 * (fb[0][0] - 500)));
+          pharynxNotch.set(pxHz, 4.5, -2.2 * humanizeAmt, first);
+        }
       }
-      if (pharynxNotch) {
-        var pxHz = Math.max(4100, Math.min(5400, 4680 * Math.pow(humPfRef / 5200, 0.35) + 0.08 * (fb[0][0] - 500)));
-        pharynxNotch.set(pxHz, 4.5, -2.2 * humanizeAmt, first);
-      }
+      var cAbd = studio ? (c.abduct || 0) : 0;
+      var cAspSc = studio && c.aspirationScale !== undefined ? c.aspirationScale : 1;
+      var cRdOpenSt = studio ? Math.max(0, (cRd - 0.72) / 1.35) : 0;
+      var cStAspGate = studio ? 0.28 * (0.45 + 2.0 * cRdOpenSt * cRdOpenSt) * (1 + 2.2 * cAbd) : 1;
+      var f0ForTurb = c.f0 > 0 ? c.f0 : 200;
+      var lowTurbScale = Math.max(0.85, Math.min(1.28, 250 / Math.max(120, f0ForTurb)));
+      var cStTurbGain = studio ? (effBreath * 0.075 + 0.015 * Math.pow(cRdOpenSt, 1.45)) * lowTurbScale * (1 + 2.5 * cAbd) * (0.35 + 0.65 * cAspSc) : 0;
+      var tgtBrGate = (studio && c.isBreath) ? 1 : 0;
 
       if (nasalTract) nas.set(nasScale, nasBwScale, fb[0][0], first);
       else nas.set(270 + 0.04 * (fb[0][0] - 500), 90, 270 + 0.04 * (fb[0][0] - 500), 110, first);
@@ -4327,16 +5152,38 @@
       nPole.set(npHz, 100, first);
       nZero.set(c.nzf || 1700, nasalZeroBw(npHz, c.nzf || 1700), first);
       var nMix = c.nmix || 0;   // 逐样本插值：混合比在帧边界跳变会出单样本咔声
-      var frictionHz = c.jaFricF || c.fricF || 5000, frictionBw = c.jaFricB || c.fricB || 1200;
+      var rawFricHz = c.jaFricF || c.fricF || 5000;
+      var frictionHz = rawFricHz, frictionBw = c.jaFricB || c.fricB || 1200;
+      var stIsSibilant = studio && frictionHz >= 2800 && (!(c.burstAmp > 0) || c.isAffricateBurst) && !c.isBreath;
+      if (stIsSibilant) {
+        if (frictionHz >= 5000) frictionHz = Math.min(9200, frictionHz * 1.34);
+        else if (frictionHz >= 3700) frictionHz = Math.min(6800, frictionHz * 1.32);
+        else frictionHz = Math.min(5000, frictionHz * 1.28);
+        frictionBw = Math.min(3800, frictionBw * 1.48);
+      } else if (studio && c.isBreath) {
+        frictionBw = Math.max(frictionBw, 2200);
+      }
       fricRes.set(frictionHz, frictionBw, first);
       fricHp.set(Math.min(frictionHz * 0.55, 7000), 2400, first);
+      if (shockRes) {
+        if (studio && c.isAffricateBurst) {
+          lastShockHz = rawFricHz >= 5000 ? 2700 : rawFricHz >= 3700 ? 3600 : 2300;
+          lastShockBw = 1600;
+        } else if (!(shockEnv > 0.01)) {
+          lastShockHz = frictionHz;
+          lastShockBw = Math.max(900, frictionBw * 0.8);
+        }
+        var snapShock = first || ((c.burstImpulse || 0) > 0.7 && prevBurstImp <= 0.15 && shockEnv <= 0.01);
+        shockRes.set(lastShockHz, lastShockBw, snapShock);
+      }
       if (frontCavity) {
+        var rawCavFc = Math.round(rawFricHz / 25) * 25;
         var cavityFc = Math.round(frictionHz / 25) * 25, cavityBw = Math.round(frictionBw / 25) * 25;
-        frontCavity.set(cavityFc, first);
+        frontCavity.set(studio ? rawCavFc : cavityFc, first);
         if (c.frontCavity > 0 || prevCavity > 0) {
-          var cavityKey = cavityFc + ':' + cavityBw;
+          var cavityKey = (studio ? rawCavFc + ':' : '') + cavityFc + ':' + cavityBw;
           cavityGain = cavityCache[cavityKey];
-          if (cavityGain === undefined) cavityCache[cavityKey] = cavityGain = Math.max(0.25, Math.min(4,
+          if (cavityGain === undefined) cavityCache[cavityKey] = cavityGain = Math.max(0.25, Math.min(studio ? 8 : 4,
             Math.sqrt(frictionPower(cavityFc, cavityBw, consonantSoftness, SR, cavityEq) /
               Math.max(1e-18, frictionPower(cavityFc, cavityBw, consonantSoftness, SR, cavityEq, frontCavity)))));
         }
@@ -4353,13 +5200,15 @@
         tnSoftCoef = Math.exp(-2 * Math.PI * cTnLpHz / SR);
         lastTnLpHz = cTnLpHz;
       }
-      if (modeB && !rawSrc && cFric > 0) {
+      var frictionGain = 1;
+      if (modeB && !rawSrc && (cFric > 0 || (studio && c.burstAmp > 0))) {
         var fc = Math.round((c.fricF || 5000) / 25) * 25, bw = Math.round((c.fricB || 1200) / 25) * 25;
-        var frictionKey = fc + ':' + bw, frictionGain = frictionCache[frictionKey];
+        var frictionKey = fc + ':' + bw;
+        frictionGain = frictionCache[frictionKey];
         if (frictionGain === undefined) {
           frictionGain = Math.sqrt(frictionReference * frictionPower(fc, bw, consonantSoftness, 16000) /
             Math.max(1e-18, frictionPower(fc, bw, consonantSoftness, SR)));
-          frictionCache[frictionKey] = frictionGain = Math.max(0.25, Math.min(4, frictionGain));
+          frictionCache[frictionKey] = frictionGain = Math.max(0.25, Math.min(studio ? 8 : 4, frictionGain));
         }
         cFric *= frictionGain;
         if (c.jaFricF) {
@@ -4370,14 +5219,27 @@
             // output EQ and chosen consonant softening; no extra noise layer.
             jaGain = Math.sqrt(frictionPower(fc, bw, consonantSoftness, SR, timbre.outEq) /
               Math.max(1e-18, frictionPower(jaFc, jaBw, consonantSoftness, SR, timbre.outEq)));
-            frictionCache[jaKey] = jaGain = Math.max(0.25, Math.min(4, jaGain));
+            frictionCache[jaKey] = jaGain = Math.max(0.25, Math.min(studio ? 8 : 4, jaGain));
           }
           cFric *= jaGain;
         }
       }
+      if (stIsSibilant) cFric *= 2.25 / Math.max(1, frictionHz / rawFricHz);
+      else if (studio && c.isBreath) cFric *= 2.65;
+      if (studio) {
+        var cBurstGain = c.burstAmp > 0 ? c.burstAmp * vk * frictionGain * fricTrim : 0;
+        var cBurst = c.burstImpulse || 0;
+        if (cBurst > 0.7 && prevBurstImp <= 0.15) {
+          shockEnv = 1.0;
+          shockPhase = 0;
+          shockIsAffr = !!c.isAffricateBurst;
+          shockAmp = shockIsAffr ? Math.min(0.14, cBurstGain * 0.90) : Math.min(0.095, cBurstGain);
+        }
+        prevBurstImp = cBurst;
+      }
 
       var f0 = c.f0 > 0 ? c.f0 : 100;
-      if (jrnd) f0 *= 1 + jit * (jrnd() * 2 - 1);
+      if (jrnd && !studio) f0 *= 1 + jit * (jrnd() * 2 - 1);
       if (lastF0 < 0) lastF0 = f0;
       var orgFrameGate = useOrganic ? (c.organicGate || 0) : 0;
       var cOrgAir = useOrganic && c.organicAirMod !== undefined ? c.organicAirMod : 1;
@@ -4406,7 +5268,7 @@
         if (useOrganic) {
           if (skipHarmonics) { orgShimTgt = 1; orgJitTgt = 1; }
           orgShimCur += (orgShimTgt - orgShimCur) * orgCycleAlpha;
-          orgJitCur += (orgJitTgt - orgJitCur) * orgCycleAlpha;
+          orgJitCur += (orgJitTgt - orgJitCur) * orgJitAlpha;
           sampleF0 *= orgJitCur;
         }
         var inc = sampleF0 / SR;
@@ -4421,7 +5283,17 @@
         if (gciWrap && !skipHarmonics) {
           if (useOrganic) {
             var ogEff = organicAmt * orgFrameGate;
-            if (ogEff > 1e-5) {
+            if (studio) {
+              var gciJitDepth = 0.0044 * ogEff + (jit > 0 ? jit * 1.9 : 0);
+              if (ogEff > 1e-5 || gciJitDepth > 1e-6) {
+                var gShimSt = (orgCycleRnd() + orgCycleRnd() + orgCycleRnd() - 1.5) * 2;
+                var gJitSt = (orgCycleRnd() + orgCycleRnd() + orgCycleRnd() - 1.5) * 2;
+                orgShimTgt = Math.max(0.91, Math.min(1.09, 1 + 0.023 * ogEff * gShimSt));
+                orgJitTgt = Math.max(0.975, Math.min(1.025, 1 + gciJitDepth * gJitSt));
+              } else {
+                orgShimTgt = 1; orgJitTgt = 1;
+              }
+            } else if (ogEff > 1e-5) {
               var gShim = (orgCycleRnd() + orgCycleRnd() + orgCycleRnd() - 1.5) * 2;
               var gJit = (orgCycleRnd() + orgCycleRnd() + orgCycleRnd() - 1.5) * 2;
               orgShimTgt = Math.max(0.91, Math.min(1.09, 1 + 0.022 * ogEff * gShim));
@@ -4637,7 +5509,11 @@
         var aspWhite = noise() * 2 - 1;
         aspLp = (1 - aspCoef) * aspWhite + aspCoef * aspLp;
         var aspColour = aspLp;
-        if (research) {
+        if (studio) {
+          aspLp2 = (1 - aspCoef) * aspLp + aspCoef * aspLp2;
+          aspColour = aspLp2;
+        }
+        if (research && !studio) {
           aspAir = (1 - airCoef) * aspWhite + airCoef * aspAir;
           aspBody = (1 - bodyCoef) * aspWhite + bodyCoef * aspBody;
           aspColour += aspAirMix * (aspAir - aspBody);
@@ -4652,21 +5528,34 @@
         }
         var aspDepth = 0.8 * Math.min(1, amp);
         var aspMod = aspDepth > 0 ? (1 + aspDepth * modSin) / Math.sqrt(1 + aspDepth * aspDepth * 0.5) : 1;
-        if (useHumanize && !skipHarmonics) {
-          var lfAspMod = (0.35 + 1.25 * openGate) * 0.92;
-          aspMod += (lfAspMod - aspMod) * humanizeAmt * Math.min(1, amp);
-        }
-        s += aspColour * 1.41 * asp * 0.6 * aspMod;
-        if (useHumanize && !skipHarmonics) {
-          // Mid-high glottal turbulence (1.6-4.8 kHz) pulsed with LF open phase
-          // and sculpted by the vocal tract formants (F2-F4).
-          var gWhite = glottalNoise() * 2 - 1;
-          midLp = (1 - midLpCoef) * gWhite + midLpCoef * midLp;
-          midHp = (1 - midHpCoef) * midLp + midHpCoef * midHp;
-          var midBand = (midLp - midHp) * midNorm;
-          var flowMod = (0.28 + 1.38 * openGate) * 0.92;
-          var turbLevel = humanizeAmt * (0.015 + 0.052 * Math.max(0, rdCur - 0.85)) * (0.35 + 0.65 * Math.min(1, amp));
-          s += midBand * turbLevel * flowMod;
+        if (studio) {
+          if (useHumanize && !skipHarmonics) {
+            var flowSq = (0.22 + 1.45 * openGate * openGate) * 1.14;
+            aspMod += (flowSq - aspMod) * humanizeAmt * Math.min(1, amp);
+            var gWhiteSt = glottalNoise() * 2 - 1;
+            midLp = (1 - midLpCoef) * gWhiteSt + midLpCoef * midLp;
+            midHp = (1 - midHpCoef) * midLp + midHpCoef * midHp;
+            var midBandSt = (midLp - midHp) * midNorm;
+            s += midBandSt * cStTurbGain * (0.35 + 0.65 * Math.min(1, amp)) * flowSq;
+          }
+          s += aspColour * 1.41 * asp * 0.55 * cStAspGate * aspMod;
+        } else {
+          if (useHumanize && !skipHarmonics) {
+            var lfAspMod = (0.35 + 1.25 * openGate) * 0.92;
+            aspMod += (lfAspMod - aspMod) * humanizeAmt * Math.min(1, amp);
+          }
+          s += aspColour * 1.41 * asp * 0.6 * aspMod;
+          if (useHumanize && !skipHarmonics) {
+            // Mid-high glottal turbulence (1.6-4.8 kHz) pulsed with LF open phase
+            // and sculpted by the vocal tract formants (F2-F4).
+            var gWhite = glottalNoise() * 2 - 1;
+            midLp = (1 - midLpCoef) * gWhite + midLpCoef * midLp;
+            midHp = (1 - midHpCoef) * midLp + midHpCoef * midHp;
+            var midBand = (midLp - midHp) * midNorm;
+            var flowMod = (0.28 + 1.38 * openGate) * 0.92;
+            var turbLevel = humanizeAmt * (0.015 + 0.052 * Math.max(0, rdCur - 0.85)) * (0.35 + 0.65 * Math.min(1, amp));
+            s += midBand * turbLevel * flowMod;
+          }
         }
         hfY = (1 - bcoef) * s + bcoef * hfY;
         s = hfY;
@@ -4702,7 +5591,13 @@
         }
         if (!rawSrc) {
           y = useHumanize ? res[0].runDamped(y, openGate) : res[0].run(y);
-          for (var r2 = 1; r2 < 6; r2++) y = res[r2].run(y);
+          if (studio && useHumanize) {
+            y = res[1].runDamped(y, openGate);
+            for (var r2 = 2; r2 < 6; r2++) y = res[r2].run(y);
+          } else {
+            for (var r2b = 1; r2b < 6; r2b++) y = res[r2b].run(y);
+          }
+          if (hpcShelf) y = hpcShelf.run(y);
           var yn = nZero.run(nPole.run(y));
           y += (yn - y) * (prevMix + (nMix - prevMix) * mix);
           var ny;
@@ -4714,13 +5609,18 @@
           } else ny = nas.run(nasalInput) * nasalAmt * 0.5;
           y = y * (1 - nasalAmt) + ny;
           if (subNotch) y = subNotch.run(y);
+          if (subNotch2) y = subNotch2.run(y);
           if (pharynxNotch) y = pharynxNotch.run(y);
         }
         var bodySample = y;
-        if (voicedHigh && modeBDelay) {
-          var highSample = modeBDelay[delayIndex + 12];
-          modeBDelay[delayIndex + 12] = highSource * 0.30 * amp;
-          y += highSample;
+        if (voicedHigh) {
+          if (modeBDelay) {
+            var highSample = modeBDelay[delayIndex + 12];
+            modeBDelay[delayIndex + 12] = highSource * 0.30 * amp;
+            y += highSample;
+          } else {
+            y += highSource * 0.30 * amp;
+          }
         }
         if (piriform && !rawSrc) {
           var py = piriform.b0 * y + piriform.b1 * piriform.x1 + piriform.b2 * piriform.x2 -
@@ -4744,16 +5644,47 @@
           consonantLp = (1 - consonantCoef) * fz + consonantCoef * consonantLp;
           friction = ((1 - consonantSoftness) * fz + consonantSoftness * consonantLp) * fg * fricTrim;
         } else friction = fz * fg * fricTrim;
+        if (studio && shockRes) {
+          var shockIn = 0;
+          if (shockEnv > 0.01) {
+            var nW = shockPhase < 1 ? Math.sin(2 * Math.PI * shockPhase) * 1.35 : 0;
+            if (shockPhase < 1) shockPhase += shockPhaseStep;
+            var rSp = noise();
+            var spk = rSp < 0.09 ? -1.6 : (rSp > 0.91 ? 1.6 : 0);
+            if (shockIsAffr) {
+              shockIn = shockEnv * (nW * 1.15 + (noise() * 2 - 1) * 1.15 + spk * 0.8);
+              shockEnv *= shockAlphaAffr;
+            } else {
+              shockIn = shockEnv * (nW + spk);
+              shockEnv *= shockAlpha;
+            }
+          }
+          friction += shockRes.run(shockIn) * shockAmp * 0.80;
+        }
         if (modeBDelay) {
           var delayedFriction = modeBDelay[delayIndex + 6]; modeBDelay[delayIndex + 6] = friction;
           friction = delayedFriction; delayIndex = (delayIndex + 1) % 6;
         }
-        y += friction;
         /* 唇端辐射：一阶差分即 +6dB/oct 的高通，真实声道在唇口必然带这一项。
            少了它，声带音的 −12dB/oct 会原样留在输出里，高频全被吃掉。 */
-        var rad = y - radPrev;
-        radPrev = y;
-        out[idx] = rad;
+        if (studio) {
+          var radDiff = y - radPrev;
+          radPrev = y;
+          curARad += radStep;
+          radY = (1 - curARad) * radDiff + curARad * radY;
+          var fricRad = friction - fricRadPrev;
+          fricRadPrev = friction;
+          brLp1 = (1 - breathLpCoef) * fricRad + breathLpCoef * brLp1;
+          brLp2 = (1 - breathLpCoef) * brLp1 + breathLpCoef * brLp2;
+          breathGate += (tgtBrGate - breathGate) * aBrGate;
+          var fricRadOut = fricRad + (brLp2 - fricRad) * breathGate;
+          out[idx] = radY + fricRadOut;
+        } else {
+          y += friction;
+          var radDiff0 = y - radPrev;
+          radPrev = y;
+          out[idx] = radDiff0;
+        }
         if (refine) {
           bodyStage[idx] = bodySample - bodyPrev; bodyPrev = bodySample;
           fricStage[idx] = friction - fricPrev; fricPrev = friction;
@@ -4770,13 +5701,18 @@
           // than floating as steady background hiss.
           var airMod = 1;
           if (!skipHarmonics) {
-            var open = 0.5 + 0.5 * modSin;
-            var pulsedOld = (0.16 + 0.84 * open * open) * 1.76963;
-            var pulsedNew = (0.72 + 0.28 * open * open) / 0.85888;
-            var pulsedBlend = smoothBlend > perturbBlend ? smoothBlend : perturbBlend;
-            var pulsed = pulsedBlend >= 1 ? pulsedNew : pulsedBlend <= 0 ? pulsedOld : pulsedOld + (pulsedNew - pulsedOld) * pulsedBlend;
-            if (flowEffort) pulsed += Math.abs(flowEffort) * ((1 - pulseDepth + pulseDepth * open * open) * pulseNorm - pulsed);
-            airMod = 1 + Math.min(1, amp) * (pulsed - 1);
+            if (studio && useHumanize) {
+              var flowSqAir = (0.28 + 1.35 * openGate * openGate) * 1.10;
+              airMod = 1 + Math.min(1, amp) * (flowSqAir - 1);
+            } else {
+              var open = 0.5 + 0.5 * modSin;
+              var pulsedOld = (0.16 + 0.84 * open * open) * 1.76963;
+              var pulsedNew = (0.72 + 0.28 * open * open) / 0.85888;
+              var pulsedBlend = smoothBlend > perturbBlend ? smoothBlend : perturbBlend;
+              var pulsed = pulsedBlend >= 1 ? pulsedNew : pulsedBlend <= 0 ? pulsedOld : pulsedOld + (pulsedNew - pulsedOld) * pulsedBlend;
+              if (flowEffort) pulsed += Math.abs(flowEffort) * ((1 - pulseDepth + pulseDepth * open * open) * pulseNorm - pulsed);
+              airMod = 1 + Math.min(1, amp) * (pulsed - 1);
+            }
           }
           var airSample;
           if (perturbBlend > 0) {
@@ -4802,6 +5738,11 @@
             }
           } else {
             airSample = airNoise() * 2 - 1;
+          }
+          if (studio && airFormRes) {
+            airSample = airFormRes.run(airSample);
+            airLp1 = (1 - airLpCoef) * airSample + airLpCoef * airLp1;
+            airSample = airLp1;
           }
           upperAir[idx] = airSample * src.airAmp * 0.30 * amp * airMod * (useOrganic ? (prevOrgAir + (cOrgAir - prevOrgAir) * mix) : 1);
         }
@@ -5076,15 +6017,17 @@
 
   /* 供自测/调试读取控制帧（不改任何状态） */
   NSG.DSP.controlFrames = function (score, timbre, opt) {
+    studioMode = modeB && !(opt && opt.rawSource) && !NSG.LEGACY_SOUND && !(opt && opt.studio === false);
     var opening = (opt && opt.highVowelOpening !== undefined) ? opt.highVowelOpening
       : (!NSG.LEGACY_SOUND && timbre && Number.isFinite(timbre.highVowelOpening) ? Math.min(1, timbre.highVowelOpening) : 0);
     return scoreToControl(score, timbre, NSG.TEMPO.map(score), score.lang, undefined, undefined,
       undefined, undefined, undefined, undefined, undefined, opening, undefined, undefined,
-      undefined, resolveArticMorph(timbre, opt));
+      undefined, resolveArticMorph(timbre, opt), !(opt && opt.autoExpress === false));
   };
 
   // The panel uses the same scheduler as rendering, without generating control frames or PCM.
-  NSG.DSP.phonemeTimeline = function (score, timbre) {
+  NSG.DSP.phonemeTimeline = function (score, timbre, opt) {
+    studioMode = modeB && !NSG.LEGACY_SOUND && !(opt && opt.studio === false);
     var tm = NSG.TEMPO.map(score), built = buildEvents(score, timbre || NSG.defaultTimbre(), tm, score.lang, undefined, undefined, 'timingOnly');
     var phones = [], current = null, previous = null;
     built.ev.forEach(function (event) {
@@ -6655,7 +7598,9 @@
   };
   var standard = createEngine(NSG, 16000), legacyRender = standard.render, legacyRenderTrack = standard.renderTrack,
     legacyPlanVocalSlices = standard.planVocalSlices, legacyRenderVocalSlice = standard.renderVocalSlice,
-    legacyFinalizeVocalSlices = standard.finalizeVocalSlices, highDefinition = null, previousHD = null;
+    legacyFinalizeVocalSlices = standard.finalizeVocalSlices,
+    legacyControlFrames = standard.controlFrames, legacyPhonemeTimeline = standard.phonemeTimeline,
+    highDefinition = null, previousHD = null;
   function hdEngine(opt) {
     var calibrated = !opt || opt.modeBCalibration !== false;
     if (calibrated ? !highDefinition : !previousHD) {
@@ -6712,6 +7657,26 @@
     try {
       if (!opt || opt.hd !== true) return legacyFinalizeVocalSlices(chunks, total, mixGains);
       return hdEngine(opt).finalizeVocalSlices(chunks, total, mixGains);
+    } finally {
+      NSG.LEGACY_SOUND = prev;
+    }
+  };
+  standard.controlFrames = function (score, timbre, opt) {
+    var prev = NSG.LEGACY_SOUND;
+    if (opt && opt.legacySound !== undefined) NSG.LEGACY_SOUND = !!opt.legacySound;
+    try {
+      if (!opt || opt.hd !== true) return legacyControlFrames(score, timbre, opt);
+      return hdEngine(opt).controlFrames(score, timbre, opt);
+    } finally {
+      NSG.LEGACY_SOUND = prev;
+    }
+  };
+  standard.phonemeTimeline = function (score, timbre, opt) {
+    var prev = NSG.LEGACY_SOUND;
+    if (opt && opt.legacySound !== undefined) NSG.LEGACY_SOUND = !!opt.legacySound;
+    try {
+      if (!opt || opt.hd !== true) return legacyPhonemeTimeline(score, timbre, opt);
+      return hdEngine(opt).phonemeTimeline(score, timbre, opt);
     } finally {
       NSG.LEGACY_SOUND = prev;
     }

@@ -164,200 +164,125 @@
     return eq;
   }
 
-  var F1_BASE_OUT_EQ = [9.26,9.26,9.26,9.26,9.26,9.26,9.26,8.715280927193845,7.861598207779624,10.429789266087532,5.143760888993264,-2.2785619152470273,-4.500920104249856,-1.6275,3.6504999999999996,7.752499999999999,6.72,1.7954999999999999,-2.6285,-2.1665,3.3145000000000002,2.6565,-1.19,0.063,0.294,-0.385,-0.091,-0.84,-2.219,-1.0815,-0.9624999999999999,-0.1295,1.1584999999999999,1.8795,-0.9029999999999999,1.0675,-0.147,0.6838998842141357,1.007901778041219,-0.8173842278675558,-2.538825914307105,-5.03,-7.82,-24.43,-39.83,-39.83,-39.83,-39.83];
-
   var PRESET_DEF = [
     {
       id: 'base', name: '基准', height: 160,
-      desc: '中性基准音色：均衡、朴素，适合对照不同音色',
-      consonantSoftness: 0.35,
-      nasalLowpassHz: 1800,
-      highVowelOpening: 0.35,
-      modeBHigh: 0.20,
-      fs: 1.00, warp: 0.00, jit: 0.0004,
-      glot: 0.0,
-      bw: 1.16, hi: [3300, 4200, 5200], hiS: 1.00, lip: 0.00,
-      slope: -12.0, harmTailDb: -16, tilt: 0, breath: 0.036, nasal: 0.08, vib: [5.2, 0.18, 0.28],
-      modeBOutEq: makeModeBOutEq({ pfHz: 4500, pfDb: -1.5, rollStart: 4600, rollDbOct: -6.0 }),
+      desc: '中性基准音色：均衡、自然，适合对照不同音色',
+      consonantSoftness: 0.10,
+      nasalLowpassHz: 1750,
+      highVowelOpening: 0.45,
+      articMorph: 0.65,
+      modeBHigh: 0.44,
+      fs: 1.04, warp: 0.02, jit: 0.0012,
+      glot: 0.12,
+      bw: 1.00, hi: [3450, 4350, 5250], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -15, tilt: -1.2, pitchTilt: 0.25, refF0: 235,
+      breath: 0.042, nasal: 0.05, vib: [5.2, 0.14, 0.28],
       range: [48, 72]
     },
     {
-      id: 'm1', name: '男声1', height: 175,
-      desc: '亮实男高/男中音：中气十足、胸腔饱满、气声极轻且带歌者共振峰明亮感',
-      consonantSoftness: 0.36,
-      nasalLowpassHz: 1350,
+      id: 'm1', name: '男声1', height: 176,
+      desc: '温暖近麦流行男声：胸腔松弛饱满、咬字自然、高音混声顺滑',
+      consonantSoftness: 0.10,
+      nasalLowpassHz: 1400,
       highVowelOpening: 0.35,
-      modeBHigh: 0.16,
-      fs: 0.99, warp: -0.01, jit: 0.0008,
-      glot: 0.64,
-      bw: 1.13, hi: [3240, 4040, 4760], hiS: 1.00, lip: 0.01,
-      slope: -11.2, harmTailDb: -18, tilt: 0.5, breath: 0.015, nasal: 0.05, vib: [5.2, 0.14, 0.28],
-      sourceEq: makeSourceEq(function (hz) {
-        var chest = 1.6 * Math.exp(-Math.pow(Math.log2(hz / 220) / 0.6, 2));
-        var sf = 2.1 * Math.exp(-Math.pow(Math.log2(hz / 2750) / 0.42, 2));
-        var cut = hz > 4000 ? -4.5 * Math.log2(hz / 4000) : 0;
-        return chest + sf + cut;
-      }),
-      modeBOutEq: makeModeBOutEq({ pfHz: 4400, pfDb: -2.2, rollStart: 4200, rollDbOct: -7.5 }),
-      range: [50, 71]
+      articMorph: 0.65,
+      modeBHigh: 0.45,
+      fs: 0.99, warp: 0.00, jit: 0.0014,
+      glot: 0.22,
+      bw: 1.00, hi: [3220, 4050, 4880], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -16, tilt: -2.8, pitchTilt: -0.15, refF0: 165,
+      breath: 0.048, nasal: 0.05, vib: [5.2, 0.13, 0.30],
+      range: [48, 71]
     },
     {
-      id: 'm2', name: '男声2', height: 182,
-      desc: '清亮男高音：明亮、轻柔，带一层气声',
-      consonantSoftness: 0.38,
-      nasalLowpassHz: 1600,
+      id: 'm2', name: '男声2', height: 174,
+      desc: '清亮男高音：声线明亮轻盈、头混平衡、带轻柔气声',
+      consonantSoftness: 0.09,
+      nasalLowpassHz: 1550,
       highVowelOpening: 0.45,
-      modeBHigh: 0.26,
-      fs: 1.03, warp: 0.02, jit: 0.0010,
-      glot: 0.30,
-      bw: 1.18, hi: [3480, 4030, 4630], hiS: 1.00, lip: 0.01,
-      slope: -11.4, harmTailDb: -16, tilt: 0.0, breath: 0.055, nasal: 0.05, vib: [5.4, 0.14, 0.26],
-      modeBOutEq: makeModeBOutEq({ pfHz: 4550, pfDb: -2.0, rollStart: 4600, rollDbOct: -6.0 }),
+      articMorph: 0.65,
+      modeBHigh: 0.48,
+      fs: 1.05, warp: 0.03, jit: 0.0012,
+      glot: 0.16,
+      bw: 0.98, hi: [3400, 4250, 5120], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -15, tilt: -1.4, pitchTilt: 0.15, refF0: 195,
+      breath: 0.052, nasal: 0.04, vib: [5.4, 0.14, 0.28],
       range: [53, 74]
     },
     {
-      id: 'u1', name: '男声3', height: 175,
-      desc: '成熟男中低音：浑厚偏暗，略带沙哑和鼻音，颤音舒缓',
-      consonantSoftness: 0.55,
-      nasalLowpassHz: 1100,
-      highVowelOpening: 0.20,
-      modeBHigh: 0.18,
-      fs: 0.92, warp: -0.06, jit: 0.0015,
-      glot: 0.60,
-      bw: 1.20, hi: [3550, 4140, 4800], hiS: 1.00, lip: 0.02,
-      slope: -12.8, harmTailDb: -18, tilt: -3.0, breath: 0.085, nasal: 0.11, vib: [4.6, 0.24, 0.34],
-      modeBOutEq: makeModeBOutEq({ pfHz: 4300, pfDb: -2.5, rollStart: 4300, rollDbOct: -6.8 }),
+      id: 'u1', name: '男声3', height: 180,
+      desc: '低沉磁性男中低音：厚实胸声带轻微颗粒气声，舒缓颤音',
+      consonantSoftness: 0.14,
+      nasalLowpassHz: 1250,
+      highVowelOpening: 0.25,
+      articMorph: 0.65,
+      modeBHigh: 0.42,
+      fs: 0.93, warp: -0.04, jit: 0.0017,
+      glot: 0.34,
+      bw: 1.04, hi: [3050, 3850, 4680], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -17, tilt: -4.0, pitchTilt: -0.35, refF0: 135,
+      breath: 0.062, nasal: 0.07, vib: [4.8, 0.18, 0.34],
       range: [43, 64]
     },
     {
-      id: 'f1', name: '女声1',
-      desc: '明亮女声：声音清晰，带轻气声，不附加预设颤音',
-      timbre: {
-        "sig": "NSG-16000-A7F3C9E1",
-        "name": "F01-E",
-        "height": 170,
-        "gen": 56,
-        "fScale": 1.3518275,
-        "warp": 0.18,
-        "jitter": 0.0012,
-        "glottal": 0.08,
-        "bwScale": 1.35,
-        "higher": [3167,4408,5042],
-        "hiShift": 1,
-        "lip": 0.1,
-        "harm": [0,-12,-19,-24,-27.9,-31,-33.7,-36,-38,-39.9,-41.5,-43,-44.4,-45.7,-46.9,-48],
-        "harmTailDb": -16,
-        "tiltDb": 1.5,
-        "breath": 0.05,
-        "nasal": 0.04,
-        "consonantSoftness": 0.32,
-        "nasalLowpassHz": 2000,
-        "modeBHigh": 0.34,
-        "highVowelOpening": 0.45,
-        "articMorph": 0.5,
-        "vib": {
-          "rate": 5.2,
-          "depth": 0,
-          "delay": 0.28
-        },
-        "harmV": 2,
-        "curve": null,
-        "grid": null,
-        "src": "多帧拟合 + 合成对比 v3",
-        "sourceEq": [-0.89,-1.25,-1.81,-1.04,-0.04,1.04,1.84,2.34,2.34,1.08,-0.19,-1.43,-1.8,-1.69,-0.43,0.85,1.62,1.28,1.15,1.22,1.32,0.89,0.33,-0.1,-0.22,-0.05,0.38,0.67,0.65,0.34,0.11,0],
-        "outEq": F1_BASE_OUT_EQ.slice(),
-        "modeBOutEq": makeModeBOutEq({ rollDbOct: -6.0, extraHiCutDb: -1.0, baseEq: F1_BASE_OUT_EQ }),
-        "extraction": {
-          "version": 3,
-          "frames": 64,
-          "medianF0": 184.4,
-          "baselineDb": 9.41,
-          "fittedDb": 5.77,
-          "vowelClasses": 11,
-          "duration": 13.31,
-          "spectrumDb": 10.99,
-          "noiseDb": null
-        }
-      }
+      id: 'f1', name: '女声1', height: 165, gen: 64,
+      desc: '自然清亮流行女声：开阔通透、近麦质感、柔润气口',
+      consonantSoftness: 0.08,
+      nasalLowpassHz: 1800,
+      highVowelOpening: 0.55,
+      articMorph: 0.65,
+      modeBHigh: 0.46,
+      fs: 1.26, warp: 0.10, jit: 0.0012,
+      glot: 0.09,
+      bw: 1.00, hi: [3750, 4680, 5650], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -14, tilt: -0.2, pitchTilt: 0.55, refF0: 315,
+      breath: 0.048, nasal: 0.04, vib: [5.4, 0.14, 0.28],
+      range: [53, 79]
     },
     {
-      id: 'f2', name: '女声2',
-      desc: '柔和女声：音色偏暗，带轻气声，不附加预设颤音',
-      timbre: {
-        "sig": "NSG-16000-A7F3C9E1",
-        "name": "F02",
-        "height": 170,
-        "gen": 64,
-        "fScale": 1.3518275,
-        "warp": 0.126187875,
-        "jitter": 0.0012,
-        "glottal": 0.12,
-        "bwScale": 1.45,
-        "higher": [3167,4408,5042],
-        "hiShift": 1,
-        "lip": 0,
-        "harm": [0,-12,-19,-24,-27.9,-31,-33.7,-36,-38,-39.9,-41.5,-43,-44.4,-45.7,-46.9,-48],
-        "tiltDb": -4,
-        "breath": 0.055,
-        "nasal": 0.04,
-        "consonantSoftness": 0.35,
-        "nasalLowpassHz": 1800,
-        "modeBHigh": 0.36,
-        "highVowelOpening": 0.45,
-        "articMorph": 0.5,
-        "vib": {
-          "rate": 5.2,
-          "depth": 0,
-          "delay": 0.28
-        },
-        "harmV": 2,
-        "curve": null,
-        "grid": null,
-        "src": "多帧拟合 + 合成对比 v3",
-        "sourceEq": [-0.89,-1.25,-1.81,-1.04,-0.04,1.04,1.84,2.34,2.34,1.08,-0.19,-1.43,-1.8,-1.69,-0.43,0.85,1.62,1.28,1.15,1.22,1.32,0.89,0.33,-0.1,-0.22,-0.05,0.38,0.67,0.65,0.34,0.11,0],
-        "outEq": [-2.06,-2.06,-2.14,-2.27,-2.34,-2.29,-2.19,-2.1,-1.93,-1.66,-1.22,-0.62,0.09,0.84,1.59,2.39,2.81,2.46,1.75,1.11,0.54,0.67,1.64,2,1.57,2.01,3.77,4.02,0.3,-4.27,-4.85,-2.22,-0.89,-2.67,-4.99,-4.09,-0.2,2.32,0.83,-1.81,-3.65,-7.11,-12.52,-27.26,-40,-40,-40,-40],
-        "extraction": {
-          "version": 3,
-          "frames": 64,
-          "medianF0": 184.4,
-          "baselineDb": 9.41,
-          "fittedDb": 6.49,
-          "vowelClasses": 11,
-          "duration": 13.31,
-          "spectrumDb0": 26.02,
-          "spectrumDb": 7.21,
-          "noiseDb": -10.2
-        }
-      }
+      id: 'f2', name: '女声2', height: 166, gen: 64,
+      desc: '温柔气声抒情女声：温暖贴耳、气声柔滑、细腻弱混声',
+      consonantSoftness: 0.12,
+      nasalLowpassHz: 1650,
+      highVowelOpening: 0.48,
+      articMorph: 0.68,
+      modeBHigh: 0.48,
+      fs: 1.20, warp: 0.06, jit: 0.0013,
+      glot: 0.14,
+      bw: 1.05, hi: [3580, 4460, 5380], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -15.5, tilt: -1.8, pitchTilt: 0.35, refF0: 280,
+      breath: 0.068, nasal: 0.05, vib: [5.1, 0.16, 0.30],
+      range: [52, 76]
     },
     {
       id: 'b1', name: '男孩1', height: 145,
-      desc: '男童声：明亮有力，略带粗糙感，颤音很轻',
-      consonantSoftness: 0.42,
-      nasalLowpassHz: 1500,
+      desc: '自然男童声：清脆有力、质感自然、轻快微颤',
+      consonantSoftness: 0.12,
+      nasalLowpassHz: 1600,
       highVowelOpening: 0.50,
-      modeBHigh: 0.26,
-      fs: 1.08, warp: 0.04, jit: 0.0012,
-      glot: 0.40,
-      bw: 1.30, hi: [3240, 3750, 4250], hiS: 1.00, lip: 0.00,
-      slope: -12.0, harmTailDb: -17, tilt: -1.5, breath: 0.045, nasal: 0.07, vib: [5.6, 0.12, 0.30],
-      outEq: makeOutEqRolloff(2900, -10.5),
-      modeBOutEq: makeModeBOutEq({ pfHz: 4700, pfDb: -3.2, rollStart: 4200, rollDbOct: -6.5 }),
+      articMorph: 0.62,
+      modeBHigh: 0.42,
+      fs: 1.12, warp: 0.05, jit: 0.0012,
+      glot: 0.14,
+      bw: 1.06, hi: [3550, 4380, 5200], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -15.5, tilt: -0.8, pitchTilt: 0.30, refF0: 290,
+      breath: 0.046, nasal: 0.05, vib: [5.6, 0.10, 0.32],
       range: [60, 77]
     },
     {
       id: 'g1', name: '女孩1', height: 142,
-      desc: '女童声：清亮偏甜，带轻气声，颤音轻快',
-      consonantSoftness: 0.45,
-      nasalLowpassHz: 1700,
+      desc: '甜美清澈女童声：明亮清透带轻气声、柔和自然',
+      consonantSoftness: 0.12,
+      nasalLowpassHz: 1750,
       highVowelOpening: 0.55,
-      modeBHigh: 0.28,
-      fs: 1.10, warp: 0.08, jit: 0.0010,
-      glot: 0.18,
-      bw: 1.34, hi: [3190, 3640, 4080], hiS: 1.00, lip: 0.00,
-      slope: -12.0, harmTailDb: -17, tilt: -1.5, breath: 0.055, nasal: 0.05, vib: [5.8, 0.14, 0.26],
-      outEq: makeOutEqRolloff(2900, -12.0),
-      modeBOutEq: makeModeBOutEq({ pfHz: 4800, pfDb: -3.2, rollStart: 4200, rollDbOct: -6.5 }),
+      articMorph: 0.62,
+      modeBHigh: 0.45,
+      fs: 1.15, warp: 0.08, jit: 0.0011,
+      glot: 0.08,
+      bw: 1.08, hi: [3680, 4520, 5350], hiS: 1.00, lip: 0.00,
+      slope: -12.0, harmTailDb: -15, tilt: -0.4, pitchTilt: 0.40, refF0: 335,
+      breath: 0.054, nasal: 0.04, vib: [5.7, 0.11, 0.30],
       range: [62, 81]
     }
   ];
@@ -382,7 +307,7 @@
       t.desc = d.desc;
       t.src = '预置歌手';
       t.height = d.height;
-      t.gen = d.id === 'f1' ? 38 : 64;
+      t.gen = d.gen !== undefined ? d.gen : 64;
       t.fScale = d.fs;
       t.warp = d.warp;
       t.jitter = d.jit;
@@ -395,6 +320,9 @@
       t.harm = harmSlope(d.slope);
       t.tiltDb = d.tilt;
       t.breath = d.breath;
+      if (d.pitchTilt !== undefined) t.pitchTilt = d.pitchTilt;
+      if (d.refF0 !== undefined) t.refF0 = d.refF0;
+      if (d.articMorph !== undefined) t.articMorph = d.articMorph;
       if (d.consonantSoftness !== undefined) t.consonantSoftness = d.consonantSoftness;
       if (d.nasalLowpassHz !== undefined) t.nasalLowpassHz = d.nasalLowpassHz;
       if (d.highVowelOpening !== undefined) t.highVowelOpening = d.highVowelOpening;
@@ -577,7 +505,10 @@
     if (!modeBEqProfiles) {
       modeBEqProfiles = Object.create(null);
       ['f1', 'f2'].forEach(function (id) {
-        var original = NSG.presetTimbre(id).outEq, anchor = Math.min(0, NSG.outEqDbAt(original, 3500)), curve = [];
+        var preset = NSG.presetTimbre(id);
+        var original = preset && preset.outEq;
+        if (!Array.isArray(original)) return;
+        var anchor = Math.min(0, NSG.outEqDbAt(original, 3500)), curve = [];
         for (var i = 0; i < 64; i++) {
           var hz = 50 * Math.pow(400, i / 63), old = NSG.outEqDbAt(original, hz);
           var tail = anchor - 6 * Math.log2(hz / 3500);

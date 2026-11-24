@@ -1,6 +1,6 @@
 use core::f64::consts::{LN_10, LN_2, PI};
 use crate::fft::out_eq_db_at;
-use crate::filters::RateConst;
+use crate::filters::{hpc_coeffs, RateConst};
 
 pub const LOG10_OVER_20: f64 = LN_10 / 20.0;
 pub const LOG10_OVER_10: f64 = LN_10 / 10.0;
@@ -159,8 +159,9 @@ pub struct LfTable {
     pub nh: usize,
     pub rd_min: f64,
     pub rd_step: f64,
-    pub phase: Vec<f64>,     // [nrd * nh]
-    pub mag_delta: Vec<f64>, // [nrd * nh]
+    pub phase: Vec<f64>,      // [nrd * nh]
+    pub mag_delta: Vec<f64>,  // [nrd * nh]
+    pub rd_comp_db: Vec<f64>, // [nrd]
 }
 
 #[inline]
@@ -216,6 +217,7 @@ pub fn voiced_high_shape(hz: f64, f6: f64, wideband: bool, tract_join: bool, sb:
     if sb > 0.0 { ref_val + (smooth_val - ref_val) * sb } else { ref_val }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn chain_power(
     rc: &RateConst,
     pairs: &[(f64, f64); 6],
@@ -224,11 +226,18 @@ pub fn chain_power(
     tilt_db: f64,
     gl: &GlottalParams,
     include_out_eq: bool,
+    studio: bool,
     harm_octaves: &[f64; 513],
     legacy_trig: bool,
 ) -> f64 {
     let rate = rc.sr;
-    let calibrated = rc.mode_b && rate == 48000.0;
+    let calibrated = rc.mode_b && rate == 48000.0 && !studio;
+    let rad_shelf = rc.mode_b && studio;
+    let rad_a = if rad_shelf { (-2.0 * PI * 3800.0 / rate).exp() } else { 0.0 };
+    let rad_num2 = if rad_shelf { (1.0 - rad_a) * (1.0 - rad_a) } else { 1.0 };
+    let rad_den_b = 1.0 + rad_a * rad_a;
+    let rad_2a = 2.0 * rad_a;
+    let hc_c = if rad_shelf { Some(hpc_coeffs(pairs[5].0, rate)) } else { None };
     let max_k = if rate == 48000.0 { 256 } else { 64 };
     let top_hz = if rate == 48000.0 { 20000.0 } else { 7600.0 };
     let k_lim = ((top_hz / f0.max(40.0)).floor() as usize).clamp(1, max_k);
@@ -306,7 +315,19 @@ pub fn chain_power(
                 g2 *= cp_a2[q] / (dr * dr + di * di + 1e-18);
             }
         }
-        p += ak2 * g2 * (2.0 - 2.0 * cw);
+        if let Some(ref hc) = hc_c {
+            let h_nr = hc[0] + hc[1] * cw + hc[2] * c2;
+            let h_ni = -(hc[1] * sw + hc[2] * s2);
+            let h_dr = 1.0 + hc[3] * cw + hc[4] * c2;
+            let h_di = -(hc[3] * sw + hc[4] * s2);
+            g2 *= (h_nr * h_nr + h_ni * h_ni) / (h_dr * h_dr + h_di * h_di + 1e-18);
+        }
+        let rad_factor = if rad_shelf {
+            rad_num2 / (rad_den_b - rad_2a * cw).max(1e-9)
+        } else {
+            1.0
+        };
+        p += ak2 * g2 * (2.0 - 2.0 * cw) * rad_factor;
     }
     p
 }
@@ -357,9 +378,13 @@ pub struct VocalSource {
     pub harm_drift_gain: [f64; 32],
     pub harm_drift_out: [f64; 32],
     pub harm_rnd: Mulberry32,
+    pub part_phase_jit: [f64; 512],
+    pub part_phase_vel: [f64; 512],
+    pub part_rnd: Mulberry32,
 }
 
 impl VocalSource {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         amps_in: &[f64],
         hd: bool,
@@ -368,6 +393,7 @@ impl VocalSource {
         hop: f64,
         organic_amt: f64,
         humanize_amt: f64,
+        seed_salt: u32,
     ) -> Self {
         let count = if wideband { 512 } else if hd { 256 } else { 64 };
         let mut rnd = Mulberry32::new(0x9e3779b9);
@@ -435,6 +461,9 @@ impl VocalSource {
             harm_drift_gain,
             harm_drift_out: [0.0; 32],
             harm_rnd: Mulberry32::new(0x6c8e9cf5),
+            part_phase_jit: [0.0; 512],
+            part_phase_vel: [0.0; 512],
+            part_rnd: Mulberry32::new(0x517cc1b7 ^ seed_salt),
         }
     }
 
@@ -445,6 +474,7 @@ impl VocalSource {
         hop: f64,
         source_top: f64,
         mode_b: bool,
+        studio: bool,
         legacy_sound: bool,
         f0: f64,
         tilt_db: f64,
@@ -512,17 +542,34 @@ impl VocalSource {
         let mut lf_fr = 0.0_f64;
         let mut lf_nh = 0usize;
         let mut f_coh = 2400.0_f64;
+        let mut st_disp_start = 1550.0_f64;
+        let mut st_rd = 1.05_f64;
+        let mut st_coh_ceil = 0.25_f64;
+        let mut st_coh_start = 4800.0_f64;
+        let mut rd_comp = 0.0_f64;
+        let st_dt = hop / sr;
         let use_lf = humanize_amt > 0.0 && lf.is_some();
         if let Some(lt) = lf {
             if use_lf {
                 let rd_max = lt.rd_min + ((lt.nrd - 1) as f64) * lt.rd_step;
                 let rd_clamped = rd.clamp(lt.rd_min, rd_max);
+                st_rd = rd_clamped;
                 let r_pos = (rd_clamped - lt.rd_min) / lt.rd_step;
                 lf_ri = (r_pos as usize).min(lt.nrd - 2);
                 lf_fr = r_pos - (lf_ri as f64);
                 lf_nh = lt.nh;
                 lf_modal_row = (((1.0 - lt.rd_min) / lt.rd_step).round() as usize).min(lt.nrd - 1) * lt.nh;
                 f_coh = (2650.0 - 480.0 * (rd_clamped - 1.0)).clamp(1500.0, 3000.0);
+                if studio {
+                    st_disp_start = (2150.0 - 380.0 * (rd_clamped - 1.0)).max(1550.0);
+                    let st_rd_u = ((rd_clamped - 0.8) / 0.7).clamp(0.0, 1.0);
+                    st_coh_ceil = 0.68 - 0.30 * st_rd_u;
+                    st_coh_start = 5800.0 - 1100.0 * st_rd_u;
+                    if lt.rd_comp_db.len() > lf_ri + 1 {
+                        rd_comp = lt.rd_comp_db[lf_ri]
+                            + (lt.rd_comp_db[lf_ri + 1] - lt.rd_comp_db[lf_ri]) * lf_fr;
+                    }
+                }
             }
         }
         let inv_hop = 1.0 / hop;
@@ -530,6 +577,9 @@ impl VocalSource {
             let oct = harm_octaves[k];
             let mut db = if k <= n { self.amps[k - 1] } else { last + gl.tail_db * (oct - last_oct) };
             db += tilt_db * oct + pitch_db;
+            if studio && use_lf && st_rd > 1.35 && oct > 0.85 {
+                db -= 1.15 * (st_rd - 1.35) * (oct - 0.85);
+            }
             let khz = (k as f64) * f0;
             db += gl.source_db_at(khz, sr);
             if use_lf {
@@ -538,23 +588,57 @@ impl VocalSource {
                 let row0 = lf_ri * lf_nh;
                 let row1 = (lf_ri + 1) * lf_nh;
                 let m_delta = lt.mag_delta[row0 + m_idx] + (lt.mag_delta[row1 + m_idx] - lt.mag_delta[row0 + m_idx]) * lf_fr;
-                db += 0.68 * m_delta;
-                let mut w_coh = if khz <= f_coh {
-                    1.0
-                } else if khz >= f_coh + 2200.0 {
-                    0.0
+                db += (if studio { 1.0 } else { 0.68 }) * m_delta;
+                if studio {
+                    db += rd_comp;
+                }
+                let mut tgt_off;
+                if studio {
+                    let lf_ph_st = if k <= lf_nh {
+                        let p_a = lt.phase[row0 + k - 1];
+                        let p_b = lt.phase[row1 + k - 1];
+                        p_a + (p_b - p_a) * lf_fr
+                    } else {
+                        0.0
+                    };
+                    if khz > st_disp_start {
+                        let u_disp = ((khz - st_disp_start) / 3400.0).min(1.0);
+                        let w_decoh = u_disp * u_disp * (3.0 - 2.0 * u_disp);
+                        let rp_st = self.rand_phase[k - 1];
+                        let base_ph = lf_ph_st + w_decoh * (rp_st - lf_ph_st - (rp_st - lf_ph_st).round());
+                        let disp_rate = 5.0 + 14.0 * u_disp;
+                        let disp_amp = (0.022 + 0.085 * u_disp.powf(1.35))
+                            * (0.75 + 0.45 * (st_rd - 0.85).clamp(0.0, 1.0));
+                        let a_d = (-2.0 * PI * disp_rate * st_dt).exp();
+                        let u_tri = (self.part_rnd.next() + self.part_rnd.next() - 1.0) * 2.44948974;
+                        let v_d = a_d * self.part_phase_vel[k - 1] + (1.0 - a_d * a_d).max(0.0).sqrt() * u_tri;
+                        self.part_phase_vel[k - 1] = v_d;
+                        let j_d = a_d * self.part_phase_jit[k - 1] + (1.0 - a_d) * (disp_amp * 1.4 * v_d);
+                        self.part_phase_jit[k - 1] = j_d;
+                        tgt_off = base_ph + j_d;
+                    } else {
+                        self.part_phase_vel[k - 1] *= 0.7;
+                        self.part_phase_jit[k - 1] *= 0.7;
+                        tgt_off = lf_ph_st + self.part_phase_jit[k - 1];
+                    }
                 } else {
-                    1.0 - (khz - f_coh) / 2200.0
-                };
-                w_coh = w_coh * w_coh * (3.0 - 2.0 * w_coh) * humanize_amt;
-                let rp = self.rand_phase[k - 1];
-                let mut tgt_off = rp;
-                if w_coh > 1e-6 && k <= lf_nh {
-                    let p_a = lt.phase[row0 + k - 1];
-                    let p_b = lt.phase[row1 + k - 1];
-                    let lf_ph = p_a + (p_b - p_a) * lf_fr;
-                    let modal_turn = (lt.phase[lf_modal_row + k - 1] - rp).round();
-                    tgt_off = rp + w_coh * (lf_ph - rp - modal_turn);
+                    let mut w_coh = if khz <= f_coh {
+                        1.0
+                    } else if khz >= f_coh + 2200.0 {
+                        0.0
+                    } else {
+                        1.0 - (khz - f_coh) / 2200.0
+                    };
+                    w_coh = w_coh * w_coh * (3.0 - 2.0 * w_coh) * humanize_amt;
+                    let rp = self.rand_phase[k - 1];
+                    tgt_off = rp;
+                    if w_coh > 1e-6 && k <= lf_nh {
+                        let p_a = lt.phase[row0 + k - 1];
+                        let p_b = lt.phase[row1 + k - 1];
+                        let lf_ph = p_a + (p_b - p_a) * lf_fr;
+                        let modal_turn = (lt.phase[lf_modal_row + k - 1] - rp).round();
+                        tgt_off = rp + w_coh * (lf_ph - rp - modal_turn);
+                    }
                 }
                 if snap_phase {
                     let mut p_snap = tgt_off - tgt_off.floor();
@@ -566,6 +650,9 @@ impl VocalSource {
                     let mut cur_off = self.phase_off.data[k - 1] as f64;
                     let mut d_off = tgt_off - cur_off;
                     d_off -= d_off.round();
+                    if studio {
+                        d_off = d_off.clamp(-0.14, 0.14);
+                    }
                     if cur_off + d_off < 0.0 { cur_off += 1.0; }
                     self.phase_off.data[k - 1] = cur_off as f32;
                     self.phase_off_target[k - 1] = cur_off + d_off;
@@ -582,6 +669,11 @@ impl VocalSource {
                 self.full_target[k - 1] = a;
             }
             let mut target = if a < 1e-6 { 0.0 } else { a };
+            if use_lf && studio && khz > st_coh_start && target > 0.0 {
+                let xt_c = ((khz - st_coh_start) / (9500.0 - st_coh_start)).min(1.0);
+                let s_coh = xt_c * xt_c * (3.0 - 2.0 * xt_c);
+                target *= 1.0 - (1.0 - st_coh_ceil) * s_coh;
+            }
             if xf_start > 0.0 && khz > xf_start {
                 let xr = ((khz - xf_start) / 1400.0).min(1.0);
                 target *= 1.0 - sb * xr * xr * (3.0 - 2.0 * xr);
@@ -627,6 +719,8 @@ impl VocalSource {
         tract_join: bool,
         sb: f64,
         pb: f64,
+        studio: bool,
+        c_rd: f64,
         legacy_sound: bool,
         harm_octaves: &[f64; 513],
     ) {
@@ -703,6 +797,13 @@ impl VocalSource {
         let sw_step = dw.sin();
         let mut cw_cur = w_start.cos();
         let mut sw_cur = w_start.sin();
+        let rd_high_u = ((c_rd - 0.8) / 0.7).clamp(0.0, 1.0);
+        let st_high_ceil = 0.68 - 0.30 * rd_high_u;
+        let st_high_start = 5800.0 - 1100.0 * rd_high_u;
+        let rad_a_hi = if studio { (-2.0 * PI * 3800.0 / rc.sr).exp() } else { 0.0 };
+        let rad_num2_hi = (1.0 - rad_a_hi) * (1.0 - rad_a_hi);
+        let rad_den_b_hi = 1.0 + rad_a_hi * rad_a_hi;
+        let rad_2a_hi = 2.0 * rad_a_hi;
 
         let mut power = 0.0_f64;
         let mut shape_only_power = 0.0_f64;
@@ -714,15 +815,26 @@ impl VocalSource {
             let new_shape = if sb > 0.0 { voiced_high_shape(hz, f6, wideband, tract_join, 1.0) } else { ref_shape };
             let a_shape = if sb >= 1.0 { new_shape } else if sb <= 0.0 { ref_shape } else { ref_shape + (new_shape - ref_shape) * sb };
             let mut coh = 1.0;
-            if use_hnm && hz > hnm_start {
-                let xt = ((hz - hnm_start) / hnm_span).min(1.0);
-                let hnm_coh = 0.22 + 0.78 * (1.0 - xt * xt * (3.0 - 2.0 * xt)).max(0.0);
-                coh = 1.0 - pb * (1.0 - hnm_coh);
-            }
-            if has_air && effort != 0.0 {
-                let (band, u) = if hz < 7000.0 { (0, (hz - 5000.0) / 2000.0) } else { (1, (hz - 7000.0) / 3000.0) };
-                let residual = endpoint[band] + u.clamp(0.0, 1.0) * (endpoint[band + 1] - endpoint[band]);
-                coh = (coh * coh + effort.abs() * ((1.0 - residual) / (1.0 - base_fraction) - coh * coh)).max(0.0).sqrt();
+            if studio {
+                if hz > st_high_start {
+                    let xt_s = ((hz - st_high_start) / (9500.0 - st_high_start)).min(1.0);
+                    coh = 1.0 - (1.0 - st_high_ceil) * (xt_s * xt_s * (3.0 - 2.0 * xt_s));
+                }
+                if hz > 9500.0 {
+                    let xt_u = ((hz - 9500.0) / 4500.0).min(1.0);
+                    coh *= 1.0 - 0.35 * (xt_u * xt_u * (3.0 - 2.0 * xt_u));
+                }
+            } else {
+                if use_hnm && hz > hnm_start {
+                    let xt = ((hz - hnm_start) / hnm_span).min(1.0);
+                    let hnm_coh = 0.22 + 0.78 * (1.0 - xt * xt * (3.0 - 2.0 * xt)).max(0.0);
+                    coh = 1.0 - pb * (1.0 - hnm_coh);
+                }
+                if has_air && effort != 0.0 {
+                    let (band, u) = if hz < 7000.0 { (0, (hz - 5000.0) / 2000.0) } else { (1, (hz - 7000.0) / 3000.0) };
+                    let residual = endpoint[band] + u.clamp(0.0, 1.0) * (endpoint[band + 1] - endpoint[band]);
+                    coh = (coh * coh + effort.abs() * ((1.0 - residual) / (1.0 - base_fraction) - coh * coh)).max(0.0).sqrt();
+                }
             }
             let ft = self.full_target[k];
             let a_base = ft * a_shape;
@@ -735,7 +847,12 @@ impl VocalSource {
                 sw_cur = sw_cur * cw_step + cw_cur * sw_step;
                 cw_cur = next_cw;
             }
-            let w = eq * eq * (2.0 - 2.0 * cos_val);
+            let rad_f_hi = if studio {
+                rad_num2_hi / (rad_den_b_hi - rad_2a_hi * cos_val).max(1e-9)
+            } else {
+                1.0
+            };
+            let w = eq * eq * (2.0 - 2.0 * cos_val) * rad_f_hi;
             power += a * a * w;
             shape_only_power += a_base * a_base * w;
             let a_ref = ft * ref_shape;
@@ -743,21 +860,32 @@ impl VocalSource {
         }
         let body_power = chain_power(
             rc, pairs, f0, &self.amps[..self.amps_len], eff_tilt + source_tilt,
-            gl, compensate_eq, harm_octaves, legacy_sound,
+            gl, compensate_eq, studio, harm_octaves, legacy_sound,
         );
         let colour = (3.0 * (pairs[1].0.max(200.0) / 1500.0).log2()).clamp(-5.0, 3.0);
-        let level_db = (if wideband { -32.5 } else { -36.0 })
-            + 10.0 * strength
-            + (eff_tilt * 0.5).clamp(-4.0, 3.0)
-            + colour
-            + 2.0 * source_tilt;
+        let level_db = if studio {
+            -28.2
+                + 4.5 * strength
+                + (eff_tilt * 0.5).clamp(-3.0, 3.0)
+                + 0.7 * colour
+                + 1.4 * (c_rd - 1.0).max(0.0)
+                + 1.1 * source_tilt
+        } else {
+            (if wideband { -32.5 } else { -36.0 })
+                + 10.0 * strength
+                + (eff_tilt * 0.5).clamp(-4.0, 3.0)
+                + colour
+                + 2.0 * source_tilt
+        };
         let budget = body_power.max(0.0) * (level_db * LOG10_OVER_10).exp();
         let cal_base = if use_hnm { shape_only_power } else { power };
         let cal_smooth = shape_only_power.max(ref_power * 0.90);
         let cal_power = if sb >= 1.0 { cal_smooth } else if sb <= 0.0 { cal_base } else { cal_base + (cal_smooth - cal_base) * sb };
         let coh_ratio = if use_hnm && shape_only_power > 1e-30 { power / shape_only_power } else { 1.0 };
         let fraction = if has_air {
-            if use_hnm {
+            if studio {
+                (base_fraction + 0.16 * (c_rd - 1.0).max(0.0)).clamp(0.34, 0.80)
+            } else if use_hnm {
                 let floor = if effort != 0.0 { 0.0 } else { base_fraction };
                 floor.max(1.0 - (1.0 - base_fraction) * coh_ratio)
             } else { base_fraction }

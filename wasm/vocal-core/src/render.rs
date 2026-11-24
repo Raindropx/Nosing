@@ -5,16 +5,16 @@ use core::arch::wasm32::*;
 
 use crate::fft::{apply_out_eq_inplace, build_out_eq_kernel, EqKernel, FftWorkspace};
 use crate::filters::{
-    nasal_zero_bw, AntiResonator, DynamicNotch, FricativeFrontCavity, HiFiNasalBranch, NasalBranch,
-    Piriform, RateConst, Resonator,
+    nasal_zero_bw, AntiResonator, DynamicNotch, DynamicShelf, FricativeFrontCavity,
+    HiFiNasalBranch, NasalBranch, Piriform, RateConst, Resonator,
 };
 use crate::harmonics::{
     build_refine_curve, GlottalParams, LfTable, Mulberry32, VocalSource, REFINE_BODY,
     REFINE_FRICTION,
 };
 
-pub const FRAME_STRIDE: usize = 37;
-pub const CONFIG_LEN: usize = 71;
+pub const FRAME_STRIDE: usize = 46;
+pub const CONFIG_LEN: usize = 73;
 
 pub struct EqCacheEntry {
     pub key: Vec<u64>,
@@ -131,8 +131,11 @@ impl VocalEngine {
         let has_gl = (flags & 65536) != 0;
         let has_source_eq = (flags & 131072) != 0;
         let has_out_eq = (flags & 262144) != 0;
+        let studio = (flags & 524288) != 0;
 
         let kernels: [f64; 26] = cfg[45..71].try_into().unwrap();
+        let eff_breath = cfg[71];
+        let jit = cfg[72];
         let seed_salt = cfg[3] as u32;
         let nas_scale = cfg[4];
         let nas_bw_scale = cfg[5];
@@ -202,24 +205,42 @@ impl VocalEngine {
             && self.lf_phase_buf.len() >= lf_nrd * lf_nh
             && self.lf_mag_buf.len() >= lf_nrd * lf_nh
         {
+            let mag_slice = &self.lf_mag_buf[..lf_nrd * lf_nh];
+            let mut rd_comp_db = vec![0.0_f64; lf_nrd];
+            let nh_lim = lf_nh.min(10);
+            for ri3 in 0..lf_nrd {
+                let mut w_sum = 0.0_f64;
+                let mut p_sum_lf = 0.0_f64;
+                let row = &mag_slice[ri3 * lf_nh..];
+                for k3 in 0..nh_lim {
+                    let kf = (k3 + 1) as f64;
+                    let wk = 1.0 / (kf * kf);
+                    w_sum += wk;
+                    p_sum_lf += wk * 10.0_f64.powf(row[k3] / 10.0);
+                }
+                let shift_db = 10.0 * (p_sum_lf / w_sum).max(1e-6).log10();
+                rd_comp_db[ri3] = (-0.85 * shift_db).clamp(-5.0, 7.0);
+            }
             Some(LfTable {
                 nrd: lf_nrd,
                 nh: lf_nh,
                 rd_min: lf_rd_min,
                 rd_step: lf_rd_step,
                 phase: self.lf_phase_buf[..lf_nrd * lf_nh].to_vec(),
-                mag_delta: self.lf_mag_buf[..lf_nrd * lf_nh].to_vec(),
+                mag_delta: mag_slice.to_vec(),
+                rd_comp_db,
             })
         } else {
             None
         };
 
         let mut src = VocalSource::new(
-            &self.harm_buf[..harm_len], hd, wideband, sr, hop_f, organic_amt, humanize_amt,
+            &self.harm_buf[..harm_len], hd, wideband, sr, hop_f, organic_amt, humanize_amt, seed_salt,
         );
+        let res_cal = mode_b && !studio;
         let mut res = [
-            Resonator::new(mode_b), Resonator::new(mode_b), Resonator::new(mode_b),
-            Resonator::new(mode_b), Resonator::new(mode_b), Resonator::new(mode_b),
+            Resonator::new(res_cal), Resonator::new(res_cal), Resonator::new(res_cal),
+            Resonator::new(res_cal), Resonator::new(res_cal), Resonator::new(res_cal),
         ];
         let mut nas_hifi = HiFiNasalBranch::new();
         let mut nas_std = NasalBranch::new();
@@ -227,18 +248,23 @@ impl VocalEngine {
         let mut n_zero = AntiResonator::new();
         let mut fric_res = Resonator::new(false);
         let mut fric_hp = Resonator::new(false);
+        let mut shock_res = if studio { Some(Resonator::new(false)) } else { None };
+        let mut last_shock_hz = 5000.0_f64;
+        let mut last_shock_bw = 1200.0_f64;
         let mut front_cavity = if has_front_cavity {
             Some(FricativeFrontCavity::new(front_cavity_amount))
         } else {
             None
         };
         let mut sub_notch = if use_humanize && !raw_src { Some(DynamicNotch::new()) } else { None };
-        let mut pharynx_notch = if use_humanize && !raw_src && !has_piriform {
+        let mut sub_notch2 = if use_humanize && !raw_src && studio { Some(DynamicNotch::new()) } else { None };
+        let mut hpc_shelf = if !raw_src && studio { Some(DynamicShelf::new()) } else { None };
+        let mut pharynx_notch = if use_humanize && !raw_src && (studio || !has_piriform) {
             Some(DynamicNotch::new())
         } else {
             None
         };
-        let mut piriform = if has_piriform && !raw_src {
+        let mut piriform = if has_piriform && !raw_src && !studio {
             Some(Piriform::new(pf_b0, pf_b1, pf_b2, pf_a1, pf_a2))
         } else {
             None
@@ -246,6 +272,7 @@ impl VocalEngine {
 
         let mut org_cycle_rnd = Mulberry32::new(0x94d049bb ^ seed_salt);
         let org_cycle_alpha = 1.0 - (-1.0 / (sr * 0.0015)).exp();
+        let org_jit_alpha = 1.0 - (-1.0 / (sr * if studio { 0.00065 } else { 0.0015 })).exp();
         let mut org_shim_cur = 1.0_f64;
         let mut org_shim_tgt = 1.0_f64;
         let mut org_jit_cur = 1.0_f64;
@@ -256,8 +283,11 @@ impl VocalEngine {
         let mut mid_lp = 0.0_f64;
         let mut mid_hp = 0.0_f64;
         let mid_lp_coef = (-2.0 * PI * 4800.0 / sr).exp();
-        let mid_hp_coef = (-2.0 * PI * 1600.0 / sr).exp();
-        let mid_norm = if hd { 3.2 } else { 2.1 };
+        let mid_hp_coef = (-2.0 * PI * if studio { 1450.0 } else { 1600.0 } / sr).exp();
+        let mid_norm = if studio { 3.10 } else if hd { 3.2 } else { 2.1 };
+        let mut air_form_res = if studio && has_upper_air { Some(Resonator::new(false)) } else { None };
+        let mut air_lp1 = 0.0_f64;
+        let air_lp_coef = (-2.0 * PI * if studio { 10500.0 } else { 13500.0 } / sr).exp();
 
         let mut fry_parity: u32 = 0;
         let mut fry_gain_cur = 1.0_f64;
@@ -277,6 +307,23 @@ impl VocalEngine {
 
         let mut hf_y = 0.0_f64;
         let mut rad_prev = 0.0_f64;
+        let mut rad_y = 0.0_f64;
+        let mut fric_rad_prev = 0.0_f64;
+        let mut br_lp1 = 0.0_f64;
+        let mut br_lp2 = 0.0_f64;
+        let breath_lp_coef = (-2.0 * PI * 3400.0 / sr).exp();
+        let mut breath_gate = 0.0_f64;
+        let a_br_gate = 1.0 - (-1.0 / (sr * 0.003)).exp();
+        let mut cur_a_rad = (-2.0 * PI * 3800.0 / sr).exp();
+        let mut rad_step = 0.0_f64;
+        let mut prev_burst_imp = 0.0_f64;
+        let mut shock_env = 0.0_f64;
+        let mut shock_amp = 0.0_f64;
+        let mut shock_is_affr = false;
+        let shock_alpha = (-1.0 / (sr * 0.0022)).exp();
+        let shock_alpha_affr = (-1.0 / (sr * 0.0028)).exp();
+        let mut shock_phase = 1.0_f64;
+        let shock_phase_step = 1.0 / (sr * 0.00035);
         let mut last_f0 = -1.0_f64;
         let mut consonant_lp = 0.0_f64;
         let mut tract_lp = 0.0_f64;
@@ -300,14 +347,15 @@ impl VocalEngine {
         let mut prev_cavity_gain = 1.0_f64;
 
         let bcoef = (-2.0 * PI * 6000.0 / sr).exp();
-        let asp_coef = (-2.0 * PI * 1000.0 / sr).exp();
+        let asp_coef = (-2.0 * PI * if studio { 950.0 } else { 1000.0 } / sr).exp();
         let mut asp_lp = 0.0_f64;
+        let mut asp_lp2 = 0.0_f64;
         let air_coef = (-2.0 * PI * 6500.0 / sr).exp();
         let body_coef = (-2.0 * PI * 2800.0 / sr).exp();
         let mut asp_air = 0.0_f64;
         let mut asp_body = 0.0_f64;
 
-        let use_mode_b_delay = mode_b && !raw_src;
+        let use_mode_b_delay = mode_b && !raw_src && !studio;
         let mut mode_b_delay = [0.0_f64; 18];
         let mut delay_index: usize = 0;
 
@@ -363,12 +411,28 @@ impl VocalEngine {
             let voiced_high_gate = frames[base + 33];
             let eff_tilt = frames[base + 34];
             let source_tilt = frames[base + 35];
+            let raw_cav_fc = frames[base + 37];
+            let c_lip = frames[base + 38];
+            let c_abd = frames[base + 39];
+            let c_asp_sc = frames[base + 40];
+            let c_burst_imp = frames[base + 41];
+            let c_burst_gain = frames[base + 42];
+            let is_affr_burst = frames[base + 43] != 0.0;
+            let raw_fric_hz = frames[base + 44];
+            let is_breath = frames[base + 45] != 0.0;
 
             let first = fr == 0;
             if use_humanize {
-                res[0].set_damped(&rc, pairs[0].0, pairs[0].1, humanize_amt, first);
-                for r in 1..6 {
-                    res[r].set(&rc, pairs[r].0, pairs[r].1, first);
+                res[0].set_damped(&rc, pairs[0].0, pairs[0].1, humanize_amt, first, if studio { 0.035 } else { 0.0 }, 1.0);
+                if studio {
+                    res[1].set_damped(&rc, pairs[1].0, pairs[1].1, humanize_amt, first, 0.0, 0.45);
+                    for r in 2..6 {
+                        res[r].set(&rc, pairs[r].0, pairs[r].1, first);
+                    }
+                } else {
+                    for r in 1..6 {
+                        res[r].set(&rc, pairs[r].0, pairs[r].1, first);
+                    }
                 }
             } else {
                 for r in 0..6 {
@@ -380,16 +444,59 @@ impl VocalEngine {
                 prev_oq = c_oq;
                 prev_ta = c_ta;
             }
-            if let Some(ref mut sn) = sub_notch {
-                let sub_hz = (1340.0 * nas_scale).clamp(900.0, 2200.0);
-                let sub_open = ((c_rd - 0.65) / 1.5).clamp(0.0, 1.0);
-                sn.set(sr, hop_f, sub_hz, 5.5, -(1.6 + 1.9 * sub_open) * humanize_amt, first);
+            if studio {
+                let sub_open_st = ((c_rd - 0.65) / 1.5).clamp(0.0, 1.0);
+                if let Some(ref mut sn) = sub_notch {
+                    let sub1_hz = (600.0 * nas_scale).clamp(460.0, 820.0);
+                    sn.set(sr, hop_f, sub1_hz, 4.2, -(1.3 + 2.2 * sub_open_st) * humanize_amt, first);
+                }
+                if let Some(ref mut sn2) = sub_notch2 {
+                    let sub2_hz = (1280.0 * nas_scale.powf(0.78)).clamp(1080.0, 1620.0);
+                    sn2.set(sr, hop_f, sub2_hz, 5.2, -(0.9 + 1.4 * sub_open_st) * humanize_amt, first);
+                }
+                if let Some(ref mut pn) = pharynx_notch {
+                    let px_st_hz = (4400.0 * (hum_pf_ref / 5200.0).powf(0.45)
+                        + 0.10 * (pairs[0].0 - 500.0)
+                        - 0.06 * (pairs[1].0 - 1500.0))
+                        .clamp(3800.0, 5200.0);
+                    pn.set(sr, hop_f, px_st_hz, 3.6, -3.0 * humanize_amt, first);
+                }
+                if let Some(ref mut hs) = hpc_shelf {
+                    hs.set(sr, hop_f, pairs[5].0, first);
+                }
+                if let Some(ref mut afr) = air_form_res {
+                    let fc_air = (5600.0 + 1.8 * pairs[1].0 - 1800.0 * c_lip).clamp(7200.0, 10800.0);
+                    afr.set(&rc, fc_air, 5200.0, first);
+                }
+                let f_rad_st = (3400.0 + 2.2 * (pairs[0].0 - 400.0) - 2200.0 * c_lip).clamp(2600.0, 5200.0);
+                let tgt_a_rad = (-2.0 * PI * f_rad_st / sr).exp();
+                if first {
+                    cur_a_rad = tgt_a_rad;
+                }
+                rad_step = (tgt_a_rad - cur_a_rad) * inv_hop;
+            } else {
+                if let Some(ref mut sn) = sub_notch {
+                    let sub_hz = (1340.0 * nas_scale).clamp(900.0, 2200.0);
+                    let sub_open = ((c_rd - 0.65) / 1.5).clamp(0.0, 1.0);
+                    sn.set(sr, hop_f, sub_hz, 5.5, -(1.6 + 1.9 * sub_open) * humanize_amt, first);
+                }
+                if let Some(ref mut pn) = pharynx_notch {
+                    let px_hz = (4680.0 * (hum_pf_ref / 5200.0).powf(0.35) + 0.08 * (pairs[0].0 - 500.0))
+                        .clamp(4100.0, 5400.0);
+                    pn.set(sr, hop_f, px_hz, 4.5, -2.2 * humanize_amt, first);
+                }
             }
-            if let Some(ref mut pn) = pharynx_notch {
-                let px_hz = (4680.0 * (hum_pf_ref / 5200.0).powf(0.35) + 0.08 * (pairs[0].0 - 500.0))
-                    .clamp(4100.0, 5400.0);
-                pn.set(sr, hop_f, px_hz, 4.5, -2.2 * humanize_amt, first);
-            }
+            let c_rd_open_st = if studio { ((c_rd - 0.72) / 1.35).max(0.0) } else { 0.0 };
+            let c_st_asp_gate = if studio { 0.28 * (0.45 + 2.0 * c_rd_open_st * c_rd_open_st) * (1.0 + 2.2 * c_abd) } else { 1.0 };
+            let f0_for_turb = if f0 > 0.0 { f0 } else { 200.0 };
+            let low_turb_scale = (250.0 / f0_for_turb.max(120.0)).clamp(0.85, 1.28);
+            let c_st_turb_gain = if studio {
+                (eff_breath * 0.075 + 0.015 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.5 * c_abd) * (0.35 + 0.65 * c_asp_sc)
+            } else {
+                0.0
+            };
+            let tgt_br_gate = if studio && is_breath { 1.0 } else { 0.0 };
+
             if nasal_tract {
                 nas_hifi.set(&rc, nas_scale, nas_bw_scale, pairs[0].0, first);
             } else {
@@ -400,9 +507,20 @@ impl VocalEngine {
             n_zero.set(sr, hop_f, nzf, nasal_zero_bw(np_hz, nzf), first);
             fric_res.set(&rc, friction_hz, friction_bw, first);
             fric_hp.set(&rc, (friction_hz * 0.55).min(7000.0), 2400.0, first);
+            if let Some(ref mut sr_sh) = shock_res {
+                if studio && is_affr_burst {
+                    last_shock_hz = if raw_fric_hz >= 5000.0 { 2700.0 } else if raw_fric_hz >= 3700.0 { 3600.0 } else { 2300.0 };
+                    last_shock_bw = 1600.0;
+                } else if !(shock_env > 0.01) {
+                    last_shock_hz = friction_hz;
+                    last_shock_bw = (friction_bw * 0.8).max(900.0);
+                }
+                let snap_shock = first || (c_burst_imp > 0.7 && prev_burst_imp <= 0.15 && shock_env <= 0.01);
+                sr_sh.set(&rc, last_shock_hz, last_shock_bw, snap_shock);
+            }
             if let Some(ref mut fc) = front_cavity {
-                let cavity_fc = (friction_hz / 25.0).round() * 25.0;
-                fc.set(sr, hop_f, cavity_fc, first);
+                let cavity_fc = if studio { raw_cav_fc } else { (friction_hz / 25.0).round() * 25.0 };
+                fc.set(sr, hop_f, cavity_fc, studio, first);
                 if first {
                     prev_cavity_gain = cavity_gain;
                 }
@@ -411,11 +529,20 @@ impl VocalEngine {
                 tn_soft_coef = (-2.0 * PI * c_tn_lp_hz / sr).exp();
                 last_tn_lp_hz = c_tn_lp_hz;
             }
+            if studio {
+                if c_burst_imp > 0.7 && prev_burst_imp <= 0.15 {
+                    shock_env = 1.0;
+                    shock_phase = 0.0;
+                    shock_is_affr = is_affr_burst;
+                    shock_amp = if shock_is_affr { (c_burst_gain * 0.90).min(0.14) } else { c_burst_gain.min(0.095) };
+                }
+                prev_burst_imp = c_burst_imp;
+            }
             if last_f0 < 0.0 {
                 last_f0 = f0;
             }
             src.set_harmonics(
-                sr, hop_f, source_top, mode_b, legacy_sound, f0, harm_tilt_db, &gl,
+                sr, hop_f, source_top, mode_b, studio, legacy_sound, f0, harm_tilt_db, &gl,
                 if smooth_blend > 0.0 { pairs[5].0 } else { 0.0 },
                 smooth_blend, organic_amt, org_frame_gate, humanize_amt, c_rd, first,
                 lf_table.as_ref(), harm_octaves,
@@ -425,7 +552,7 @@ impl VocalEngine {
                     &rc, f0, &pairs, voiced_high_gate, n_mix, c_av, eff_tilt, source_tilt, &gl,
                     high_strength, compensate_high_eq, wideband, has_upper_air, air_power,
                     air_fraction, air_trim_gain, effort, endpoint, refine, tract_join, smooth_blend, perturb_blend,
-                    legacy_sound, harm_octaves,
+                    studio, c_rd, legacy_sound, harm_octaves,
                 );
             }
 
@@ -454,7 +581,7 @@ impl VocalEngine {
                         org_jit_tgt = 1.0;
                     }
                     org_shim_cur += (org_shim_tgt - org_shim_cur) * org_cycle_alpha;
-                    org_jit_cur += (org_jit_tgt - org_jit_cur) * org_cycle_alpha;
+                    org_jit_cur += (org_jit_tgt - org_jit_cur) * org_jit_alpha;
                     sample_f0 *= org_jit_cur;
                 }
                 let inc = sample_f0 * inv_sr;
@@ -471,7 +598,18 @@ impl VocalEngine {
                 if gci_wrap && !skip_harmonics {
                     if use_organic {
                         let og_eff = organic_amt * org_frame_gate;
-                        if og_eff > 1e-5 {
+                        if studio {
+                            let gci_jit_depth = 0.0044 * og_eff + if jit > 0.0 { jit * 1.9 } else { 0.0 };
+                            if og_eff > 1e-5 || gci_jit_depth > 1e-6 {
+                                let g_shim_st = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
+                                let g_jit_st = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
+                                org_shim_tgt = (1.0 + 0.023 * og_eff * g_shim_st).clamp(0.91, 1.09);
+                                org_jit_tgt = (1.0 + gci_jit_depth * g_jit_st).clamp(0.975, 1.025);
+                            } else {
+                                org_shim_tgt = 1.0;
+                                org_jit_tgt = 1.0;
+                            }
+                        } else if og_eff > 1e-5 {
                             let g_shim = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
                             let g_jit = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
                             org_shim_tgt = (1.0 + 0.022 * og_eff * g_shim).clamp(0.91, 1.09);
@@ -586,7 +724,11 @@ impl VocalEngine {
                 let asp_white = noise.next() * 2.0 - 1.0;
                 asp_lp = (1.0 - asp_coef) * asp_white + asp_coef * asp_lp;
                 let mut asp_colour = asp_lp;
-                if research {
+                if studio {
+                    asp_lp2 = (1.0 - asp_coef) * asp_lp + asp_coef * asp_lp2;
+                    asp_colour = asp_lp2;
+                }
+                if research && !studio {
                     asp_air = (1.0 - air_coef) * asp_white + air_coef * asp_air;
                     asp_body = (1.0 - body_coef) * asp_white + body_coef * asp_body;
                     asp_colour += asp_air_mix * (asp_air - asp_body);
@@ -605,21 +747,34 @@ impl VocalEngine {
                 } else {
                     1.0
                 };
-                if use_humanize && !skip_harmonics {
-                    let lf_asp_mod = (0.35 + 1.25 * open_gate) * 0.92;
-                    asp_mod += (lf_asp_mod - asp_mod) * humanize_amt * amp.min(1.0);
-                }
-                s += asp_colour * 1.41 * asp * 0.6 * asp_mod;
-                if use_humanize && !skip_harmonics {
-                    let g_white = glottal_noise.next() * 2.0 - 1.0;
-                    mid_lp = (1.0 - mid_lp_coef) * g_white + mid_lp_coef * mid_lp;
-                    mid_hp = (1.0 - mid_hp_coef) * mid_lp + mid_hp_coef * mid_hp;
-                    let mid_band = (mid_lp - mid_hp) * mid_norm;
-                    let flow_mod = (0.28 + 1.38 * open_gate) * 0.92;
-                    let turb_level = humanize_amt
-                        * (0.015 + 0.052 * (rd_cur - 0.85).max(0.0))
-                        * (0.35 + 0.65 * amp.min(1.0));
-                    s += mid_band * turb_level * flow_mod;
+                if studio {
+                    if use_humanize && !skip_harmonics {
+                        let flow_sq = (0.22 + 1.45 * open_gate * open_gate) * 1.14;
+                        asp_mod += (flow_sq - asp_mod) * humanize_amt * amp.min(1.0);
+                        let g_white_st = glottal_noise.next() * 2.0 - 1.0;
+                        mid_lp = (1.0 - mid_lp_coef) * g_white_st + mid_lp_coef * mid_lp;
+                        mid_hp = (1.0 - mid_hp_coef) * mid_lp + mid_hp_coef * mid_hp;
+                        let mid_band_st = (mid_lp - mid_hp) * mid_norm;
+                        s += mid_band_st * c_st_turb_gain * (0.35 + 0.65 * amp.min(1.0)) * flow_sq;
+                    }
+                    s += asp_colour * 1.41 * asp * 0.55 * c_st_asp_gate * asp_mod;
+                } else {
+                    if use_humanize && !skip_harmonics {
+                        let lf_asp_mod = (0.35 + 1.25 * open_gate) * 0.92;
+                        asp_mod += (lf_asp_mod - asp_mod) * humanize_amt * amp.min(1.0);
+                    }
+                    s += asp_colour * 1.41 * asp * 0.6 * asp_mod;
+                    if use_humanize && !skip_harmonics {
+                        let g_white = glottal_noise.next() * 2.0 - 1.0;
+                        mid_lp = (1.0 - mid_lp_coef) * g_white + mid_lp_coef * mid_lp;
+                        mid_hp = (1.0 - mid_hp_coef) * mid_lp + mid_hp_coef * mid_hp;
+                        let mid_band = (mid_lp - mid_hp) * mid_norm;
+                        let flow_mod = (0.28 + 1.38 * open_gate) * 0.92;
+                        let turb_level = humanize_amt
+                            * (0.015 + 0.052 * (rd_cur - 0.85).max(0.0))
+                            * (0.35 + 0.65 * amp.min(1.0));
+                        s += mid_band * turb_level * flow_mod;
+                    }
                 }
                 hf_y = (1.0 - bcoef) * s + bcoef * hf_y;
                 s = hf_y;
@@ -666,11 +821,17 @@ impl VocalEngine {
 
                 if !raw_src {
                     y = if use_humanize { res[0].run_damped(y, open_gate) } else { res[0].run(y) };
-                    y = res[1].run(y);
-                    y = res[2].run(y);
-                    y = res[3].run(y);
-                    y = res[4].run(y);
-                    y = res[5].run(y);
+                    if studio && use_humanize {
+                        y = res[1].run_damped(y, open_gate);
+                        for r2 in 2..6 {
+                            y = res[r2].run(y);
+                        }
+                    } else {
+                        for r2 in 1..6 {
+                            y = res[r2].run(y);
+                        }
+                    }
+                    if let Some(ref mut hs) = hpc_shelf { y = hs.run(y); }
                     let yn = n_zero.run(n_pole.run(y));
                     y += (yn - y) * (prev_mix + (n_mix - prev_mix) * mix);
                     let nasal_raw = if nasal_tract { nas_hifi.run(nasal_input) } else { nas_std.run(nasal_input) };
@@ -683,13 +844,18 @@ impl VocalEngine {
                     };
                     y = y * (1.0 - nasal_amt) + ny;
                     if let Some(ref mut sn) = sub_notch { y = sn.run(y); }
+                    if let Some(ref mut sn2) = sub_notch2 { y = sn2.run(y); }
                     if let Some(ref mut pn) = pharynx_notch { y = pn.run(y); }
                 }
                 let body_sample = y;
-                if voiced_high && use_mode_b_delay {
-                    let high_sample = mode_b_delay[delay_index + 12];
-                    mode_b_delay[delay_index + 12] = high_source * 0.30 * amp;
-                    y += high_sample;
+                if voiced_high {
+                    if use_mode_b_delay {
+                        let high_sample = mode_b_delay[delay_index + 12];
+                        mode_b_delay[delay_index + 12] = high_source * 0.30 * amp;
+                        y += high_sample;
+                    } else {
+                        y += high_source * 0.30 * amp;
+                    }
                 }
                 if let Some(ref mut pf) = piriform {
                     y = pf.run(y);
@@ -710,6 +876,25 @@ impl VocalEngine {
                 } else {
                     fz * fg * fric_trim
                 };
+                if studio {
+                    if let Some(ref mut sr_sh) = shock_res {
+                        let mut shock_in = 0.0_f64;
+                        if shock_env > 0.01 {
+                            let n_w = if shock_phase < 1.0 { (2.0 * PI * shock_phase).sin() * 1.35 } else { 0.0 };
+                            if shock_phase < 1.0 { shock_phase += shock_phase_step; }
+                            let r_sp = noise.next();
+                            let spk = if r_sp < 0.09 { -1.6 } else if r_sp > 0.91 { 1.6 } else { 0.0 };
+                            if shock_is_affr {
+                                shock_in = shock_env * (n_w * 1.15 + (noise.next() * 2.0 - 1.0) * 1.15 + spk * 0.8);
+                                shock_env *= shock_alpha_affr;
+                            } else {
+                                shock_in = shock_env * (n_w + spk);
+                                shock_env *= shock_alpha;
+                            }
+                        }
+                        friction += sr_sh.run(shock_in) * shock_amp * 0.80;
+                    }
+                }
                 if use_mode_b_delay {
                     let delayed_fric = mode_b_delay[delay_index + 6];
                     mode_b_delay[delay_index + 6] = friction;
@@ -717,10 +902,24 @@ impl VocalEngine {
                     delay_index += 1;
                     if delay_index == 6 { delay_index = 0; }
                 }
-                y += friction;
-                let rad = y - rad_prev;
-                rad_prev = y;
-                self.out_buf[idx] = rad as f32;
+                if studio {
+                    let rad_diff = y - rad_prev;
+                    rad_prev = y;
+                    cur_a_rad += rad_step;
+                    rad_y = (1.0 - cur_a_rad) * rad_diff + cur_a_rad * rad_y;
+                    let fric_rad = friction - fric_rad_prev;
+                    fric_rad_prev = friction;
+                    br_lp1 = (1.0 - breath_lp_coef) * fric_rad + breath_lp_coef * br_lp1;
+                    br_lp2 = (1.0 - breath_lp_coef) * br_lp1 + breath_lp_coef * br_lp2;
+                    breath_gate += (tgt_br_gate - breath_gate) * a_br_gate;
+                    let fric_rad_out = fric_rad + (br_lp2 - fric_rad) * breath_gate;
+                    self.out_buf[idx] = (rad_y + fric_rad_out) as f32;
+                } else {
+                    y += friction;
+                    let rad = y - rad_prev;
+                    rad_prev = y;
+                    self.out_buf[idx] = rad as f32;
+                }
 
                 if refine {
                     self.body_stage[idx] = (body_sample - body_prev) as f32;
@@ -736,23 +935,28 @@ impl VocalEngine {
                     src.air_amp = if last_sample { src.air_target } else { src.air_amp + src.air_step };
                     let mut air_mod = 1.0_f64;
                     if !skip_harmonics {
-                        let open = 0.5 + 0.5 * mod_sin;
-                        let pulsed_old = (0.16 + 0.84 * open * open) * 1.76963;
-                        let pulsed_new = (0.72 + 0.28 * open * open) / 0.85888;
-                        let pulsed_blend = smooth_blend.max(perturb_blend);
-                        let mut pulsed = if pulsed_blend >= 1.0 {
-                            pulsed_new
-                        } else if pulsed_blend <= 0.0 {
-                            pulsed_old
+                        if studio && use_humanize {
+                            let flow_sq_air = (0.28 + 1.35 * open_gate * open_gate) * 1.10;
+                            air_mod = 1.0 + amp.min(1.0) * (flow_sq_air - 1.0);
                         } else {
-                            pulsed_old + (pulsed_new - pulsed_old) * pulsed_blend
-                        };
-                        if effort != 0.0 {
-                            pulsed += effort.abs() * ((1.0 - depth + depth * open * open) * pulse_norm - pulsed);
+                            let open = 0.5 + 0.5 * mod_sin;
+                            let pulsed_old = (0.16 + 0.84 * open * open) * 1.76963;
+                            let pulsed_new = (0.72 + 0.28 * open * open) / 0.85888;
+                            let pulsed_blend = smooth_blend.max(perturb_blend);
+                            let mut pulsed = if pulsed_blend >= 1.0 {
+                                pulsed_new
+                            } else if pulsed_blend <= 0.0 {
+                                pulsed_old
+                            } else {
+                                pulsed_old + (pulsed_new - pulsed_old) * pulsed_blend
+                            };
+                            if effort != 0.0 {
+                                pulsed += effort.abs() * ((1.0 - depth + depth * open * open) * pulse_norm - pulsed);
+                            }
+                            air_mod = 1.0 + amp.min(1.0) * (pulsed - 1.0);
                         }
-                        air_mod = 1.0 + amp.min(1.0) * (pulsed - 1.0);
                     }
-                    let air_sample = if perturb_blend > 0.0 {
+                    let mut air_sample = if perturb_blend > 0.0 {
                         let base_noise = (air_noise.next() + air_noise.next() - 1.0) * 1.41421356;
                         if velvet_rem == 0 {
                             let vlen = 3 + (air_noise.next() * 5.0).floor() as i32;
@@ -774,6 +978,13 @@ impl VocalEngine {
                     } else {
                         air_noise.next() * 2.0 - 1.0
                     };
+                    if studio {
+                        if let Some(ref mut afr) = air_form_res {
+                            air_sample = afr.run(air_sample);
+                            air_lp1 = (1.0 - air_lp_coef) * air_sample + air_lp_coef * air_lp1;
+                            air_sample = air_lp1;
+                        }
+                    }
                     let org_air_s = if use_organic { prev_org_air + (c_org_air - prev_org_air) * mix } else { 1.0 };
                     self.upper_air[idx] = (air_sample * src.air_amp * 0.30 * amp * air_mod * org_air_s) as f32;
                 }
@@ -867,7 +1078,7 @@ impl VocalEngine {
             let air_curve: Vec<f64> = self.air_eq_buf[..air_eq_len.min(64)].to_vec();
             self.apply_cached_eq(3, &air_curve, sr, hd, false);
             let frames = &self.frames_buf[..n_frames * FRAME_STRIDE];
-            if frames.chunks_exact(FRAME_STRIDE).any(|f| f[36] != 0.0) {
+            if !studio && frames.chunks_exact(FRAME_STRIDE).any(|f| f[36] != 0.0) {
                 let input = self.upper_air[..slice_total].to_vec();
                 for (f, frame) in frames.chunks_exact(FRAME_STRIDE).enumerate() {
                     let amount = frame[36];
