@@ -542,8 +542,8 @@ impl FricativeFrontCavity {
                 let sx = sh + (x - sh) * t_pal;
                 sx + (s - sx) * t_alv
             };
-            let f_pole = if studio { place(3650.0, 6100.0, 9000.0) } else { place(2750.0, 5600.0, 8200.0) };
-            let lp_hz = if studio { place(10500.0, 13000.0, 18000.0) } else { place(9000.0, 10500.0, 16500.0) };
+            let f_pole = if studio { place(3800.0, 7400.0, 9200.0) } else { place(2750.0, 5600.0, 8200.0) };
+            let lp_hz = if studio { place(9500.0, 9000.0, 13500.0) } else { place(9000.0, 10500.0, 16500.0) };
             let f_zero = place(1350.0, 2350.0, 2700.0);
             let lp_zero = place(2400.0, 2300.0, 4200.0);
             let couple = |light_v: f64, strong_v: f64| -> f64 {

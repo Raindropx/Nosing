@@ -316,11 +316,21 @@ impl VocalEngine {
         let mut sib_air_hp = 0.0_f64;
         let mut sib_air_lp1 = 0.0_f64;
         let mut sib_air_lp2 = 0.0_f64;
-        let sib_air_hp_coef = (-2.0 * PI * 7400.0 / sr).exp();
-        let sib_air_lp_coef = (-2.0 * PI * 12200.0 / sr).exp();
-        let mut fric_ultra_lp1 = 0.0_f64;
-        let mut fric_ultra_lp2 = 0.0_f64;
-        let fric_ultra_coef = (-2.0 * PI * 14500.0 / sr).exp();
+        let sib_air_hp_coef = (-2.0 * PI * 6800.0 / sr).exp();
+        let sib_air_lp_coef = (-2.0 * PI * 11200.0 / sr).exp();
+        let fu_w0 = 2.0 * PI * 13200.0 / sr;
+        let fu_cw = fu_w0.cos();
+        let fu_al = fu_w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
+        let fu_a0 = 1.0 + fu_al;
+        let fu_b0 = (1.0 - fu_cw) * 0.5 / fu_a0;
+        let fu_b1 = (1.0 - fu_cw) / fu_a0;
+        let fu_b2 = fu_b0;
+        let fu_a1 = -2.0 * fu_cw / fu_a0;
+        let fu_a2 = (1.0 - fu_al) / fu_a0;
+        let mut fu_x1 = 0.0_f64;
+        let mut fu_x2 = 0.0_f64;
+        let mut fu_y1 = 0.0_f64;
+        let mut fu_y2 = 0.0_f64;
         let mut breath_gate = 0.0_f64;
         let a_br_gate = 1.0 - (-1.0 / (sr * 0.003)).exp();
         let mut cur_a_rad = (-2.0 * PI * 3800.0 / sr).exp();
@@ -516,7 +526,7 @@ impl VocalEngine {
             n_zero.set(sr, hop_f, nzf, nasal_zero_bw(np_hz, nzf), first);
             let st_is_sibilant = studio && raw_fric_hz >= 2800.0 && c_front_cavity > 0.05 && !is_breath;
             let sib_air_amt = if st_is_sibilant {
-                if raw_fric_hz >= 5000.0 { 0.42 } else if raw_fric_hz >= 3700.0 { 0.92 } else { 0.40 }
+                if raw_fric_hz >= 5000.0 { 0.88 } else if raw_fric_hz >= 3700.0 { 1.45 } else { 0.48 }
             } else {
                 0.0
             };
@@ -938,9 +948,12 @@ impl VocalEngine {
                     br_lp2 = (1.0 - breath_lp_coef) * br_lp1 + breath_lp_coef * br_lp2;
                     breath_gate += (tgt_br_gate - breath_gate) * a_br_gate;
                     let mut fric_rad_out = fric_rad + (br_lp2 - fric_rad) * breath_gate;
-                    fric_ultra_lp1 = (1.0 - fric_ultra_coef) * fric_rad_out + fric_ultra_coef * fric_ultra_lp1;
-                    fric_ultra_lp2 = (1.0 - fric_ultra_coef) * fric_ultra_lp1 + fric_ultra_coef * fric_ultra_lp2;
-                    fric_rad_out = fric_ultra_lp2;
+                    let fu_y = fu_b0 * fric_rad_out + fu_b1 * fu_x1 + fu_b2 * fu_x2 - fu_a1 * fu_y1 - fu_a2 * fu_y2;
+                    fu_x2 = fu_x1;
+                    fu_x1 = fric_rad_out;
+                    fu_y2 = fu_y1;
+                    fu_y1 = fu_y;
+                    fric_rad_out = fu_y;
                     self.out_buf[idx] = (rad_y + fric_rad_out) as f32;
                 } else {
                     y += friction;
