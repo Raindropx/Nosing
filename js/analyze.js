@@ -476,18 +476,76 @@
   var LOG2_H = new Float64Array(65);
   for (var lh = 1; lh <= 64; lh++) LOG2_H[lh] = Math.log2(lh);
   var LP_6K = Math.exp(-2 * Math.PI * 6000 / SR), TEN_OVER_LN10 = 10 / Math.LN10;
+  var SR48 = 48000, RAD_A48 = Math.exp(-2 * Math.PI * 4800 / SR48);
+  var RAD_NUM2_48 = (1 - RAD_A48) * (1 - RAD_A48), RAD_DENB_48 = 1 + RAD_A48 * RAD_A48, RAD_2A_48 = 2 * RAD_A48;
 
-  function preparePhoneModel(t, phone) {
-    var pairs = NSG.formantsOf(NSG.PHONES[phone], t).pairs;
+  function applyHawksMillerBwModel(pairs, timbre) {
+    var bwS = clamp(timbre.bwScale || 1, 0.7, 1.5);
+    var br = Array.isArray(timbre.bwRatio) ? timbre.bwRatio : null;
+    var f1 = pairs[0][0], f2 = pairs[1][0], f3 = pairs[2][0];
+    var maleW = clamp((2850 - f3) / 450, 0, 1);
+    var b1Min = (50 + 95 / (1 + Math.pow(f1 / 250, 2)) + 0.036 * f1) * bwS * (br && br[0] > 0 ? br[0] : 1);
+    var b2Min = (70 + 0.028 * f2) * bwS * (br && br[1] > 0 ? br[1] : 1);
+    var b3Min = (85 + 0.020 * f3) * (1 + 0.35 * maleW) * bwS * (br && br[2] > 0 ? br[2] : 1);
+    if (pairs[0][1] < b1Min) pairs[0][1] = b1Min;
+    if (pairs[1][1] < b2Min) pairs[1][1] = b2Min;
+    if (pairs[2][1] < b3Min) pairs[2][1] = b3Min;
+    if (pairs[3]) {
+      var b4Min = (115 + 0.026 * pairs[3][0]) * (1 + 0.25 * maleW) * bwS;
+      if (pairs[3][1] < b4Min) pairs[3][1] = b4Min;
+    }
+    if (pairs[4]) {
+      var b5Min = (170 + 0.036 * pairs[4][0]) * bwS;
+      if (pairs[4][1] < b5Min) pairs[4][1] = b5Min;
+    }
+    if (pairs[5]) {
+      var b6Min = (220 + 0.042 * pairs[5][0]) * bwS;
+      if (pairs[5][1] < b6Min) pairs[5][1] = b6Min;
+    }
+  }
+
+  function hpcCoeffsModel(f6) {
+    var fc = clamp(2850 * ((f6 || 5200) / 5200), 2500, 3450);
+    var A = Math.pow(10, 12.5 / 40), w0 = 2 * Math.PI * fc / SR48;
+    var cw0 = Math.cos(w0), sw0 = Math.sin(w0), alpha = sw0 / (2 * 0.56);
+    var tsa = 2 * Math.sqrt(A) * alpha;
+    var a0 = (A + 1) - (A - 1) * cw0 + tsa;
+    return [
+      (A * ((A + 1) + (A - 1) * cw0 + tsa)) / a0,
+      (-2 * A * ((A - 1) + (A + 1) * cw0)) / a0,
+      (A * ((A + 1) + (A - 1) * cw0 - tsa)) / a0,
+      (2 * ((A - 1) - (A + 1) * cw0)) / a0,
+      ((A + 1) - (A - 1) * cw0 - tsa) / a0
+    ];
+  }
+
+  function ensureTrig48(frame) {
+    if (frame.trig48) return frame.trig48;
+    var hzArr = frame.hz, n = hzArr.length, t48 = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var w = 2 * Math.PI * hzArr[i] / SR48;
+      t48[i] = [Math.cos(w), Math.sin(w), Math.cos(2 * w), Math.sin(2 * w)];
+    }
+    frame.trig48 = t48;
+    return t48;
+  }
+
+  function preparePhoneModel(t, phone, studio) {
+    var rawPairs = NSG.formantsOf(NSG.PHONES[phone], t).pairs;
+    var pairs = studio ? rawPairs.map(function (p) { return [p[0], p[1]]; }) : rawPairs;
+    if (studio) applyHawksMillerBwModel(pairs, t);
+    var rate = studio ? SR48 : SR;
     var coeff = new Float64Array(18);
     for (var i = 0; i < 6; i++) {
       var p = pairs[i];
-      var r = Math.exp(-Math.PI * p[1] / SR), b = 2 * r * Math.cos(2 * Math.PI * p[0] / SR), c = -r * r;
+      var r = Math.exp(-Math.PI * p[1] / rate), b = 2 * r * Math.cos(2 * Math.PI * p[0] / rate), c = -r * r;
       coeff[i * 3] = b;
       coeff[i * 3 + 1] = c;
       coeff[i * 3 + 2] = 20 * Math.log10(Math.max(1e-9, 1 - b - c));
     }
     return {
+      studio: !!studio,
+      hc: studio ? hpcCoeffsModel(pairs[5] ? pairs[5][0] : 5200) : null,
       coeff: coeff,
       gl: NSG.sourceFilterOf(t),
       harm: t.harm, tailDb: t.harmTailDb === undefined ? NSG.TAIL_DB_OCT : t.harmTailDb,
@@ -500,9 +558,9 @@
 
   function predictedWithModel(frame, m) {
     var effTilt = m.tiltDb + (m.pitchTilt ? m.pitchTilt * clamp(Math.log2(Math.max(40, frame.f0) / m.refF0), -1.5, 1.5) : 0);
-    var hzArr = frame.hz, trigArr = frame.trig, n = hzArr.length;
+    var hzArr = frame.hz, trigArr = m.studio ? ensureTrig48(frame) : frame.trig, n = hzArr.length;
     var out = new Array(n);
-    var coeff = m.coeff, harm = m.harm, h15 = harm[15], gl = m.gl, outEq = m.outEq;
+    var coeff = m.coeff, harm = m.harm, h15 = harm[15], gl = m.gl, outEq = m.outEq, hc = m.hc;
     var c0 = coeff[0], c1 = coeff[1], c2 = coeff[2],
         c3 = coeff[3], c4 = coeff[4], c5 = coeff[5],
         c6 = coeff[6], c7 = coeff[7], c8 = coeff[8],
@@ -526,13 +584,22 @@
       var d0 = r0 * r0 + i0 * i0 + 1e-18, d1 = r1 * r1 + i1 * i1 + 1e-18, d2 = r2 * r2 + i2 * i2 + 1e-18;
       var d3 = r3 * r3 + i3 * i3 + 1e-18, d4 = r4 * r4 + i4 * i4 + 1e-18, d5 = r5 * r5 + i5 * i5 + 1e-18;
       v -= TEN_OVER_LN10 * (Math.log(d0 * d1 * d2) + Math.log(d3 * d4 * d5));
-      out[i] = v + TEN_OVER_LN10 * Math.log(Math.max(1e-9, 2 - 2 * cw) / (lpSq1 - twoLp * cw));
+      if (m.studio) {
+        var hNr = hc[0] + hc[1] * cw + hc[2] * c2w, hNi = -(hc[1] * sw + hc[2] * s2w);
+        var hDr = 1 + hc[3] * cw + hc[4] * c2w, hDi = -(hc[3] * sw + hc[4] * s2w);
+        var hcPow = (hNr * hNr + hNi * hNi) / (hDr * hDr + hDi * hDi + 1e-18);
+        var radPow = RAD_NUM2_48 / Math.max(1e-9, RAD_DENB_48 - RAD_2A_48 * cw);
+        out[i] = v + TEN_OVER_LN10 * Math.log(Math.max(1e-9, (2 - 2 * cw) * hcPow * radPow));
+      } else {
+        out[i] = v + TEN_OVER_LN10 * Math.log(Math.max(1e-9, 2 - 2 * cw) / (lpSq1 - twoLp * cw));
+      }
     }
     return out;
   }
 
+  var modelStudioMode = false;
   function predicted(frame, t, phone) {
-    return predictedWithModel(frame, preparePhoneModel(t, phone));
+    return predictedWithModel(frame, preparePhoneModel(t, phone, modelStudioMode));
   }
   function differenceErrorOnly(frame, model) {
     var db = frame.db, wt = frame.weight, n = db.length;
@@ -560,12 +627,12 @@
     if (labels) {
       for (var i = 0; i < labels.length; i++) {
         var ph = labels[i];
-        if (!map[ph]) map[ph] = preparePhoneModel(t, ph);
+        if (!map[ph]) map[ph] = preparePhoneModel(t, ph, modelStudioMode);
       }
     } else {
       for (var j = 0; j < FIT_PHONES.length; j++) {
         var fp = FIT_PHONES[j];
-        map[fp] = preparePhoneModel(t, fp);
+        map[fp] = preparePhoneModel(t, fp, modelStudioMode);
       }
     }
     return map;
@@ -1137,18 +1204,19 @@
     t.consonantSoftness = bestSoft;
   }
 
-  function calibrateEq(t, cal, pcm, rate, hd) {
+  function calibrateEq(t, cal, pcm, rate, hd, hasWide) {
     var count = hd ? 64 : NSG.OUT_EQ.n, field = hd ? 'modeBOutEq' : 'outEq';
     var centers = Array.from({ length: count }, function (_, i) {
       return hd ? 50 * Math.pow(400, i / 63) : NSG.outEqHz(i);
     });
     var target = calibrationSpectrum(pcm, rate, cal.target, centers);
     function measure() {
-      var result = NSG.DSP.render(cal.score, t, { hd: hd });
+      var result = NSG.DSP.render(cal.score, t, { hd: hd, autoExpress: false });
       return calibrationSpectrum(result.pcm, result.sr, cal.synth, centers);
     }
     if (!hd && target.noise !== null) {
-      // Endpoints allow clean periodic recordings to select zero aspiration.
+      // Endpoints allow clean periodic recordings to select zero aspiration;
+      // keep a realistic floor when HD/Studio mode will also be calibrated.
       var bestNoise = Infinity, bestBreath = t.breath;
       function tryBreath(breath) {
         t.breath = breath;
@@ -1157,28 +1225,29 @@
         var err = Math.abs(noise - target.noise);
         if (err < bestNoise) { bestNoise = err; bestBreath = breath; }
       }
-      var breaths = [0, 0.005, 0.016, 0.045, 0.12, 0.26];
+      var breaths = hasWide ? [0.012, 0.02, 0.036, 0.06, 0.11, 0.22] : [0, 0.005, 0.016, 0.045, 0.12, 0.26];
       breaths.forEach(tryBreath);
       var bi = breaths.indexOf(bestBreath);
       if (bi > 0) tryBreath(+(0.5 * (breaths[bi - 1] + breaths[bi])).toFixed(3));
       if (bi >= 0 && bi + 1 < breaths.length) tryBreath(+(0.5 * (breaths[bi] + breaths[bi + 1])).toFixed(3));
       t.breath = bestBreath;
     }
-    var eq = centers.map(function (hz) { return hd ? NSG.outEqDbAt(t.outEq, hz) : 0; });
+    var eq = centers.map(function () { return 0; });
     if (hd) {
       t[field] = eq;
       var reference = measure();
       var upperLevels = [];
       centers.forEach(function (hz, i) {
-        if (hz < 7500 || hz > Math.min(rate * 0.45, 18000) || !target.bands[i].length) return;
+        if (hz < 6500 || hz > Math.min(rate * 0.42, 13500) || !target.bands[i].length) return;
         upperLevels.push(median(target.bands[i]) - median(reference.bands[i]));
       });
-      // Use the voiced extension for broad level differences, leaving the
-      // frequency-dependent remainder for EQ. Keep a periodic core for dull recordings.
-      if (upperLevels.length >= 3) t.modeBHigh = +clamp(0.4 * Math.pow(10, median(upperLevels) / 20), 0.035, 1).toFixed(3);
+      // Use the voiced extension for broad 6.5-13.5 kHz level differences,
+      // avoiding >14 kHz Studio rolloff / MP3 cutoffs.
+      if (upperLevels.length >= 3) t.modeBHigh = +clamp(0.32 * Math.pow(10, median(upperLevels) / 24), 0.12, 0.65).toFixed(3);
     }
     var best = eq.slice(), bestError = Infinity, first;
-    for (var pass = 0; pass < 4; pass++) {
+    var maxPass = hd ? 6 : 4, eqMin = hd ? -40 : -40, eqMax = hd ? 15 : 24;
+    for (var pass = 0; pass < maxPass; pass++) {
       t[field] = eq;
       var have = measure(), total = 0, used = 0;
       var residual = centers.map(function (hz, i) {
@@ -1190,7 +1259,11 @@
         var middle = median(diffs), sum = 0;
         for (var j = 0; j < diffs.length; j++) sum += clamp(diffs[j] - middle, -9, 9);
         var d = middle + sum / diffs.length;
-        total += d * d; used++;
+        if (hd && hz > 13500) {
+          var hfTaper = Math.max(0.15, 1 - (hz - 13500) / 8000);
+          d *= hfTaper;
+        }
+        if (!hd || hz <= 13500) { total += d * d; used++; }
         return d;
       });
       var error = Math.sqrt(total / Math.max(1, used));
@@ -1203,7 +1276,7 @@
       for (var i = 0; i < count; i++) if (residual[i] === null) residual[i] = i ? residual[i - 1] : residual[firstValid];
       var smooth = boxSmooth(residual, 1);
       eq = eq.map(function (v, i) {
-        return +clamp(v + clamp(smooth[i] * 0.75, -12, 12), -40, 24).toFixed(2);
+        return +clamp(v + clamp(smooth[i] * 0.75, -12, 12), eqMin, eqMax).toFixed(2);
       });
       for (var k = 1; k < count; k++) eq[k] = +clamp(eq[k], eq[k - 1] - 6, eq[k - 1] + 6).toFixed(2);
     }
@@ -1222,6 +1295,10 @@
       for (var w = 0; w < opts.widePcm.length; w++)
         if (!Number.isFinite(opts.widePcm[w])) throw new Error('音频含无效采样');
     }
+    var hasWide = !!(opts && !opts.skipOutput && opts.widePcm);
+    var prevStudioModel = modelStudioMode;
+    modelStudioMode = hasWide;
+    try {
     var frames = voiceFrames(pcm);
     if (frames.length < 8) throw new Error('稳定浊音不足，请使用清晰独唱或朗读，避免伴奏和耳语');
     var train = frames.filter(function (_, i) { return i % 3 !== 1; });
@@ -1312,7 +1389,7 @@
       ['bwScale', 0.10, clamp(anchorBw * 0.82, 0.65, 1.55), clamp(anchorBw * 1.18, 0.72, 1.65)],
       ['hiShift', 0.03, 0.92, 1.15]
     ];
-    if (tailFrames.length >= 5) fullSpecs.push(['harmTailDb', 5, -30, 0]);
+    if (tailFrames.length >= 5) fullSpecs.push(['harmTailDb', 3, -24, -9]);
     for (var passD = 0; passD < 3; passD++) {
       var labelsD = matchFrames(train, t).labels;
       fullSpecs.forEach(function (s) {
@@ -1373,16 +1450,16 @@
     t.sourceEq = computeSourceEq(train, t, fitted.labels, 0.70);
     fitPitchTexture(pcm, train, t);
     var clarity = median(train.map(function (f) { return f.clarity; }));
-    t.breath = +clamp((1 - clarity) * 0.3, 0.005, 0.075).toFixed(3);
+    t.breath = +clamp((1 - clarity) * 0.3, hasWide ? 0.012 : 0.005, 0.075).toFixed(3);
     t.src = '多帧声源声道拟合 v2';
     var cal, abs, wide;
     if (!(opts && opts.skipOutput)) {
       cal = calibration(train, matchFrames(train, t).labels);
-      abs = calibrateEq(t, cal, pcm, SR, false);
+      abs = calibrateEq(t, cal, pcm, SR, false, hasWide);
       fitConsonants(pcm, t, cal);
       if (opts && opts.widePcm) {
         fitEffortProfile(opts.widePcm, opts.wideRate, train, fitted.labels, t);
-        wide = calibrateEq(t, cal, opts.widePcm, opts.wideRate, true);
+        wide = calibrateEq(t, cal, opts.widePcm, opts.wideRate, true, hasWide);
       }
     }
     var after = matchFrames(held, t), phones = {};
@@ -1397,6 +1474,9 @@
     }
     if (wide) { t.extraction.modeBDb0 = wide.before; t.extraction.modeBDb = wide.after; }
     return { timbre: t, diagnostics: t.extraction, frames: frames, labels: matchFrames(frames, t).labels };
+    } finally {
+      modelStudioMode = prevStudioModel;
+    }
   };
   A.extractFormants = function (pcm, sr, opts) {
     var r = A.extractTimbre(pcm, sr, opts), t = r.timbre, fm = NSG.formantsOf(NSG.PHONES.a, t);
