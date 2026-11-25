@@ -279,6 +279,31 @@
       range: [52, 76]
     },
     {
+      id: 'f3', name: '女声3', height: 168, gen: 66,
+      desc: '醇厚磁性女中音：胸腔饱满温润、丝绒近麦质感、深情从容',
+      consonantSoftness: 0.24,
+      nasalLowpassHz: 1900,
+      highVowelOpening: 0.44,
+      articMorph: 0.68,
+      modeBHigh: 0.28,
+      fs: 1.16, warp: 0.05, jit: 0.0016,
+      glot: 0.28,
+      bw: 1.04, hi: [3480, 4340, 5220], hiS: 1.00, lip: 0.01,
+      fRatio: [0.97, 1.04, 1.02],
+      bwRatio: [1.02, 1.00, 1.06],
+      vowelSpace: [0.96, 0.98],
+      slope: -12.1, harmTailDb: -15.6, tilt: -1.4, pitchTilt: 0.22, refF0: 245,
+      sourceEq: makeSourceEq(function (hz) {
+        return 1.6 * gaussOct(hz, 240, 0.65)
+          - 1.2 * gaussOct(hz, 510, 0.54)
+          + 1.5 * gaussOct(hz, 1750, 0.60)
+          + 0.9 * gaussOct(hz, 3100, 0.56)
+          - (hz > 5600 ? 1.8 * Math.min(1, Math.log2(hz / 5600) / 0.52) : 0);
+      }),
+      breath: 0.036, nasal: 0.045, vib: [5.0, 0.18, 0.32],
+      range: [50, 74]
+    },
+    {
       id: 'b1', name: '男孩1', height: 145, gen: 72,
       desc: '爽朗清脆男童声：少年感十足、结实洪亮、直音少颤',
       consonantSoftness: 0.20,
@@ -328,6 +353,32 @@
       modeBOutEq: makeModeBOutEq({ rollStart: 5600, rollDbOct: -5.0 }),
       breath: 0.03, nasal: 0.03, vib: [5.9, 0.07, 0.36],
       range: [62, 81]
+    },
+    {
+      id: 'a1', name: '外星人1', height: 158, gen: 48,
+      desc: '奇异空灵外星声线：非人声道共振、中空泛音、微颤电子沙感',
+      consonantSoftness: 0.12,
+      nasalLowpassHz: 3100,
+      highVowelOpening: 0.58,
+      articMorph: 0.72,
+      modeBHigh: 0.55,
+      fs: 1.12, warp: 0.24, jit: 0.0065,
+      glot: 0.36,
+      bw: 0.75, hi: [3450, 4150, 4750], hiS: 1.00, lip: 0.04,
+      fRatio: [0.85, 1.12, 1.08],
+      bwRatio: [0.86, 0.78, 0.82],
+      vowelSpace: [0.84, 1.18],
+      harm: [0, -14.0, -7.0, -20.0, -11.5, -24.0, -15.5, -27.0, -19.0, -29.5, -21.5, -31.5, -24.0, -33.5, -26.5, -35.0],
+      harmTailDb: -12.5, tilt: 0.6, pitchTilt: 0.35, refF0: 290,
+      sourceEq: makeSourceEq(function (hz) {
+        return 1.8 * gaussOct(hz, 380, 0.45)
+          - 3.2 * gaussOct(hz, 720, 0.48)
+          + 3.0 * gaussOct(hz, 2250, 0.42)
+          + 2.2 * gaussOct(hz, 4200, 0.44)
+          - (hz > 6000 ? 1.5 * Math.min(1, Math.log2(hz / 6000) / 0.45) : 0);
+      }),
+      breath: 0.048, nasal: 0.22, vib: [7.4, 0.26, 0.14],
+      range: [55, 84]
     }
   ];
 
