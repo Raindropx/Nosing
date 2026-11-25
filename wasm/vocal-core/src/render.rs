@@ -273,7 +273,7 @@ impl VocalEngine {
 
         let mut org_cycle_rnd = Mulberry32::new(0x94d049bb ^ seed_salt);
         let org_cycle_alpha = 1.0 - (-1.0 / (sr * 0.0015)).exp();
-        let org_jit_alpha = 1.0 - (-1.0 / (sr * if studio { 0.00065 } else { 0.0015 })).exp();
+        let org_jit_alpha = 1.0 - (-1.0 / (sr * if studio { 0.0011 } else { 0.0015 })).exp();
         let mut org_shim_cur = 1.0_f64;
         let mut org_shim_tgt = 1.0_f64;
         let mut org_jit_cur = 1.0_f64;
@@ -289,7 +289,7 @@ impl VocalEngine {
         let mut air_form_res = if studio && has_upper_air { Some(Resonator::new(false)) } else { None };
         let mut air_lp1 = 0.0_f64;
         let mut air_lp2 = 0.0_f64;
-        let air_lp_coef = (-2.0 * PI * if studio { 11200.0 } else { 13500.0 } / sr).exp();
+        let air_lp_coef = (-2.0 * PI * if studio { 14200.0 } else { 13500.0 } / sr).exp();
 
         let mut fry_parity: u32 = 0;
         let mut fry_gain_cur = 1.0_f64;
@@ -312,7 +312,7 @@ impl VocalEngine {
         let mut rad_y = 0.0_f64;
         let mut fric_rad_prev = 0.0_f64;
         let mut fric_rad_y = 0.0_f64;
-        let fric_rad_coef = (-2.0 * PI * 5400.0 / sr).exp();
+        let fric_rad_coef = (-2.0 * PI * 6800.0 / sr).exp();
         let mut br_lp1 = 0.0_f64;
         let mut br_lp2 = 0.0_f64;
         let breath_lp_coef = (-2.0 * PI * if studio { 5600.0 } else { 3400.0 } / sr).exp();
@@ -320,8 +320,8 @@ impl VocalEngine {
         let mut sib_air_lp1 = 0.0_f64;
         let mut sib_air_lp2 = 0.0_f64;
         let sib_air_hp_coef = (-2.0 * PI * 6200.0 / sr).exp();
-        let sib_air_lp_coef = (-2.0 * PI * 9600.0 / sr).exp();
-        let fu_w0 = 2.0 * PI * 11200.0 / sr;
+        let sib_air_lp_coef = (-2.0 * PI * 10600.0 / sr).exp();
+        let fu_w0 = 2.0 * PI * 13600.0 / sr;
         let fu_cw = fu_w0.cos();
         let fu_al = fu_w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
         let fu_a0 = 1.0 + fu_al;
@@ -336,7 +336,7 @@ impl VocalEngine {
         let mut fu_y2 = 0.0_f64;
         let mut breath_gate = 0.0_f64;
         let a_br_gate = 1.0 - (-1.0 / (sr * 0.003)).exp();
-        let mut cur_a_rad = (-2.0 * PI * 3800.0 / sr).exp();
+        let mut cur_a_rad = (-2.0 * PI * 4800.0 / sr).exp();
         let mut rad_step = 0.0_f64;
         let mut prev_burst_imp = 0.0_f64;
         let mut shock_env = 0.0_f64;
@@ -477,11 +477,11 @@ impl VocalEngine {
                     sn2.set(sr, hop_f, sub2_hz, 5.2, -(0.9 + 1.4 * sub_open_st) * humanize_amt, first);
                 }
                 if let Some(ref mut pn) = pharynx_notch {
-                    let px_st_hz = (4560.0 * (hum_pf_ref / 5200.0).powf(0.42)
+                    let px_st_hz = (4750.0 * (hum_pf_ref / 5200.0).powf(0.42)
                         + 0.08 * (pairs[0].0 - 500.0)
                         - 0.05 * (pairs[1].0 - 1500.0))
-                        .clamp(4050.0, 5150.0);
-                    pn.set(sr, hop_f, px_st_hz, 3.4, -4.5 * (0.45 + 0.55 * humanize_amt), first);
+                        .clamp(4200.0, 5250.0);
+                    pn.set(sr, hop_f, px_st_hz, 5.0, -2.6 * (0.45 + 0.55 * humanize_amt), first);
                 }
                 if let Some(ref mut hs) = hpc_shelf {
                     hs.set(sr, hop_f, pairs[5].0, first);
@@ -490,7 +490,7 @@ impl VocalEngine {
                     let fc_air = (4800.0 + 1.15 * pairs[1].0 - 1400.0 * c_lip).clamp(5200.0, 7600.0);
                     afr.set(&rc, fc_air, 6400.0, first);
                 }
-                let f_rad_st = (3400.0 + 2.2 * (pairs[0].0 - 400.0) - 2200.0 * c_lip).clamp(2600.0, 5200.0);
+                let f_rad_st = (4800.0 + 2.0 * (pairs[0].0 - 450.0) - 2000.0 * c_lip).clamp(3600.0, 6600.0);
                 let tgt_a_rad = (-2.0 * PI * f_rad_st / sr).exp();
                 if first {
                     cur_a_rad = tgt_a_rad;
@@ -513,7 +513,7 @@ impl VocalEngine {
             let f0_for_turb = if f0 > 0.0 { f0 } else { 200.0 };
             let low_turb_scale = (250.0 / f0_for_turb.max(120.0)).clamp(0.85, 1.28);
             let c_st_turb_gain = if studio {
-                (eff_breath * 0.042 + 0.0085 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.2 * c_abd) * (0.35 + 0.65 * c_asp_sc)
+                (eff_breath * 0.032 + 0.0068 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.2 * c_abd) * (0.35 + 0.65 * c_asp_sc)
             } else {
                 0.0
             };
@@ -627,12 +627,12 @@ impl VocalEngine {
                     if use_organic {
                         let og_eff = organic_amt * org_frame_gate;
                         if studio {
-                            let gci_jit_depth = 0.0044 * og_eff + if jit > 0.0 { jit * 1.9 } else { 0.0 };
+                            let gci_jit_depth = 0.0018 * og_eff + if jit > 0.0 { jit * 1.0 } else { 0.0 };
                             if og_eff > 1e-5 || gci_jit_depth > 1e-6 {
                                 let g_shim_st = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
                                 let g_jit_st = (org_cycle_rnd.next() + org_cycle_rnd.next() + org_cycle_rnd.next() - 1.5) * 2.0;
-                                org_shim_tgt = (1.0 + 0.023 * og_eff * g_shim_st).clamp(0.91, 1.09);
-                                org_jit_tgt = (1.0 + gci_jit_depth * g_jit_st).clamp(0.975, 1.025);
+                                org_shim_tgt = (1.0 + 0.020 * og_eff * g_shim_st).clamp(0.92, 1.08);
+                                org_jit_tgt = (1.0 + gci_jit_depth * g_jit_st).clamp(0.985, 1.015);
                             } else {
                                 org_shim_tgt = 1.0;
                                 org_jit_tgt = 1.0;

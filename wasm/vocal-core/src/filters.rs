@@ -146,7 +146,7 @@ impl Resonator {
             cw
         };
         let bw_c = (bw * (1.0 - 0.14 * ds)).max(30.0);
-        let bw_o = (bw * (1.0 + 0.90 * ds)).min(rc.sr * 0.28);
+        let bw_o = (bw * (1.0 + 0.65 * ds)).min(rc.sr * 0.28);
         let r_c = if valid { (-PI * bw_c / rc.sr).exp().min(0.998) } else { 0.0 };
         let r_o = if valid { (-PI * bw_o / rc.sr).exp().min(0.998) } else { 0.0 };
         if self.calibrated {
@@ -269,12 +269,12 @@ impl DynamicNotch {
 #[inline]
 pub fn hpc_coeffs(f6: f64, sr: f64) -> [f64; 5] {
     let f6_eff = if f6 > 0.0 { f6 } else { 5200.0 };
-    let fc = (3900.0 * (f6_eff / 5200.0)).clamp(3350.0, 4500.0);
-    let cap_a = 10.0_f64.powf(8.0 / 40.0);
+    let fc = (2850.0 * (f6_eff / 5200.0)).clamp(2500.0, 3450.0);
+    let cap_a = 10.0_f64.powf(12.5 / 40.0);
     let w0 = 2.0 * PI * fc / sr;
     let cw0 = w0.cos();
     let sw0 = w0.sin();
-    let alpha = sw0 / (2.0 * 0.64);
+    let alpha = sw0 / (2.0 * 0.56);
     let tsa = 2.0 * cap_a.sqrt() * alpha;
     let a0 = (cap_a + 1.0) - (cap_a - 1.0) * cw0 + tsa;
     [
