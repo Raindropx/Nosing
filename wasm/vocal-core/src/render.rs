@@ -562,7 +562,7 @@ impl VocalEngine {
                     shock_env = 1.0;
                     shock_phase = 0.0;
                     shock_is_affr = is_affr_burst;
-                    shock_amp = if shock_is_affr { (c_burst_gain * 0.90).min(0.14) } else { c_burst_gain.min(0.095) };
+                    shock_amp = if shock_is_affr { (c_burst_gain * 0.65).min(0.085) } else { (c_burst_gain * 0.70).min(0.060) };
                 }
                 prev_burst_imp = c_burst_imp;
             }
@@ -923,13 +923,12 @@ impl VocalEngine {
                         if shock_env > 0.01 {
                             let n_w = if shock_phase < 1.0 { (2.0 * PI * shock_phase).sin() * 1.35 } else { 0.0 };
                             if shock_phase < 1.0 { shock_phase += shock_phase_step; }
-                            let r_sp = noise.next();
-                            let spk = if r_sp < 0.09 { -1.6 } else if r_sp > 0.91 { 1.6 } else { 0.0 };
+                            let n_turb = noise.next() * 2.0 - 1.0;
                             if shock_is_affr {
-                                shock_in = shock_env * (n_w * 1.15 + (noise.next() * 2.0 - 1.0) * 1.15 + spk * 0.8);
+                                shock_in = shock_env * (n_w * 1.10 + n_turb * 0.65);
                                 shock_env *= shock_alpha_affr;
                             } else {
-                                shock_in = shock_env * (n_w + spk);
+                                shock_in = shock_env * (n_w + n_turb * 0.35);
                                 shock_env *= shock_alpha;
                             }
                         }
