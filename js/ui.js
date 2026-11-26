@@ -993,7 +993,7 @@
     composeStyle: 'pop', composeFullSong: false, composeCycleMode: 'group', composeIntroBars: 4, eyeSet: null, eyeSel: 0, eyeName: '',
     arrStyle: 'pop', arrSeed: 0, arrIntro: true, arrKit: true, arrSample: false, arrSampleAmt: 1, arrImprov: 50, arrMeter: 'auto', arrGridMode: 'auto', arrSpace: 'auto', arrChip: false, arrOffset: '',
     arrHuman: 1, arrSwing: 6, arrDensity: 1, arrExpression: 1, arrChordRate: 1, arrMood: 'auto', arrKey: 'auto', arrHalfBpm: false, arrTrackScope: 'all', tm: null,
-    tuneStyle: 'natural', tuneParts: { pit: true, vibrato: true, vel: true, effort: false },
+    tuneStyle: 'natural', tuneParts: { pit: true, vibrato: true, vel: true, effort: false, consonantSpeed: true },
     tuneSeed: Math.floor(Math.random() * 999999), tuneHuman: 60, tuneExpression: 100,
     title: ''
   };
@@ -7743,14 +7743,15 @@
   /* ---------------- 自动调教 ---------------- */
   function openAutoTune() {
     var T = NSG.TUNING, picked = roll.selected(), hasSelection = picked.length > 0;
-    var html = '<p class="eyehint">' + t('tune.intro', null, '根据音符衔接、实际时长和乐句位置生成调教。VEL 按当前音色合成并平衡发音响度。') + '</p>' +
+    var html = '<p class="eyehint">' + t('tune.intro', null, '根据音符衔接、发音长短、曲速与乐句位置生成调教。辅音速度随音长、曲速与音素自动适配；VEL 按当前音色合成并平衡发音响度。') + '</p>' +
       '<div class="cap2">' + t('tune.stylesCap', null, '调教风格') + '</div><div class="eyestyles" id="tuneStyles" role="group" aria-label="' + escAttr(t('tune.stylesCap', null, '调教风格')) + '"></div>' +
       '<div class="eyeout" id="tuneDescription"></div>' +
       '<fieldset class="tune-group"><legend>' + t('tune.itemsLegend', null, '调教项目') + '</legend><div class="tune-options">' +
       '<label><input type="checkbox" id="tunePit"> ' + t('tune.pit', null, 'PIT 音高曲线') + '</label>' +
       '<label><input type="checkbox" id="tuneVibrato"> ' + t('tune.vibrato', null, '颤音') + '</label>' +
       '<label><input type="checkbox" id="tuneVel"> ' + t('tune.vel', null, 'VEL 响度平衡') + '</label>' +
-      '<label><input type="checkbox" id="tuneEffort"> ' + t('tune.effort', null, '轻重') + '</label></div></fieldset>' +
+      '<label><input type="checkbox" id="tuneEffort"> ' + t('tune.effort', null, '轻重') + '</label>' +
+      '<label><input type="checkbox" id="tuneConsonantSpeed"> ' + t('tune.consonantSpeed', null, '辅音速度') + '</label></div></fieldset>' +
       '<div class="row2"><label class="lb" for="tuneExpression">' + t('tune.expr', null, '表现力') + '</label>' +
       '<input type="range" id="tuneExpression" min="0" max="150" step="1" value="' + state.tuneExpression + '" style="flex:1">' +
       '<span id="tuneExpressionVal" style="width:42px;text-align:right">' + state.tuneExpression + '%</span></div>' +
@@ -7779,6 +7780,7 @@
       if ($('#tuneVibrato', m.el).checked) parts.push(t('tune.partVib', null, '颤音'));
       if ($('#tuneVel', m.el).checked) parts.push(t('tune.partVel', null, 'VEL'));
       if ($('#tuneEffort', m.el).checked) parts.push(t('tune.effort', null, '轻重'));
+      if ($('#tuneConsonantSpeed', m.el).checked) parts.push(t('tune.partCons', null, '辅音速度'));
       go.disabled = tuningBusy || !count || !parts.length;
       $('#tuneSummary', m.el).textContent = !parts.length ? t('tune.needItem', null, '请至少勾选一项调教项目。') : !count ?
         t('tune.noTargets', null, '当前范围没有可调教的发声音符，请先铺音符、导入旋律或调整范围。') : t('tune.summary', { count: count, n: count, parts: parts.join('、') }, '将为 ' + count + ' 个发声音符生成 ' + parts.join('、') + '。');
@@ -7800,9 +7802,9 @@
       };
       styles.appendChild(b);
     });
-    ['pit', 'vibrato', 'vel', 'effort'].forEach(function (part) {
+    ['pit', 'vibrato', 'vel', 'effort', 'consonantSpeed'].forEach(function (part) {
       var input = $('#tune' + part.charAt(0).toUpperCase() + part.slice(1), m.el);
-      input.checked = state.tuneParts[part];
+      input.checked = !!state.tuneParts[part];
       input.onchange = function () { state.tuneParts[part] = this.checked; refresh(); };
     });
     $$('input[name="tuneScope"]', m.el).forEach(function (input) { input.onchange = refresh; });
@@ -7828,6 +7830,7 @@
         var result = await getRenderer().compute('tune', { score: state.score, trackIndex: activeVocalTrackIndex(),
           indices: targets().map(function (n) { var ix = noteIdxMap.get(n); return ix === undefined ? -1 : ix; }), options: { style: chosenStyle,
           pit: state.tuneParts.pit, vibrato: state.tuneParts.vibrato, vel: state.tuneParts.vel, effort: state.tuneParts.effort,
+          consonantSpeed: state.tuneParts.consonantSpeed,
           seed: state.tuneSeed, human: state.tuneHuman / 100, expression: state.tuneExpression / 100,
           timbre: state.timbre, rawSource: state.rawSrc, hd: state.hd,
           modeBFricWaveguide: state.hifiWaveguide, modeBHighPolish: state.hifiHighPolish } });

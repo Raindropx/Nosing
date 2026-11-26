@@ -1355,45 +1355,52 @@
   // fall (negative) or flip up (positive). Vibrato: depth/rate/maxLen/delay/delayRatio/fadeIn,
   // endBoost deepens phrase-final notes. kobushi: rolling turns early in a note (depth in
   // cents, turn = seconds per half turn) with placement probabilities for phrase ends, crests,
-  // falling steps and other notes of at least minSec; vibrato then starts after the turns. Vibrato goes on phrase-final notes; inside a phrase
-  // only notes of at least 0.9 s get it, with probability midVib.
+  // falling steps and other notes of at least minSec; vibrato then starts after the turns.
+  // consBias/consRange: consonant speed style offset (higher = shorter/crisper) and slowdown scale.
   var autoStyles = [
     { id: 'natural', name: '自然流行', tip: '有咬字起伏的同音回勾，先压后扬的滑入，旋律高点冲高回弹，长音渐入颤音。',
       glide: 0.12, lead: 0.4, prep: 12, over: 0.13, overMax: 40, ring: 0.4, settle: 0.06, scoop: 65, scoopProb: 0.6,
       repeat: 65, hook: 24,
       shakuri: 0.2, drift: 6, fall: -45, fallProb: 0.5, fallTime: 0.14,
-      depth: 32, rate: 5.4, maxLen: 60, delay: 0.28, delayRatio: 0.3, minVib: 0.4, midVib: 0.4, fadeIn: 35, endBoost: 1.25, vel: 96, accent: 5 },
+      depth: 32, rate: 5.4, maxLen: 60, delay: 0.28, delayRatio: 0.3, minVib: 0.4, midVib: 0.4, fadeIn: 35, endBoost: 1.25, vel: 96, accent: 5,
+      consBias: 0, consRange: 1.0 },
     { id: 'ballad', name: '温柔抒情', tip: '慢速连音与预备动作，句首深滑入，深而慢的颤音缓缓渐入，句尾柔和下落。',
       glide: 0.16, lead: 0.55, prep: 14, over: 0.05, overMax: 18, ring: 0.3, settle: 0.12, scoop: 60, scoopProb: 0.8,
       repeat: 45, hook: 30,
       shakuri: 0.35, drift: 9, fall: -90, fallProb: 0.75, fallTime: 0.22,
-      depth: 48, rate: 4.9, maxLen: 70, delay: 0.35, delayRatio: 0.38, minVib: 0.42, midVib: 0.6, fadeIn: 55, endBoost: 1.35, vel: 80, accent: 8 },
+      depth: 48, rate: 4.9, maxLen: 70, delay: 0.35, delayRatio: 0.38, minVib: 0.42, midVib: 0.6, fadeIn: 55, endBoost: 1.35, vel: 80, accent: 8,
+      consBias: -10, consRange: 1.08 },
     { id: 'bright', name: '明亮元气', tip: '快速跳音带明显过冲与回弹，常见抽音，快而浅的颤音，句尾上挑。',
       glide: 0.09, lead: 0.3, prep: 6, over: 0.16, overMax: 45, ring: 0.5, settle: 0.05, scoop: 45, scoopProb: 0.5,
       repeat: 90, hook: 45,
       shakuri: 0.45, drift: 4, fall: 35, fallProb: 0.55, fallTime: 0.09,
-      depth: 26, rate: 6.4, maxLen: 50, delay: 0.2, delayRatio: 0.25, minVib: 0.34, midVib: 0.3, fadeIn: 25, endBoost: 1.15, vel: 105, accent: 8 },
+      depth: 26, rate: 6.4, maxLen: 50, delay: 0.2, delayRatio: 0.25, minVib: 0.34, midVib: 0.3, fadeIn: 25, endBoost: 1.15, vel: 105, accent: 8,
+      consBias: 12, consRange: 0.92 },
     { id: 'rock', name: '强力摇滚', tip: '深回勾、先压后扬的抽音与冲高回落，宽而有力的颤音，句尾大幅甩落。',
       glide: 0.14, lead: 0.35, prep: 16, over: 0.22, overMax: 70, ring: 0.45, settle: 0.065, scoop: 170, scoopProb: 0.85,
       repeat: 150, hook: 70,
       shakuri: 0.5, drift: 12, fall: -220, fallProb: 0.7, fallTime: 0.18,
-      depth: 64, rate: 5.8, maxLen: 62, delay: 0.18, delayRatio: 0.22, minVib: 0.32, midVib: 0.5, fadeIn: 22, endBoost: 1.3, vel: 113, accent: 9 },
+      depth: 64, rate: 5.8, maxLen: 62, delay: 0.18, delayRatio: 0.22, minVib: 0.32, midVib: 0.5, fadeIn: 22, endBoost: 1.3, vel: 113, accent: 9,
+      consBias: 10, consRange: 0.90 },
     { id: 'electronic', name: '平直电子', tip: '直线瞬切音高，无颤音无过冲，类似硬修音的机械感，力度均衡。',
       glide: 0.014, lead: 0.5, prep: 0, over: 0, overMax: 0, ring: 0, settle: 0, scoop: 0, scoopProb: 0,
       repeat: 0, hook: 0,
       shakuri: 0, drift: 0, fall: 0, fallProb: 0, fallTime: 0, shape: 'l',
-      depth: 0, rate: 5.2, maxLen: 0, delay: 0, delayRatio: 0, minVib: 0, midVib: 0, fadeIn: 0, endBoost: 1, vel: 100, accent: 0 },
+      depth: 0, rate: 5.2, maxLen: 0, delay: 0, delayRatio: 0, minVib: 0, midVib: 0, fadeIn: 0, endBoost: 1, vel: 100, accent: 0,
+      consBias: 14, consRange: 0.45 },
     { id: 'enka', name: '演歌', tip: '浓重的转音连续回勾，句首深压后扬的抽音，宽而慢的颤音长时间摇曳，句尾深沉下落。',
       glide: 0.17, lead: 0.5, prep: 18, over: 0.12, overMax: 45, ring: 0.55, settle: 0.09, scoop: 150, scoopProb: 0.9,
       repeat: 110, hook: 60,
       kobushi: { depth: 130, turn: 0.085, end: 0.95, crest: 0.85, down: 0.75, mid: 0.4, minSec: 0.6 },
       shakuri: 0.7, drift: 10, fall: -160, fallProb: 0.8, fallTime: 0.24,
-      depth: 85, rate: 5.0, maxLen: 75, delay: 0.3, delayRatio: 0.35, minVib: 0.38, midVib: 0.75, fadeIn: 45, endBoost: 1.45, vel: 100, accent: 10 },
+      depth: 85, rate: 5.0, maxLen: 75, delay: 0.3, delayRatio: 0.35, minVib: 0.38, midVib: 0.75, fadeIn: 45, endBoost: 1.45, vel: 100, accent: 10,
+      consBias: -14, consRange: 1.12 },
     { id: 'da', name: '大', tip: '温和自然的音高过渡，高点明显上冲回弹与句中折返，约 4.7 Hz 宽润缓入的歌唱颤音，句尾柔和回落。',
       glide: 0.13, lead: 0.48, prep: 10, over: 0.18, overMax: 58, ring: 0.45, settle: 0.08, scoop: 55, scoopProb: 0.55,
       repeat: 50, hook: 48,
       shakuri: 0.38, drift: 8, fall: -100, fallProb: 0.65, fallTime: 0.18,
-      depth: 56, rate: 4.7, maxLen: 75, delay: 0.20, delayRatio: 0.22, minVib: 0.36, midVib: 0.55, fadeIn: 50, endBoost: 1.32, vel: 94, accent: 8 }
+      depth: 56, rate: 4.7, maxLen: 75, delay: 0.20, delayRatio: 0.22, minVib: 0.36, midVib: 0.55, fadeIn: 50, endBoost: 1.32, vel: 94, accent: 8,
+      consBias: -5, consRange: 1.02 }
   ];
   // Per-note random stream keyed by seed and note id, so a take is reproducible and
   // retuning a selection does not reshuffle untouched notes.
@@ -1500,10 +1507,13 @@
     var block = Math.round(audio.sr * 0.02);
     var bleed = Math.round(audio.sr * 0.03);
     var records = voiced.map(function (n, index) {
-      var begin = Math.max(0, Math.round(tm.secOf(n.start) * audio.sr));
-      var end = Math.min(audio.pcm.length, Math.round(tm.secOf(n.start + n.dur) * audio.sr));
+      var startSec = tm.secOf(n.start);
+      var endSec = tm.secOf(n.start + n.dur);
+      var noteDur = Math.max(0.001, endSec - startSec);
+      var begin = Math.max(0, Math.round(startSec * audio.sr));
+      var end = Math.min(audio.pcm.length, Math.round(endSec * audio.sr));
       var prev = voiced[index - 1];
-      var follows = prev && Math.abs(tm.secOf(prev.start + prev.dur) - tm.secOf(n.start)) < 1e-6;
+      var follows = prev && Math.abs(tm.secOf(prev.start + prev.dur) - startSec) < 0.015;
       var from = follows && consonantOnset(n, score.lang, score.phonemizer) && end - begin > bleed * 4 ? begin + bleed : begin;
       var sum = 0, windows = [];
       for (var i = from; i < end; i += block) {
@@ -1516,23 +1526,33 @@
       // Sustained level plus a short-window guard catches conspicuous consonants.
       var body = windows.length ? windows[Math.floor((windows.length - 1) * 0.7)] : 0;
       var peak = windows.length ? windows[windows.length - 1] : 0;
-      return { note: n, level: Math.max(rms, body, peak * 0.65) };
+      return { note: n, dur: noteDur, level: Math.max(rms, body, peak * 0.65) };
     });
     var levels = records.map(function (r) { return r.level; }).filter(function (v) { return v > 1e-9; })
       .sort(function (a, b) { return a - b; });
     if (!levels.length) return false;
     var reference = levels[Math.floor((levels.length - 1) / 2)];
-    var maxRequested = 0;
+    var maxRequested = 0, reqValues = [];
     records.forEach(function (r, index) {
       var n = r.note;
       if ((targets && !targets.has(n)) || r.level < 1e-9) return;
       var target = reference * (pass.contour ? contour[index] : 1);
-      var correction = clamp(20 * Math.log10(target / r.level) * pass.damp, -18, 12);
+      var maxBoost = r.dur < 0.10 ? 5.5 : r.dur < 0.16 ? 7.5 : 12;
+      var correction = clamp(20 * Math.log10(target / r.level) * pass.damp, -18, maxBoost);
       r.requested = n.vel * Math.pow(10, correction / 20);
       maxRequested = Math.max(maxRequested, r.requested);
+      if (r.dur >= 0.16) reqValues.push(r.requested);
     });
     var wholeTrack = state.forceWholeTrack !== undefined ? state.forceWholeTrack : records.every(function (r) { return !targets || targets.has(r.note); });
-    var trim = wholeTrack && maxRequested > 127 ? 127 / maxRequested : 1;
+    // Prevent a single ultra-short quiet syllable from dragging the entire track's VEL (and Studio Mode Rd colour) down.
+    var trimRef = maxRequested;
+    if (reqValues.length >= 4) {
+      reqValues.sort(function (a, b) { return a - b; });
+      trimRef = reqValues[Math.floor((reqValues.length - 1) * 0.9)];
+    } else if (reqValues.length > 0) {
+      trimRef = Math.max.apply(null, reqValues);
+    }
+    var trim = wholeTrack && trimRef > 127 ? clamp(127 / trimRef, 0.72, 1) : 1;
     records.forEach(function (r) {
       if (r.requested === undefined) return;
       r.note.vel = Math.round(clamp(r.requested * trim, 8, 127));
@@ -1606,6 +1626,197 @@
     return 1 + clamp(best, -1, 1);
   }
 
+  function phoneBaseDurMs(id) {
+    var p = NSG.phoneOf ? NSG.phoneOf(id) : null;
+    if (!p) return 70;
+    var base = p.dur || (NSG.PHONES && NSG.PHONES.__DUR && NSG.PHONES.__DUR[p.t]) || 70;
+    return base * (p.t === 'F' ? 1.18 : p.t === 'A' ? 1.15 : 1);
+  }
+
+  function consonantProfileOf(phones, noteLang) {
+    var empty = {
+      onsetCount: 0, codaCount: 0, innerConsCount: 0,
+      onsetMs: 0, codaMs: 0, innerConsMs: 0,
+      hasConsonant: false, hasVoicelessObs: false,
+      hasHeavyFricOrAffr: false, hasAspStop: false,
+      onlyShortCrisp: false, onlySonorant: false,
+      hasNasalCoda: false, hasObsCoda: false
+    };
+    if (!phones || !phones.length || !NSG.phoneOf) return empty;
+    var firstV = -1, lastV = -1;
+    for (var i = 0; i < phones.length; i++) {
+      var ph = NSG.phoneOf(phones[i]);
+      if (ph.t === 'V' || ph.syllabic) {
+        if (firstV < 0) firstV = i;
+        lastV = i;
+      }
+    }
+    if (firstV < 0) {
+      // Pure syllabic consonant (e.g. m / ng / N_j / cl): treat single phone as nucleus, no scaling needed.
+      if (phones.length <= 1) return empty;
+      firstV = lastV = phones.length - 1;
+    }
+    var isMandarinLike = noteLang === 'zh' || noteLang === 'zh-x-sichuan';
+    var onsetCount = 0, codaCount = 0, innerConsCount = 0;
+    var onsetMs = 0, codaMs = 0, innerConsMs = 0;
+    var hasVoicelessObs = false, hasHeavyFricOrAffr = false, hasAspStop = false;
+    var allShortCrisp = true, allSonorant = true;
+    var hasNasalCoda = false, hasObsCoda = false;
+
+    for (var k = 0; k < phones.length; k++) {
+      var id = phones[k], p = NSG.phoneOf(id);
+      if (p.t === 'V' || p.t === 'B' || p.t === 'R') continue;
+      if (k === firstV && k === lastV && p.syllabic) continue;
+      var ms = phoneBaseDurMs(id);
+      if (k < firstV) {
+        onsetCount++;
+        onsetMs += ms;
+        var voicedFric = !!(p.na && p.na.v);
+        if ((p.t === 'S' || p.t === 'A' || p.t === 'F') && !voicedFric) hasVoicelessObs = true;
+        if ((p.t === 'F' && ms >= 120) || (p.t === 'A' && ms >= 130)) hasHeavyFricOrAffr = true;
+        if (p.t === 'S' && (p.asp || ms >= 85)) hasAspStop = true;
+        var isShortCrisp = (p.t === 'S' && !p.asp && ms <= 65) || p.t === 'T' || p.t === 'Q';
+        if (!isShortCrisp) allShortCrisp = false;
+        if (p.t !== 'N' && p.t !== 'L' && p.t !== 'G') allSonorant = false;
+      } else if (k > lastV) {
+        codaCount++;
+        if (isMandarinLike && (id === 'n' || id === 'ng')) ms = id === 'n' ? 105 : 125;
+        codaMs += ms;
+        if (p.t === 'N') hasNasalCoda = true;
+        if (p.t === 'F' || p.t === 'S' || p.t === 'A') hasObsCoda = true;
+      } else {
+        innerConsCount++;
+        innerConsMs += ms;
+      }
+    }
+    var hasConsonant = onsetCount > 0 || codaCount > 0 || innerConsCount > 0;
+    return {
+      onsetCount: onsetCount, codaCount: codaCount, innerConsCount: innerConsCount,
+      onsetMs: onsetMs, codaMs: codaMs, innerConsMs: innerConsMs,
+      hasConsonant: hasConsonant,
+      hasVoicelessObs: hasVoicelessObs,
+      hasHeavyFricOrAffr: hasHeavyFricOrAffr,
+      hasAspStop: hasAspStop,
+      onlyShortCrisp: onsetCount === 1 && allShortCrisp,
+      onlySonorant: onsetCount > 0 && allSonorant,
+      hasNasalCoda: hasNasalCoda,
+      hasObsCoda: hasObsCoda
+    };
+  }
+
+  function resolveNotePhonemeProfiles(sorted, lang, phonemizer) {
+    var resolved = null;
+    if (NSG.phonemizeNotes) {
+      try { resolved = NSG.phonemizeNotes(sorted, lang, phonemizer); } catch (e) { resolved = null; }
+    }
+    var byId = null;
+    if (resolved && resolved.length === sorted.length) {
+      byId = Object.create(null);
+      for (var r = 0; r < resolved.length; r++) {
+        if (resolved[r].id !== undefined) byId[resolved[r].id] = resolved[r];
+      }
+    }
+    return sorted.map(function (n, idx) {
+      if (!hasPitch(n)) return consonantProfileOf(null, lang);
+      var rn = (resolved && resolved.length === sorted.length)
+        ? (n.id !== undefined && byId && byId[n.id] ? byId[n.id] : resolved[idx])
+        : null;
+      var noteLang = (rn && rn.lang) || n.noteLang || phonemizer || n.lang || lang || 'zh';
+      var phones = (rn && rn.phones && rn.phones.length) ? rn.phones
+        : (n.phones && n.phones.length ? n.phones : null);
+      if (!phones && NSG.g2p) {
+        var syl = NSG.g2p(n.slur ? 'a' : (n.lyric || ''), noteLang);
+        phones = syl.length ? syl[0].phones : null;
+      }
+      return consonantProfileOf(phones, noteLang);
+    });
+  }
+
+  function computeAutoConsonantSpeed(info, ctx, style, expression, human, rnd) {
+    if (ctx.isSlurCont || !info || !info.hasConsonant) return 100;
+    var dur = Math.max(0.04, ctx.chainDur);
+    var bpm = clamp(ctx.localBpm || 120, 45, 260);
+    var isElec = style.id === 'electronic';
+
+    // 1) Tempo adaptation around 120 BPM: faster songs tighten articulation, slower songs broaden it.
+    var bpmLog = Math.log2(bpm / 120);
+    var bpmShift = clamp(22 * bpmLog, -26, 26);
+
+    // 2) Pronunciation duration adaptation around 0.36 s: asymmetric so short notes stay crisp & on-beat
+    // while long sustained notes only broaden tastefully without dragging.
+    var durLog = Math.log2(clamp(dur, 0.055, 1.6) / 0.36);
+    var durShift = durLog < 0 ? clamp(-30 * durLog, 0, 62) : clamp(-13 * durLog, -24, 0);
+
+    // 3) Neighbouring timing room: protect short preceding vowels from heavy onset borrowing;
+    // relax gently when an open phrase start has ample pre-beat silence.
+    var neighborShift = 0;
+    if (info.onsetCount > 0) {
+      if (!ctx.phraseStart && ctx.gapPrevSec < 0.065 && ctx.prevDur < 0.26) {
+        var tight = clamp((0.26 - ctx.prevDur) / 0.18, 0, 1);
+        var weightScale = clamp(info.onsetMs / 95, 0.55, 1.45);
+        neighborShift += 16 * tight * weightScale;
+      } else if (ctx.phraseStart && ctx.gapPrevSec >= 0.12 && dur >= 0.26 && !isElec) {
+        var openRoom = clamp((dur - 0.24) / 0.36, 0, 1);
+        var openRelax = info.onlySonorant ? 10 : info.hasHeavyFricOrAffr ? 4 : 7;
+        neighborShift -= openRelax * openRoom * (0.4 + 0.6 * Math.min(1, expression));
+      }
+    }
+
+    // 4) Phoneme class & cluster weight: compress onset clusters, heavy fricatives/affricates on short notes,
+    // and codas that compete for the 55% internal consonant budget.
+    var phoneShift = 0;
+    if (info.onsetCount >= 2 && dur < 0.45) {
+      phoneShift += clamp((info.onsetCount - 1) * 10 * clamp((0.48 - dur) / 0.32, 0.25, 1), 0, 22);
+    }
+    if (info.codaCount > 0 || info.innerConsCount > 0) {
+      var inRatio = (info.codaMs + info.innerConsMs) / 1000 / Math.max(0.05, dur);
+      if (inRatio > 0.26) {
+        phoneShift += clamp((inRatio - 0.26) * 58, 0, 26);
+      } else if (ctx.phraseEnd && dur >= 0.55 && info.hasNasalCoda && !info.hasObsCoda && !info.hasHeavyFricOrAffr && !isElec) {
+        phoneShift -= 5 * Math.min(1, expression);
+      }
+    }
+    if ((info.hasHeavyFricOrAffr || info.hasAspStop) && dur < 0.28) {
+      phoneShift += clamp((0.28 - dur) / 0.20, 0, 1) * (info.hasHeavyFricOrAffr ? 12 : 8);
+    }
+    if (info.onlySonorant && dur >= 0.42 && !isElec) {
+      phoneShift -= clamp((dur - 0.42) / 0.55, 0, 1) * 7 * Math.min(1.2, expression);
+    }
+
+    // 5) Style articulation character and musical phrasing emphasis.
+    var styleShift = (style.consBias || 0) * (isElec ? 1 : (0.35 + 0.65 * Math.min(1.25, expression)));
+    if (!isElec && expression > 0) {
+      var eCap = Math.min(1.2, expression);
+      if (dur >= 0.30) {
+        if (ctx.crest) styleShift -= 6 * eCap;
+        else if (ctx.beatAccent > 0.7) styleShift -= 4 * eCap;
+      } else if (dur < 0.24 && !ctx.crest && ctx.beatAccent < 0) {
+        styleShift += 5 * Math.min(1, expression);
+      }
+      if (ctx.phraseEnd && dur >= 0.50) styleShift -= 4 * eCap;
+    }
+
+    var rawOffset = bpmShift + durShift + neighborShift + phoneShift + styleShift;
+    var range = style.consRange !== undefined ? style.consRange : 1;
+    if (rawOffset < 0) rawOffset *= range;
+
+    // 6) Acoustic safety bounds per consonant class with smooth soft-knee compression
+    // so short stops/taps stay audible, sibilants never drag into hiss, and fast/slow tempos
+    // keep clear gradation without premature flat-topping.
+    var minSpeed = info.hasHeavyFricOrAffr ? 72 : info.onlyShortCrisp ? 70 : info.onlySonorant ? 56 : 64;
+    var maxSpeed = (info.onlyShortCrisp && info.codaCount === 0) ? 142
+      : (info.onlySonorant && info.codaCount === 0) ? 162 : 184;
+    var limit = rawOffset >= 0 ? (maxSpeed - 100) : (100 - minSpeed);
+    var absOff = Math.abs(rawOffset), knee = limit * 0.65;
+    if (limit > 0 && absOff > knee) {
+      var head = limit - knee;
+      absOff = knee + head * Math.tanh((absOff - knee) / Math.max(1, head * 1.4));
+      rawOffset = rawOffset >= 0 ? absOff : -absOff;
+    }
+    var micro = isElec ? 0 : (rnd() * 2 - 1) * 5 * human;
+    return consonantSpeed(clamp(Math.round(100 + rawOffset + micro), minSpeed, maxSpeed));
+  }
+
   // Mutate only requested fields on the supplied target notes. All notes provide
   // phrase/transition context, including unselected notes and rests.
   // options.seed picks a take (same seed = same result); options.human (0–1) scales the
@@ -1618,34 +1829,92 @@
     var sorted = notes.slice().sort(function (a, b) { return a.start - b.start; });
     var tm = NSG.TEMPO.map(score), model = pitchModel(sorted), count = 0;
     var pit = options.pit !== false, vib = options.vibrato !== false, vel = options.vel !== false;
+    var effort = options.effort === true, consSpeed = options.consonantSpeed === true;
     var seed = Math.floor(value(options.seed, 0)), human = clamp(value(options.human, 0.6), 0, 1);
     var expression = clamp(value(options.expression, 1), 0, 1.5);
-    var effort = options.effort === true;
-    if (!pit && !vib && !vel && !effort) return 0;
+    if (!pit && !vib && !vel && !effort && !consSpeed) return 0;
     var track = options.track || (score && Array.isArray(score.tracks)
       ? score.tracks.filter(function (t) { return t && t.notes === notes; })[0]
       : null);
     if (!track && Number.isInteger(options.trackIndex) && score && Array.isArray(score.tracks)) {
       track = score.tracks[options.trackIndex] || null;
     }
+    var effLang = options.lang || (track && track.lang) || (score && score.lang) || 'zh';
+    var effPh = options.phonemizer !== undefined ? options.phonemizer
+      : (track && track.phonemizer !== undefined ? track.phonemizer : (score && score.phonemizer));
+    var profiles = (pit || consSpeed) ? resolveNotePhonemeProfiles(sorted, effLang, effPh) : null;
+
+    // Precompute timing, local tempo, slur-chain spans, and musical phrase arches across all notes.
+    var contexts = new Array(sorted.length);
+    for (var ci = 0; ci < sorted.length; ci++) {
+      var cn = sorted[ci], cPrev = sorted[ci - 1], cNext = sorted[ci + 1];
+      var cBegin = tm.secOf(cn.start);
+      var cEnd = tm.secOf(cn.start + cn.dur);
+      var cDur = Math.max(0.001, cEnd - cBegin);
+      var localBpm = tm.bpmAt ? tm.bpmAt(cn.start) : clamp(value(score && score.tempo, 120), 40, 260);
+      var joinedPrev = adjacent(cPrev, cn);
+      var gapPrevSec = (cPrev && hasPitch(cPrev)) ? Math.max(0, cBegin - tm.secOf(cPrev.start + cPrev.dur)) : Infinity;
+      var gapNextSec = (cNext && hasPitch(cNext)) ? Math.max(0, tm.secOf(cNext.start) - cEnd) : Infinity;
+      var truePhraseStart = !cPrev || !hasPitch(cPrev) || gapPrevSec >= 0.08;
+      var truePhraseEnd = !cNext || !hasPitch(cNext) || gapNextSec >= 0.08;
+      var beatPos = ((cn.start % 4) + 4) % 4;
+      var beatAccent = beatPos < 0.02 ? 1 : Math.abs(beatPos - 2) < 0.02 ? 0.5 : -0.35;
+      var prevDur = (cPrev && hasPitch(cPrev)) ? Math.max(0.001, tm.secOf(cPrev.start + cPrev.dur) - tm.secOf(cPrev.start)) : 0;
+      var crest = hasPitch(cn) && !truePhraseStart && cPrev && hasPitch(cPrev) && cn.pitch > cPrev.pitch &&
+        (truePhraseEnd || (cNext && hasPitch(cNext) && cn.pitch >= cNext.pitch));
+      contexts[ci] = {
+        begin: cBegin, end: cEnd, duration: cDur, chainDur: cDur,
+        localBpm: localBpm, joined: joinedPrev,
+        isSlurCont: connected(cPrev, cn), isSlurLast: !connected(cn, cNext),
+        gapPrevSec: gapPrevSec, gapNextSec: gapNextSec,
+        phraseStart: truePhraseStart, phraseEnd: truePhraseEnd,
+        prevDur: prevDur, beatAccent: beatAccent, crest: crest, pitchRel: 0.5
+      };
+    }
+    // Resolve slur-chain full durations and per-phrase melodic height ratios.
+    for (var si = 0; si < sorted.length; si++) {
+      if (!hasPitch(sorted[si]) || contexts[si].isSlurCont) continue;
+      var sEndIdx = si;
+      while (sEndIdx + 1 < sorted.length && contexts[sEndIdx + 1].isSlurCont) sEndIdx++;
+      var fullChainDur = Math.max(0.001, contexts[sEndIdx].end - contexts[si].begin);
+      for (var sk = si; sk <= sEndIdx; sk++) contexts[sk].chainDur = fullChainDur;
+    }
+    for (var pf = 0; pf < sorted.length;) {
+      if (!hasPitch(sorted[pf])) { pf++; continue; }
+      var pe = pf;
+      var pMin = sorted[pf].pitch, pMax = sorted[pf].pitch;
+      while (pe + 1 < sorted.length && hasPitch(sorted[pe + 1]) && !contexts[pe + 1].phraseStart) {
+        pe++;
+        if (sorted[pe].pitch < pMin) pMin = sorted[pe].pitch;
+        if (sorted[pe].pitch > pMax) pMax = sorted[pe].pitch;
+      }
+      var pSpan = Math.max(4, pMax - pMin);
+      for (var pk = pf; pk <= pe; pk++) contexts[pk].pitchRel = (sorted[pk].pitch - pMin) / pSpan;
+      pf = pe + 1;
+    }
+
     var effortLevels = effort && expression ? effortCalibration(sorted, targets, options) : null;
     var trackPit = pit && track ? pitPoints(track.pit) : [];
     sorted.forEach(function (n, i) {
       if ((targets && !targets.has(n)) || !hasPitch(n)) return;
       var prev = sorted[i - 1], next = sorted[i + 1];
-      var begin = tm.secOf(n.start), duration = Math.max(0.001, tm.secOf(n.start + n.dur) - begin);
-      var phraseEnd = !adjacent(n, next), phraseStart = !adjacent(prev, n);
+      var ctx = contexts[i];
+      var info = profiles ? profiles[i] : null;
+      var begin = ctx.begin, duration = ctx.duration;
+      var phraseEnd = ctx.phraseEnd, phraseStart = ctx.phraseStart;
+      var tempoTimeScale = clamp(Math.pow(120 / clamp(ctx.localBpm, 45, 260), 0.45), 0.68, 1.38);
+      var durClarity = clamp((duration - 0.07) / 0.17, 0.15, 1);
       var key = String(n.id !== undefined ? n.id : i);
       var rnd = noteRandom(seed, key + ':tail');
       function vary(x, amount) { return x * (1 + (rnd() * 2 - 1) * amount * human); }
       function chance(p) { var x = rnd(); return human ? x < p : p >= 0.5; }
       function at(sec) { return tm.beatOf(begin + sec) - n.start; }
       var tail = phraseEnd && !!style.fall && duration > 0.22 && chance(style.fallProb);
-      var fallSec = tail ? Math.min(vary(style.fallTime, 0.3), duration * 0.35) : 0;
+      var fallSec = tail ? Math.min(vary(style.fallTime * tempoTimeScale, 0.3), duration * 0.35) : 0;
       var bodyEnd = duration - fallSec;
       // A local melodic crest gets a stronger arrival; a held syllable does not get
       // the same re-attack as a new lyric at the same pitch.
-      var crest = !phraseStart && n.pitch > prev.pitch && (phraseEnd || n.pitch >= next.pitch);
+      var crest = ctx.crest;
       var emphasis = crest ? 1.2 : 1;
       // Kobushi goes where enka singers use it: phrase-final sustains, melodic crests and
       // falling steps; other long notes only with randomness. Never on same-pitch holds.
@@ -1653,9 +1922,10 @@
       var kob = null;
       if (style.kobushi && expression > 0 && !(n.slur && prev && prev.pitch === n.pitch)) {
         var K = style.kobushi, krnd = noteRandom(seed, key + ':kobushi');
-        var falling = !phraseStart && n.pitch < prev.pitch;
+        var falling = !phraseStart && prev && hasPitch(prev) && n.pitch < prev.pitch;
         var kp = phraseEnd ? K.end : crest ? K.crest : falling ? K.down : K.mid, kx = krnd();
-        var kStart = Math.min(0.32, duration * 0.35), turnSec = K.turn * (1 + (krnd() * 2 - 1) * 0.2 * human);
+        var kStart = Math.min(0.32 * tempoTimeScale, duration * 0.35);
+        var turnSec = K.turn * clamp(tempoTimeScale, 0.82, 1.18) * (1 + (krnd() * 2 - 1) * 0.2 * human);
         var turns = Math.min(phraseEnd || crest ? 3 : 2, Math.floor((bodyEnd - kStart - 0.15) / (turnSec * 2)));
         if (duration >= K.minSec && turns >= 1 && (human ? kx < kp : kp >= 0.5))
           kob = { start: kStart, turns: turns, sec: turnSec, end: kStart + (turns * 2 + 1) * turnSec,
@@ -1663,7 +1933,7 @@
       }
       if (pit) {
         rnd = noteRandom(seed, key + ':pit');
-        var joined = adjacent(prev, n), shape = style.shape || 's', pts = [], basePts = [];
+        var joined = ctx.joined, shape = style.shape || 's', pts = [], basePts = [];
         var add = function (x, cents) {
           if (x > n.dur + 1e-9 || (pts.length && x <= pts[pts.length - 1][0] + 1e-4)) return;
           pts.push([x, clamp(cents, -2400, 2400) + 0, shape]);
@@ -1671,8 +1941,12 @@
         var cursor;
         if (joined) {
           var d = (n.pitch - prev.pitch) * 100, dir = d > 0 ? 1 : d < 0 ? -1 : 0, size = Math.min(1, Math.abs(d) / 700);
-          var glide = vary(style.glide * (0.75 + 0.5 * size), 0.3), lead = clamp(vary(style.lead, 0.35), 0.1, 0.8);
-          var prevSec = begin - tm.secOf(prev.start);
+          var slurGlideMul = ctx.isSlurCont && dir ? 1.25 : 1;
+          var glide = vary(style.glide * tempoTimeScale * slurGlideMul * (0.75 + 0.5 * size), 0.3);
+          // Voiceless obstruents interrupt phonation across the boundary; place slightly less glide before the beat.
+          var leadBase = style.lead * (info && info.hasVoicelessObs && !ctx.isSlurCont ? 0.72 : 1);
+          var lead = clamp(vary(leadBase, 0.35), 0.1, 0.8);
+          var prevSec = ctx.prevDur || (begin - tm.secOf(prev.start));
           var before = Math.max(0.0001, Math.min(glide * lead, prevSec * 0.4));
           var after = Math.max(0.0001, Math.min(glide * (1 - lead), bodyEnd * 0.35));
           var span = n.start - tm.beatOf(begin - before);
@@ -1683,24 +1957,27 @@
           var afterBeat = Math.min(n.dur, Math.max(0.0001, at(after)));
           basePts.push([afterBeat, 0, shape]);
           // Preparation: a small move against the leap direction before it starts.
-          var prep = vary(style.prep * (0.5 + size), 0.5) * expression;
-          if (dir && prep > 0.5 && before > 0.03) add(-span * 0.4, from - dir * prep);
+          var prevClarity = clamp((prevSec - 0.08) / 0.16, 0.2, 1);
+          var prep = vary(style.prep * (0.5 + size), 0.5) * expression * prevClarity;
+          if (dir && prep > 0.5 && before > 0.03 && !ctx.isSlurCont) add(-span * 0.4, from - dir * prep);
           // Reserve the stable body and release even on fast, very short notes.
-          var settle = Math.min(vary(style.settle, 0.35), (bodyEnd - after) * 0.3);
+          var settle = Math.min(vary(style.settle * tempoTimeScale, 0.35), (bodyEnd - after) * 0.3);
           if (!dir) {
-            var dip = connected(prev, n) ? 0 : vary(style.repeat, 0.35) * expression * Math.min(1, duration / 0.18);
+            var dip = ctx.isSlurCont ? 0 : vary(style.repeat, 0.35) * expression * durClarity;
             add(at(after * 0.85), -dip);
             add(at(after + settle), dip * 0.15);
             add(at(after + settle * 2), 0);
           } else {
-            if (dir > 0 && chance(style.shakuri)) {
+            var allowShakuri = dir > 0 && duration >= 0.18 && (!ctx.isSlurCont || (d >= 500 && duration >= 0.24));
+            if (allowShakuri && chance(style.shakuri)) {
               // Two-stage arrival: hold below target, then snap upward.
-              // Scale the hold with both interval and style; never overshoot the source pitch.
-              var hold = Math.min(vary(style.scoop * 0.8 + Math.abs(d) * 0.12, 0.3) * expression, Math.abs(d) * 0.8);
+              // Scale the hold with both interval, duration clarity and style; never overshoot the source pitch.
+              var hold = Math.min(vary(style.scoop * 0.8 + Math.abs(d) * 0.12, 0.3) * expression * durClarity, Math.abs(d) * 0.8);
               add(at(after * 0.3), -hold);
               add(at(after * 0.68), -hold * 0.9);
             }
-            var os = dir * Math.min(vary(Math.abs(d) * style.over, 0.4), style.overMax) * expression * emphasis;
+            var osMul = (ctx.isSlurCont ? 0.65 : 1) * durClarity;
+            var os = dir * Math.min(vary(Math.abs(d) * style.over, 0.4), style.overMax) * expression * emphasis * osMul;
             add(at(after), os);
             if (os) {
               add(at(after + settle), -os * vary(style.ring, 0.4));
@@ -1709,10 +1986,13 @@
           }
           cursor = after + settle * 2;
         } else {
-          var scoopAmt = (chance(style.scoopProb) ? vary(style.scoop, 0.4) : vary(style.scoop * 0.25, 0.5)) * expression;
-          var rise = Math.max(0.006, Math.min(vary(style.glide * 1.1, 0.3), bodyEnd * 0.35));
+          // Tiny non-adjacent articulation gaps inside a phrase get a lighter re-attack scoop than true phrase starts.
+          var microGapScale = phraseStart ? 1 : 0.45;
+          var scoopAmt = (chance(style.scoopProb) ? vary(style.scoop, 0.4) : vary(style.scoop * 0.25, 0.5)) *
+            expression * durClarity * microGapScale;
+          var rise = Math.max(0.006, Math.min(vary(style.glide * tempoTimeScale * (phraseStart ? 1.1 : 0.78), 0.3), bodyEnd * 0.35));
           rise = Math.min(rise, bodyEnd * 0.35);
-          var settleIn = Math.min(vary(style.settle, 0.35), (bodyEnd - rise) * 0.3);
+          var settleIn = Math.min(vary(style.settle * tempoTimeScale, 0.35), (bodyEnd - rise) * 0.3);
           var defSpan = Math.min(0.16, n.dur * 0.35);
           basePts.push([0, 0, shape]);
           basePts.push([defSpan, 0, shape]);
@@ -1736,22 +2016,22 @@
             add(at(k0 + kob.sec * (2 * t + 2)), -kob.depth * 0.45 * decay);
           }
           if (fit > 0) { cursor = k0 + kob.sec * (2 * fit + 1); add(at(cursor), 0); }
-        } else if (style.hook && !n.slur && bodyEnd - cursor > 0.24) {
+        } else if (style.hook && !n.slur && bodyEnd - cursor > 0.24 * tempoTimeScale) {
           var room = bodyEnd - cursor, hook = vary(style.hook, 0.4) * expression * emphasis;
           add(at(cursor + room * 0.38), -hook * 0.55);
           add(at(cursor + room * 0.72), hook * 0.35);
           cursor += room * 0.72;
         }
         // Sustain wander: a slow, irregular sag or lift instead of a ruler-straight line.
-        if (style.drift && bodyEnd - cursor > 0.3) {
-          var room = bodyEnd - cursor;
+        if (style.drift && bodyEnd - cursor > 0.30 * tempoTimeScale) {
+          var roomD = bodyEnd - cursor;
           var wander = function (fallback) { var x = rnd() * 2 - 1; return (human ? x : fallback) * style.drift * (0.4 + human) * expression; };
-          add(at(cursor + room * vary(0.45, 0.3)), wander(-1));
-          add(at(cursor + room * vary(0.8, 0.1)), wander(0.7) * 0.7);
+          add(at(cursor + roomD * vary(0.45, 0.3)), wander(-1));
+          add(at(cursor + roomD * vary(0.8, 0.1)), wander(0.7) * 0.7);
         }
         if (tail) {
           add(at(bodyEnd), 0);
-          add(n.dur, vary(style.fall, 0.35) * expression);
+          add(n.dur, vary(style.fall, 0.35) * expression * clamp((duration - 0.18) / 0.22, 0.4, 1));
         } else add(n.dur, 0);
         if (pts.length === 1) pts.push([n.dur, 0, shape]);
         if (options.decouple === false || !track) {
@@ -1792,37 +2072,62 @@
       }
       if (vib) {
         rnd = noteRandom(seed, key + ':vibrato');
-        var pick = phraseEnd || duration >= 0.9 && chance(style.midVib);
-        var on = style.depth > 0 && expression > 0 && duration >= style.minVib && pick;
-        var delaySec = vary(Math.max(style.delay, duration * style.delayRatio), 0.25);
+        var midVibSec = clamp(0.86 * tempoTimeScale, 0.56, 1.22);
+        var midProb = clamp(style.midVib * (crest ? 1.25 : 1), 0, 1);
+        var pick = phraseEnd || (duration >= (crest ? midVibSec * 0.85 : midVibSec) && chance(midProb));
+        var minVibSec = style.minVib * clamp(tempoTimeScale, 0.85, 1.15);
+        var baseDelay = Math.min(0.58 * tempoTimeScale, Math.max(style.delay * tempoTimeScale, duration * style.delayRatio));
+        var delaySec = vary(baseDelay, 0.25);
         if (kob) delaySec = Math.max(delaySec, kob.end + 0.1);
         var length = clamp(vary((1 - delaySec / duration) * 100, 0.1), 0, style.maxLen + (phraseEnd ? 15 : 0));
-        var depth = vary(style.depth * (0.65 + 0.35 * Math.min(1, duration / 1.5)) * (phraseEnd ? style.endBoost : 1), 0.2) * expression;
-        var rate = style.rate + (rnd() * 2 - 1) * 0.45 * human;
+        var rateTempoBias = clamp(0.28 * Math.log2(clamp(ctx.localBpm, 55, 220) / 120), -0.35, 0.4);
+        var rate = clamp(style.rate + rateTempoBias + (rnd() * 2 - 1) * 0.45 * human, 3.6, 8.2);
         var vibSec = Math.max(0.05, duration * length / 100);
-        var fadeOut = tail ? clamp((fallSec + 0.08) / vibSec * 100, 15, 60) : phraseEnd ? 35 : 15;
+        var hasCycles = vibSec * rate >= 1.15;
+        var on = style.depth > 0 && expression > 0 && duration >= minVibSec && pick && length > 0 && hasCycles;
+        var regDepthMul = n.pitch < 52 ? 0.88 : n.pitch > 72 ? 1.08 : 1;
+        var depth = vary(style.depth * (0.65 + 0.35 * Math.min(1, duration / 1.5)) *
+          (phraseEnd ? style.endBoost : (crest ? 1.08 : 1)) * regDepthMul, 0.2) * expression;
+        var fadeOut = tail ? clamp((fallSec + 0.08) / vibSec * 100, 15, 60) : phraseEnd ? 35 : 18;
         var phase = rnd() * 360 * human;
-        n.vibrato = vibrato({ enabled: on && length > 0, length: length, depth: depth, rate: rate,
-          fadeIn: clamp(vary(style.fadeIn, 0.3), 10, 80), fadeOut: fadeOut, phase: phase });
+        n.vibrato = vibrato({ enabled: on, length: length, depth: depth, rate: rate,
+          fadeIn: clamp(vary(style.fadeIn, 0.3), 12, 80), fadeOut: fadeOut, phase: phase, fadeShape: 's' });
+      }
+      if (consSpeed) {
+        rnd = noteRandom(seed, key + ':cons');
+        n.consonantSpeed = computeAutoConsonantSpeed(info, ctx, style, expression, human, rnd);
+        delete n.consonantLength;
       }
       if (effort) {
-        // Style and melodic stress set the target effort. Enter repeated/slurred notes
-        // gently, support sustained notes, and relax the end of each phrase.
-        var body = (style.vel - 96) / 43 + (crest ? 0.20 : 0);
+        rnd = noteRandom(seed, key + ':effort');
+        // Style, melodic arch and duration set the target effort. Moderate baseline and phrase-end drop
+        // slightly in Studio Mode (HD) because its LF glottal model already couples VEL & phrase-end Rd.
+        var hdScale = options.hd === true ? 0.78 : 1;
         var spread = style.accent / 9;
-        var onset = body + (n.slur ? 0 : phraseStart ? -0.24 : 0.10) * spread;
-        var sustain = body + 0.18 * Math.min(1, duration / 0.8) * spread;
-        var end = body - (phraseEnd ? 0.40 : 0.06) * spread;
+        var archLift = spread > 0 ? (ctx.pitchRel - 0.45) * 0.16 * spread : 0;
+        var effortJitter = spread > 0 ? (rnd() * 2 - 1) * 0.06 * human * spread : 0;
+        var body = ((style.vel - 96) / 43) * hdScale + (spread > 0 && crest ? 0.18 : 0) + archLift + effortJitter;
+        var onset = body + (ctx.isSlurCont ? 0 : phraseStart ? -0.22 : 0.09) * spread * durClarity;
+        var sustain = body + 0.17 * Math.min(1, duration / 0.8) * spread;
+        var endDrop = phraseEnd ? (options.hd === true ? 0.30 : 0.40) : 0.05;
+        var end = body - endDrop * spread;
         var levels = effortLevels && effortLevels.get(clamp(Math.round(n.pitch / 12), 3, 7));
         function level(x) { return Math.round(100 * calibratedEffort(expression * x, levels)) / 100; }
-        n.effortPoints = [[0, level(onset)], [at(Math.min(0.12, duration * 0.3)) / n.dur, level(body)],
-          [at(duration * 0.65) / n.dur, level(sustain)], [1, level(end)]];
+        if (duration < 0.18) {
+          n.effortPoints = [[0, level(onset)], [1, level(end)]];
+        } else {
+          var u1 = clamp(at(Math.min(0.12 * tempoTimeScale, duration * 0.28)) / Math.max(1e-6, n.dur), 0.04, 0.42);
+          var u2 = clamp(at(duration * 0.68) / Math.max(1e-6, n.dur), u1 + 0.08, 0.94);
+          n.effortPoints = [[0, level(onset)], [u1, level(body)], [u2, level(sustain)], [1, level(end)]];
+        }
         fitNoteEffort(n);
       }
       if (vel) {
-        var beat = ((n.start % 4) + 4) % 4;
-        var accent = beat < 0.02 ? 1 : Math.abs(beat - 2) < 0.02 ? 0.5 : -0.35;
-        n.vel = Math.round(clamp(style.vel + style.accent * 0.35 * (accent + (phraseStart ? 0.35 : 0) - (phraseEnd ? 0.8 : 0)), 1, 127));
+        var accent = ctx.beatAccent;
+        var archVel = style.accent ? (ctx.pitchRel - 0.45) * 0.65 + (crest ? 0.35 : 0) : 0;
+        var shortTrim = style.accent && duration < 0.16 && !crest && accent < 0 ? -0.35 : 0;
+        n.vel = Math.round(clamp(style.vel + style.accent * 0.35 *
+          (accent + archVel + shortTrim + (phraseStart ? 0.3 : 0) - (phraseEnd ? 0.75 : 0)), 1, 127));
       }
       count++;
     });
