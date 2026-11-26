@@ -4253,7 +4253,7 @@
   }
 
   // 已停止时再按停止：视图与播放指针都回到第一个音素前一小格（没有音符时回到开头），以便完整播放发音；
-  // 若播放指针已在第一个音素前，则再按一次移到曲谱最开头
+  // 若播放指针已在第一个音素前，则再按一次移到曲谱最开头；若已在最开头，则再按一次跳到第一个音素前
   function rewindToFirstNote() {
     if (!roll.notes || !roll.notes.length) {
       roll.playPos = 0; roll.scrollBeat = 0;
@@ -4286,7 +4286,8 @@
     var snap = (roll && Number.isFinite(roll.snap) && roll.snap > 0) ? roll.snap : 0.25;
     var target = Math.max(0, first - snap);
     var cur = Number.isFinite(roll.playPos) ? roll.playPos : 0;
-    if (cur <= target + 1e-6 || cur < first - 1e-6) {
+    var atStart = cur <= 1e-6;
+    if ((!atStart && (cur <= target + 1e-6 || cur < first - 1e-6)) || (atStart && target <= 1e-6)) {
       roll.playPos = 0; roll.scrollBeat = 0;
       roll.draw(); syncCursor();
       setStatus(t('ui.rewoundStart', null, '已回到开头'));
@@ -4294,7 +4295,7 @@
     }
     roll.playPos = target; roll.scrollBeat = Math.max(0, target - 1);
     roll.draw(); syncCursor();
-    setStatus(t('ui.rewoundFirst', null, '已回到第一个音素前'));
+    setStatus(atStart ? t('ui.jumpedFirst', null, '已跳到第一个音素前') : t('ui.rewoundFirst', null, '已回到第一个音素前'));
   }
 
   function stopPlay(immediate) {
