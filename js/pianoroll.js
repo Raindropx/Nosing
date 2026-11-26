@@ -65,7 +65,7 @@
     this.ghostTracks = [];
     this.activeTrackVisible = true;
     this._ghostRev = 0;
-    this.backgroundOpacity = 0.85;
+    this.backgroundOpacity = 0.76;
     this.onChange = null;
     this.drag = null;
     this.phoneSelection = null;
@@ -199,43 +199,44 @@
   var ROLL_THEMES = {
     aero: {
       noteStyle: 'aero', kbStyle: 'aero', nodeStyle: 'aero',
-      rowBlack: 'rgba(225,239,250,', rowWhite: 'rgba(250,254,255,', octaveLine: '#cbe0f0',
-      gridBar: '#8dbde0', gridBeat: '#cbe0f0', gridSub: '#e6f1f9', barText: '#6f8ba3',
-      tempoLine: 'rgba(226,97,31,.7)', tempoText: '#b04a10',
-      noteRadius: 4, noteGloss: true,
-      noteSelGrad: ['#fffef7', '#fff1b8', '#ffe382', '#fff3bd'],
-      noteGrad: ['#f7fdff', '#d8f2ff', '#bce6fc', '#d6f2ff'],
-      noteSelStroke: '#c48b1b', noteStroke: '#52a3d4',
-      noteSelEdge: 'rgba(255,252,225,0.75)', noteEdge: 'rgba(230,252,255,0.75)',
-      noteSelText: '#422900', noteText: '#08334e',
-      slurMark: 'rgba(255,255,255,.68)', slurArc: 'rgba(20,80,120,.72)',
-      wordJoinSel: 'rgba(156,102,12,.68)', wordJoin: 'rgba(28,118,172,.68)',
-      bandFill: 'rgba(45,155,235,.16)', bandStroke: '#1f84c4',
-      velBg: ['rgba(244,251,255,', 'rgba(222,240,252,'], velTop: '#99c2dc', velHi: 'rgba(255,255,255,.75)',
-      consDash: '#82bf92',
-      velBarSel: 'rgba(232,162,24,.92)', velBarCons: 'rgba(72,182,102,.88)', velBar: 'rgba(56,162,228,.85)',
-      velBarHi: 'rgba(255,255,255,.75)',
-      kbBg: ['#f7fbff', '#dcecf8'], kbBlackRow: '#e4f0fa',
-      kbBlackGrad: ['#467498', '#234c6c', '#14334d', '#265274'], kbBlackHi: 'rgba(215,245,255,.45)',
-      kbBlackStroke: '#12324c',
-      kbWhiteGrad: ['#ffffff', '#f2f9ff', '#dfeffa'], kbWhiteHi: 'rgba(255,255,255,.9)', kbKeyDivider: '#c2daec',
-      kbOctaveText: '#2d6488', kbBorder: '#8eb8d4',
-      rulerGrad: ['#f8fdff', '#dcf1fc', '#b8e0f7', '#d6effd'],
-      rulerTop: 'rgba(255,255,255,.92)', rulerBottom: '#86b4d2', rulerLabel: '#1d5578',
-      rulerTickBar: '#759bb8', rulerTickBeat: '#b9cfdf', rulerBarText: '#255b7d', rulerTempoText: '#a34e12',
-      btnRadius: 5,
-      btnConsOn: ['#e6fbd2', '#8ad957', '#4ea622', '#78cf46'], btnVelOn: ['#cceeff', '#65bff5', '#1f86c9', '#48aef0'],
-      btnOff: ['#ffffff', '#ecf7fe', '#d2e9f8', '#e4f3fc'],
-      btnConsStroke: '#3d8a18', btnVelStroke: '#166da6', btnOffStroke: '#8eb8d4',
-      btnTextOn: '#ffffff', btnTextOff: '#2d5e7c',
-      playGlow: 'rgba(255, 110, 60, 0.32)', playLine: '#ff5232',
-      playHead: ['#ffae8e', '#f25636', '#c93318'], playHeadStroke: 'rgba(255,255,255,0.85)',
-      phoneCustom: '#d32f2f', phoneDefault: '#727b83',
-      pitOutline: 'rgba(255, 255, 255, 0.90)', pitLine: '#2d3b48', pitCtrlLine: '#e83b74', vibLine: 'rgba(22, 148, 108, 0.88)',
-      pitNodeFill: '#e83b74', pitNodeStroke: '#ffffff', pitNodeHi: 'rgba(255,255,255,.92)',
-      vibBtnOn: ['#eefbe2', '#c6edab', '#9ad977'], vibBtnOff: ['#ffffff', '#edf6fc', '#d8ebf8'],
-      vibBtnOnStroke: '#4b9e56', vibBtnOffStroke: '#6792ab', vibBtnText: '#255370',
-      vibHandle: '#16946c', vibRateLine: '#2b6d96', vibRateDot: '#16946c'
+      rowBlack: 'rgba(210,240,254,', rowWhite: 'rgba(252,255,255,', octaveLine: 'rgba(104,188,234,.72)',
+      gridBar: 'rgba(66,166,224,.66)', gridBeat: 'rgba(144,210,244,.52)', gridSub: 'rgba(198,236,252,.48)', barText: '#26729c',
+      tempoLine: 'rgba(236,96,24,.75)', tempoText: '#b54608',
+      noteRadius: 5, noteGloss: true,
+      noteSelGrad: ['rgba(255,255,240,0.98)', 'rgba(255,236,144,0.92)', 'rgba(255,188,36,0.90)', 'rgba(255,244,174,0.96)'],
+      noteGrad: ['rgba(244,254,255,0.96)', 'rgba(156,232,255,0.88)', 'rgba(64,192,248,0.85)', 'rgba(170,246,255,0.93)'],
+      noteSelStroke: '#c97e06', noteStroke: '#188ed8',
+      noteSelEdge: 'rgba(255,254,220,0.96)', noteEdge: 'rgba(212,255,248,0.94)',
+      noteSelText: '#3f2200', noteText: '#042d48',
+      slurMark: 'rgba(255,255,255,.78)', slurArc: 'rgba(12,92,142,.78)',
+      wordJoinSel: 'rgba(156,96,6,.74)', wordJoin: 'rgba(16,124,186,.74)',
+      bandFill: 'rgba(34,186,252,.18)', bandStroke: '#1094e0',
+      velBg: ['rgba(244,253,255,', 'rgba(206,242,255,'], velTop: 'rgba(88,180,228,.80)', velHi: 'rgba(255,255,255,.94)',
+      consDash: '#4ec472',
+      velBarSel: 'rgba(246,168,16,.94)', velBarCons: 'rgba(54,202,84,.90)', velBar: 'rgba(24,168,244,.88)',
+      velBarHi: 'rgba(255,255,255,.88)',
+      kbBg: ['#f4fcff', '#ccebfb'], kbBlackRow: '#d8f0fc',
+      kbBlackGrad: ['#5ca4d2', '#1d5d8c', '#0b3458', '#20689a'], kbBlackHi: 'rgba(224,252,255,.68)',
+      kbBlackStroke: '#0d3b60',
+      kbWhiteGrad: ['#ffffff', '#eefaff', '#d2eefc'], kbWhiteHi: 'rgba(255,255,255,.96)', kbKeyDivider: '#b0daf0',
+      kbOctaveText: '#126496', kbBorder: '#6ab4de',
+      rulerGrad: ['#ffffff', '#d6f2ff', '#9cd8fa', '#cef2ff'],
+      rulerAlphaGrad: ['rgba(255,255,255,', 'rgba(222,248,255,', 'rgba(154,224,254,', 'rgba(212,248,255,'],
+      rulerTop: 'rgba(255,255,255,.98)', rulerBottom: 'rgba(84,174,222,.76)', rulerLabel: '#0a4e76',
+      rulerTickBar: '#488cb4', rulerTickBeat: '#9ecae4', rulerBarText: '#0d5680', rulerTempoText: '#b54a0a',
+      btnRadius: 6,
+      btnConsOn: ['#ecffd8', '#88ea52', '#38b416', '#72df40'], btnVelOn: ['#dbf6ff', '#5ccaff', '#0c88da', '#42bcfa'],
+      btnOff: ['#ffffff', '#e8f8ff', '#c2e8fc', '#e2f6ff'],
+      btnConsStroke: '#2e8e12', btnVelStroke: '#0c72b8', btnOffStroke: '#6eb4dc',
+      btnTextOn: '#ffffff', btnTextOff: '#125478',
+      playGlow: 'rgba(255, 114, 52, 0.42)', playLine: '#ff4f28',
+      playHead: ['#ffd0b8', '#ff5b34', '#c9280e'], playHeadStroke: 'rgba(255,255,255,0.95)',
+      phoneCustom: '#d82b2b', phoneDefault: '#5a788c',
+      pitOutline: 'rgba(255, 255, 255, 0.94)', pitLine: '#1d3448', pitCtrlLine: '#ec3072', vibLine: 'rgba(16, 168, 116, 0.92)',
+      pitNodeFill: '#ec3072', pitNodeStroke: '#ffffff', pitNodeHi: 'rgba(255,255,255,.96)',
+      vibBtnOn: ['#f2ffe6', '#baf498', '#7ce054'], vibBtnOff: ['#ffffff', '#eaf8ff', '#cceafe'],
+      vibBtnOnStroke: '#389e3c', vibBtnOffStroke: '#5fa4cc', vibBtnText: '#114d70',
+      vibHandle: '#10a672', vibRateLine: '#1474ac', vibRateDot: '#10a672'
     },
     '9x': {
       noteStyle: '9x', kbStyle: '9x', nodeStyle: '9x',
@@ -741,6 +742,13 @@
           v.beginPath(); v.moveTo(px2, 0); v.lineTo(px2, this.h); v.stroke();
           var pHead = fillStops(v.createLinearGradient(0, 0, 0, 18), T.playHead);
           v.fillStyle = pHead; v.beginPath(); v.moveTo(px2 - 6.5, 0); v.lineTo(px2 + 6.5, 0); v.lineTo(px2 + 6.5, 11); v.lineTo(px2, 18); v.lineTo(px2 - 6.5, 11); v.closePath(); v.fill();
+          if ((this.theme || NSG.theme || 'aero') === 'aero') {
+            var pGloss = v.createLinearGradient(0, 1, 0, 9);
+            pGloss.addColorStop(0, 'rgba(255,255,255,0.88)');
+            pGloss.addColorStop(1, 'rgba(255,255,255,0.08)');
+            v.fillStyle = pGloss;
+            v.fillRect(px2 - 5, 1, 10, 6.5);
+          }
           v.strokeStyle = T.playHeadStroke; v.lineWidth = 1; v.stroke();
         }
       }
@@ -896,13 +904,30 @@
       c.lineWidth = 1;
       c.stroke();
       if (noteStyle === 'aero' || T.noteGloss) {
-        // Frutiger Aero 浅色水晶凝胶高光：上半截通透弧光 + 顶边纯白亮线 + 底部内折射亮边
-        c.fillStyle = 'rgba(255,255,255,0.52)';
-        c.fillRect(nx + 1, ny + 1, Math.max(0, nw - 2), Math.max(2, self.rowH * 0.45 - 1.5));
-        c.fillStyle = 'rgba(255,255,255,0.92)';
-        c.fillRect(nx + 2, ny + 1, Math.max(0, nw - 4), 1.5);
-        c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
-        c.fillRect(nx + 2, ny + nh - 2, Math.max(0, nw - 4), 1);
+        // Frutiger Aero 液态水晶凝胶高光：圆角裁切上半截镜面弧光 + 顶边纯白晶亮线 + 底部内折射焦散光晕
+        c.save();
+        if (T.noteRadius > 0) {
+          roundRect(c, nx + 0.5, ny + 0.5, Math.max(0, nw - 1), Math.max(0, nh - 1), Math.max(1, T.noteRadius - 0.5));
+        } else {
+          c.beginPath(); c.rect(nx + 0.5, ny + 0.5, Math.max(0, nw - 1), Math.max(0, nh - 1));
+        }
+        c.clip();
+        var glossH = Math.max(2, nh * 0.48);
+        var ng = c.createLinearGradient(0, ny, 0, ny + glossH);
+        ng.addColorStop(0, 'rgba(255,255,255,0.86)');
+        ng.addColorStop(0.55, 'rgba(255,255,255,0.34)');
+        ng.addColorStop(1, 'rgba(255,255,255,0.12)');
+        c.fillStyle = ng;
+        c.fillRect(nx + 0.5, ny + 0.5, Math.max(0, nw - 1), glossH);
+        c.fillStyle = 'rgba(255,255,255,0.96)';
+        c.fillRect(nx + 1.5, ny + 0.8, Math.max(0, nw - 3), 1.3);
+        var causticH = Math.max(2, nh * 0.28);
+        var cg = c.createLinearGradient(0, ny + nh - causticH, 0, ny + nh);
+        cg.addColorStop(0, 'rgba(255,255,255,0)');
+        cg.addColorStop(1, selected ? NP.noteSelEdge : NP.noteEdge);
+        c.fillStyle = cg;
+        c.fillRect(nx + 1, ny + nh - causticH, Math.max(0, nw - 2), causticH);
+        c.restore();
       } else if (noteStyle === '9x') {
         // 9X 立体凸起斜角：左上亮边 + 右下暗边
         c.fillStyle = selected ? NP.noteSelEdge : NP.noteEdge;
@@ -1083,7 +1108,18 @@
     c.strokeStyle = T.kbBorder; c.beginPath(); c.moveTo(kbW - 0.5, 0); c.lineTo(kbW - 0.5, gridH); c.stroke();
     c.restore();
     // Separate ruler and lane headers keep labels out of the editable notes.
-    var rulerGrad = fillStops(c.createLinearGradient(0, 0, 0, this.rulerH), T.rulerGrad);
+    var rulerGrad;
+    if (themeId === 'aero' && T.rulerAlphaGrad) {
+      var rAlpha = Math.max(0.28, Math.min(1, 1 - (1 - bgAlpha) * 1.45));
+      rulerGrad = fillStops(c.createLinearGradient(0, 0, 0, this.rulerH), [
+        T.rulerAlphaGrad[0] + Math.min(1, rAlpha * 0.96 + 0.04) + ')',
+        T.rulerAlphaGrad[1] + (rAlpha * 0.88) + ')',
+        T.rulerAlphaGrad[2] + (rAlpha * 0.82) + ')',
+        T.rulerAlphaGrad[3] + (rAlpha * 0.90) + ')'
+      ]);
+    } else {
+      rulerGrad = fillStops(c.createLinearGradient(0, 0, 0, this.rulerH), T.rulerGrad);
+    }
     c.fillStyle = rulerGrad; c.fillRect(0, 0, w, this.rulerH);
     c.fillStyle = T.rulerTop; c.fillRect(0, 0, w, 1);
     c.fillStyle = T.rulerBottom; c.fillRect(0, this.rulerH - 1, w, 1);
@@ -1100,6 +1136,20 @@
         c.beginPath(); c.rect(3, ty, kbW - 8, 22);
       }
       c.fill();
+      if (themeId === 'aero') {
+        c.save();
+        roundRect(c, 3.5, ty + 0.5, kbW - 9, 21, Math.max(1, T.btnRadius - 0.5));
+        c.clip();
+        var bgGloss = c.createLinearGradient(0, ty, 0, ty + 10.5);
+        bgGloss.addColorStop(0, on ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.78)');
+        bgGloss.addColorStop(1, 'rgba(255,255,255,0.10)');
+        c.fillStyle = bgGloss;
+        c.fillRect(3.5, ty + 0.5, kbW - 9, 10.5);
+        c.fillStyle = 'rgba(255,255,255,0.92)';
+        c.fillRect(5, ty + 0.8, kbW - 12, 1.2);
+        c.restore();
+        roundRect(c, 3, ty, kbW - 8, 22, T.btnRadius);
+      }
       c.strokeStyle = on ? (key === 'cons' ? T.btnConsStroke : T.btnVelStroke) : T.btnOffStroke;
       c.lineWidth = 1; c.stroke();
       c.fillStyle = on ? T.btnTextOn : T.btnTextOff; c.font = '11px Tahoma, sans-serif';
@@ -1674,10 +1724,14 @@
       c.beginPath(); c.arc(ptx, pty, 1.5, 0, Math.PI * 2); c.fill();
       return;
     }
-    c.fillStyle = T.pitNodeFill; c.strokeStyle = T.pitNodeStroke; c.lineWidth = 1.3;
-    c.beginPath(); c.arc(ptx, pty, 3.9, 0, Math.PI * 2); c.fill(); c.stroke();
+    var nodeGrad = c.createRadialGradient(ptx - 1.2, pty - 1.4, 0.4, ptx, pty, 4.4);
+    nodeGrad.addColorStop(0, '#ffffff');
+    nodeGrad.addColorStop(0.35, T.pitNodeFill);
+    nodeGrad.addColorStop(1, T.pitNodeFill);
+    c.fillStyle = nodeGrad; c.strokeStyle = T.pitNodeStroke; c.lineWidth = 1.4;
+    c.beginPath(); c.arc(ptx, pty, 4.1, 0, Math.PI * 2); c.fill(); c.stroke();
     c.fillStyle = T.pitNodeHi;
-    c.beginPath(); c.arc(ptx - 1, pty - 1, 1.25, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(ptx - 1.2, pty - 1.2, 1.35, 0, Math.PI * 2); c.fill();
   }
   PianoRoll.prototype._drawTuning = function (info) {
     var self = this, c = this.ctx, T = this._themePalette();

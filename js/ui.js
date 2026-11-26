@@ -975,7 +975,7 @@
     hifiWaveguide: 1, hifiHighPolish: 1,
     dirty: true, playing: false, ctx: null, src: null,
     playStart: 0, playFromBeat: 0,
-    rawSrc: false, forceSnap: false, relativeMotion: false, bgId: 'a1', theme: 'aero', uiTransparency: 15, harmHi: null,
+    rawSrc: false, forceSnap: false, relativeMotion: false, bgId: 'a1', theme: 'aero', uiTransparency: 24, harmHi: null,
     themeSchemes: {
       '9x': 'standard',
       xp: 'classic-blue',
@@ -1846,16 +1846,28 @@
   function makeBubbles() {
     var box = $('#bubbles');
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    for (var i = 0; i < 16; i++) {
-      var d = document.createElement('div');
-      var sz = 8 + Math.random() * 54;
-      d.className = 'bub';
-      d.style.width = sz + 'px'; d.style.height = sz + 'px';
-      d.style.left = (Math.random() * 100) + '%';
-      d.style.bottom = '-90px';
-      d.style.animationDuration = (9 + Math.random() * 14).toFixed(1) + 's';
-      d.style.animationDelay = (-Math.random() * 18).toFixed(1) + 's';
-      box.appendChild(d);
+    /* 三层景深水晶气泡：远景柔焦光斑泡 + 中景虹彩水泡 + 近景露珠微光泡 */
+    var tiers = [
+      { count: 5, cls: 'bub bokeh', minSz: 72, maxSz: 132, minDur: 20, maxDur: 32, drift: 26 },
+      { count: 13, cls: 'bub', minSz: 14, maxSz: 52, minDur: 10, maxDur: 21, drift: 18 },
+      { count: 6, cls: 'bub sparkle', minSz: 6, maxSz: 13, minDur: 8, maxDur: 15, drift: 12 }
+    ];
+    for (var ti = 0; ti < tiers.length; ti++) {
+      var tier = tiers[ti];
+      for (var i = 0; i < tier.count; i++) {
+        var d = document.createElement('div');
+        var sz = tier.minSz + Math.random() * (tier.maxSz - tier.minSz);
+        var drift = ((Math.random() < 0.5 ? -1 : 1) * (tier.drift * 0.45 + Math.random() * tier.drift * 0.55)).toFixed(1) + 'px';
+        d.className = tier.cls;
+        d.style.width = sz.toFixed(1) + 'px';
+        d.style.height = sz.toFixed(1) + 'px';
+        d.style.left = (Math.random() * 100).toFixed(2) + '%';
+        d.style.bottom = (-Math.round(sz + 36)) + 'px';
+        d.style.setProperty('--bub-drift', drift);
+        d.style.animationDuration = (tier.minDur + Math.random() * (tier.maxDur - tier.minDur)).toFixed(1) + 's';
+        d.style.animationDelay = (-Math.random() * tier.maxDur).toFixed(1) + 's';
+        box.appendChild(d);
+      }
     }
   }
 
@@ -4360,26 +4372,26 @@
   /* ---------------- 分析绘制 ---------------- */
   var UI_CANVAS_THEMES = {
     aero: {
-      bgTop: '#fcfeff', bgMid: '#eef8ff', bgBot: '#dcf0fc',
-      grid: 'rgba(110,168,204,.26)', axisText: '#5f8ea8',
-      curveGlow: 'rgba(72, 206, 255, 0.45)', curveLine: '#0d7ebd',
-      curveArea: ['rgba(64,196,248,.52)', 'rgba(84,218,236,.24)', 'rgba(120,232,210,.06)'],
-      formant0: '#e2611f', formantRest: 'rgba(226,97,31,.55)', formantText: '#b04a10',
-      specGrid: 'rgba(255,255,255,.55)', specText: 'rgba(255,255,255,.85)', specFormant: 'rgba(255,120,60,.85)',
-      harmBg: ['#fcfeff', '#e1f2fc'],
-      harmHi: ['#fff7d6', '#ffd45e', '#f2b124', '#cf850c'],
-      harmBar: ['#d8f4ff', '#6ec8f5', '#35a0df', '#1878b4'],
-      harmGloss: 'rgba(255,255,255,.78)', harmSheen: 'rgba(255,255,255,.25)',
-      harmLabel: '#5c8aa4', harmMeas: 'rgba(255,255,255,.95)', harmVal: '#b1740a', harmBase: '#b9d3e6',
-      eyeBg: ['#f9feff', '#e4f3fc'], eyeGrid: 'rgba(120,170,200,.25)', eyeAxis: '#7fa4bb',
-      eyeTick: 'rgba(90,150,190,.35)',
-      eyeSelFill: ['rgba(255,208,74,.62)', 'rgba(255,184,48,.28)', 'rgba(255,201,77,.06)'],
-      eyeFill: ['rgba(64,196,248,.48)', 'rgba(84,218,236,.22)', 'rgba(96,196,240,.05)'],
-      eyeSelGlow: 'rgba(255,235,160,.65)', eyeGlow: 'rgba(130,224,255,.55)',
-      eyeSelStroke: '#c9850c', eyeStroke: '#127eb8',
-      eyeSelHandle: '#b1740a', eyeHandle: '#1d86bd', eyeEndSel: '#e2611f', eyeEnd: '#4d9dc4',
-      eyeStepHalo: 'rgba(255,255,255,.85)', eyeStepLine: '#e2611f', eyeMom: 'rgba(60,120,60,.55)',
-      eyeTitle: '#3a6b85', eyeLegend: '#a5561d'
+      bgTop: '#f9feff', bgMid: '#e6f7ff', bgBot: '#ccf0ff',
+      grid: 'rgba(84,174,224,.26)', axisText: '#3e7da0',
+      curveGlow: 'rgba(34, 214, 255, 0.58)', curveLine: '#0684cc',
+      curveArea: ['rgba(30,204,255,.58)', 'rgba(62,234,226,.30)', 'rgba(116,252,196,.08)'],
+      formant0: '#ec5e16', formantRest: 'rgba(236,94,22,.58)', formantText: '#b54608',
+      specGrid: 'rgba(255,255,255,.56)', specText: 'rgba(255,255,255,.92)', specFormant: 'rgba(255,144,68,.90)',
+      harmBg: ['#f9feff', '#d2f0ff'],
+      harmHi: ['#ffffe4', '#ffde62', '#f5ac12', '#c87604'],
+      harmBar: ['#e8fcff', '#6cd8ff', '#169ae8', '#0a6cb4'],
+      harmGloss: 'rgba(255,255,255,.92)', harmSheen: 'rgba(255,255,255,.36)',
+      harmLabel: '#3b7b9e', harmMeas: 'rgba(255,255,255,.96)', harmVal: '#b47206', harmBase: '#98cce8',
+      eyeBg: ['#f9feff', '#d6f2ff'], eyeGrid: 'rgba(86,174,222,.26)', eyeAxis: '#4c88aa',
+      eyeTick: 'rgba(68,158,210,.38)',
+      eyeSelFill: ['rgba(255,212,68,.66)', 'rgba(255,184,38,.30)', 'rgba(255,210,77,.07)'],
+      eyeFill: ['rgba(34,202,255,.54)', 'rgba(68,234,228,.26)', 'rgba(110,248,210,.07)'],
+      eyeSelGlow: 'rgba(255,240,168,.72)', eyeGlow: 'rgba(118,236,255,.65)',
+      eyeSelStroke: '#ce8406', eyeStroke: '#0884cc',
+      eyeSelHandle: '#b47206', eyeHandle: '#0f92d6', eyeEndSel: '#ea5c14', eyeEnd: '#289ad4',
+      eyeStepHalo: 'rgba(255,255,255,.90)', eyeStepLine: '#ea5c14', eyeMom: 'rgba(38,162,74,.62)',
+      eyeTitle: '#18648e', eyeLegend: '#b05414'
     },
     '9x': {
       bgTop: '#000800', bgMid: '#001000', bgBot: '#000800',
@@ -4555,6 +4567,13 @@
       c.fillStyle = P.formantText; c.font = 'bold 8px Consolas';
       c.fillText('F' + (i + 1), x3 + 1, 9 + i * 0);
     });
+    if (state.theme === 'aero') {
+      var glassTop = c.createLinearGradient(0, 0, 0, H * 0.42);
+      glassTop.addColorStop(0, 'rgba(255,255,255,.52)');
+      glassTop.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = glassTop;
+      c.fillRect(0, 0, W, H * 0.42);
+    }
     $('#curveVowel').textContent = '/' + (state.vowel === '1' ? 'ɿ' : state.vowel) + '/';
   }
 
@@ -4658,12 +4677,12 @@
         (m1[2] + (m2[2] - m1[2]) * mt) | 0
       ];
     }
-    // Frutiger Aero 海洋极光色谱：深海蓝 → 宝石蓝 → 水晶青 → 极光翠绿 → 暖阳亮白
+    // Frutiger Aero 海洋极光水晶色谱：澄海宝石蓝 → 电光晴空蓝 → 晶莹翡翠青 → 极光嫩绿 → 日光珍珠白
     var r, g, b;
-    if (v < 0.30) { var t = v / 0.30; r = 8 + 14 * t; g = 28 + 82 * t; b = 64 + 112 * t; }
-    else if (v < 0.65) { var t2 = (v - 0.30) / 0.35; r = 22 + 64 * t2; g = 110 + 118 * t2; b = 176 + 52 * t2; }
-    else if (v < 0.88) { var t3 = (v - 0.65) / 0.23; r = 86 + 114 * t3; g = 228 + 22 * t3; b = 228 - 28 * t3; }
-    else { var t4 = (v - 0.88) / 0.12; r = 200 + 55 * t4; g = 250 + 5 * t4; b = 200 + 55 * t4; }
+    if (v < 0.28) { var t = v / 0.28; r = 6 + 12 * t; g = 32 + 96 * t; b = 76 + 126 * t; }
+    else if (v < 0.62) { var t2 = (v - 0.28) / 0.34; r = 18 + 56 * t2; g = 128 + 112 * t2; b = 202 + 46 * t2; }
+    else if (v < 0.86) { var t3 = (v - 0.62) / 0.24; r = 74 + 132 * t3; g = 240 + 13 * t3; b = 248 - 44 * t3; }
+    else { var t4 = (v - 0.86) / 0.14; r = 206 + 49 * t4; g = 253 + 2 * t4; b = 204 + 51 * t4; }
     return [r | 0, g | 0, b | 0];
   }
 
@@ -4711,6 +4730,13 @@
     if (state.harmHi !== null) {
       c.fillStyle = P.harmVal; c.font = 'bold 9px Consolas';
       c.fillText(tdb[state.harmHi].toFixed(1) + 'dB', Math.min(W - 34, state.harmHi * bw), 9);
+    }
+    if (state.theme === 'aero') {
+      var hGlass = c.createLinearGradient(0, 0, 0, H * 0.38);
+      hGlass.addColorStop(0, 'rgba(255,255,255,.46)');
+      hGlass.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = hGlass;
+      c.fillRect(0, 0, W, H * 0.38);
     }
     c.strokeStyle = P.harmBase; c.beginPath(); c.moveTo(0, H - 11); c.lineTo(W, H - 11); c.stroke();
   }
@@ -6352,13 +6378,13 @@
   /* ---------------- 背景 ---------------- */
   function setUITransparency(value) {
     var amount = Number(value);
-    if (value === null || value === '' || !isFinite(amount)) amount = 15;
+    if (value === null || value === '' || !isFinite(amount)) amount = 24;
     amount = Math.max(0, Math.min(80, Math.round(amount)));
     state.uiTransparency = amount;
     var alpha = 1 - amount / 100;
     document.documentElement.style.setProperty('--ui-surface-alpha', alpha);
     // 越透明越该看清背景：模糊半径随不透明度一起收
-    document.documentElement.style.setProperty('--ui-blur', Math.round(4 + alpha * 12) + 'px');
+    document.documentElement.style.setProperty('--ui-blur', Math.round(5 + alpha * 14) + 'px');
     $('#uiTransparency').value = amount;
     $('#uiTransparency').setAttribute('aria-valuetext', t('ui.transparencyAria', { pct: amount }, amount + '% 透明'));
     $('#uiTransparencyValue').textContent = amount + '%';

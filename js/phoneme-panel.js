@@ -6,19 +6,19 @@
     return (NSG.I18N && NSG.I18N.t) ? NSG.I18N.t(key, vars, fallback) : fallback;
   }
   var COLORS = NSG.PHONE_COLORS = [
-    { ink: '#186291', fill: 'rgba(68,176,240,.40)', selected: 'rgba(52,168,238,.68)' },
-    { ink: '#1b7a6e', fill: 'rgba(72,202,176,.36)', selected: 'rgba(54,192,164,.64)' }
+    { ink: '#0a649e', fill: 'rgba(38,190,252,.44)', selected: 'rgba(18,168,246,.74)', hi: 'rgba(232,253,255,.78)' },
+    { ink: '#0b7862', fill: 'rgba(42,218,176,.40)', selected: 'rgba(20,196,156,.70)', hi: 'rgba(228,255,246,.78)' }
   ];
-  var SILENCE = { ink: '#6e8796', fill: 'rgba(153,178,194,.22)', selected: 'rgba(140,168,186,.36)' };
+  var SILENCE = { ink: '#537b92', fill: 'rgba(140,186,210,.24)', selected: 'rgba(116,170,198,.40)', hi: 'rgba(240,252,255,.55)' };
   var PHONE_THEMES = {
     aero: {
-      pairs: COLORS, silence: SILENCE, fallback: '#727b83',
-      bg: ['rgba(250,254,255,', 'rgba(235,247,255,', 'rgba(222,240,252,'],
-      topLine: '#8ec2e2', hiLine: 'rgba(255,255,255,.85)',
-      capText: '#255a7a', subText: '#3b6d8c',
-      beatBar: '#b4c9dc', beatTick: '#dce6ef', baseLine: '#c8d8e6',
-      labelBg: 'rgba(247,251,255,.85)', emptyText: '#7b8e9a',
-      rampFill: 'rgba(255,255,255,.28)', gripFill: '#fff'
+      pairs: COLORS, silence: SILENCE, fallback: '#5a788c',
+      bg: ['rgba(250,254,255,', 'rgba(228,248,255,', 'rgba(206,240,255,'],
+      topLine: 'rgba(84,178,228,.82)', hiLine: 'rgba(255,255,255,.94)',
+      capText: '#0a527a', subText: '#226c94',
+      beatBar: 'rgba(102,178,222,.72)', beatTick: 'rgba(176,222,246,.62)', baseLine: 'rgba(142,202,236,.75)',
+      labelBg: 'rgba(246,253,255,.90)', emptyText: '#4c7e9c',
+      rampFill: 'rgba(255,255,255,.38)', gripFill: '#ffffff'
     },
     '9x': {
       pairs: [
@@ -226,7 +226,16 @@
         c.fillText(group.word || (phone.phone === 'SP' ? tr('phonePanel.canvas.rest', null, '休止') : phone.phone === 'br' ? tr('phonePanel.canvas.breath', null, '换气') : ''), Math.max(x + 3, self.kbW + 3), y + 15);
         c.restore();
       }
-      c.fillStyle = selected ? color.selected : color.fill;
+      if (themeId === 'aero' && color.hi) {
+        var phFill = c.createLinearGradient(0, y + 52, 0, y + 86);
+        phFill.addColorStop(0, color.hi);
+        phFill.addColorStop(0.46, selected ? color.selected : color.fill);
+        phFill.addColorStop(0.52, selected ? color.selected : color.fill);
+        phFill.addColorStop(1, color.hi);
+        c.fillStyle = phFill;
+      } else {
+        c.fillStyle = selected ? color.selected : color.fill;
+      }
       c.strokeStyle = color.ink; c.lineWidth = selected ? 1.8 : 1.1;
       c.beginPath(); c.moveTo(onsetX, y + 86); c.lineTo(xfX, y + 52);
       c.lineTo(Math.max(xfX, fadeOutX), y + 52); c.lineTo(fadeEndX, y + 86); c.closePath(); c.fill(); c.stroke();
