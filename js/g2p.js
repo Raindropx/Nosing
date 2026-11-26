@@ -690,15 +690,18 @@
         if (s === 'nn' && !/[aeiouy]/.test(rm.charAt(i + 2))) {
           out.push('N_j'); i += 2; matched = true; break;
         }
+        if (L === 2 && s === 'cl') {
+          out.push('cl'); i += 2; matched = true; break;
+        }
         if (s === 'tch' || (L === 2 && ROMAJI_SOKUON2[s])) {
-          out.push('t'); i += 1; matched = true; break;
+          out.push('cl'); i += 1; matched = true; break;
         }
         if (ROMAJI_PH[s]) {
           for (var j = 0; j < ROMAJI_PH[s].length; j++) out.push(ROMAJI_PH[s][j]);
           i += L; matched = true; break;
         }
         if (L === 1) {
-          if (s === 'q') { out.push('t'); i += 1; matched = true; break; }   // 促音
+          if (s === 'q') { out.push('cl'); i += 1; matched = true; break; }   // 促音
           if (s === '-') {                                                   // 长音：延长上一个元音
             for (var qv = out.length - 1; qv >= 0; qv--) {
               if (NSG.phoneOf(out[qv]).t === 'V') { out.push(out[qv]); break; }
@@ -3562,11 +3565,13 @@
     var hinted = phoneticHint(text, lang);
     if (hinted) return hinted;
     // 小写 ap 在粤拼、臺羅与新增语言中按歌词解析；大写 AP 仍是换气标记。
-    var parts = text.split(lang === 'eo' || lang === 'fi' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /(?<![\p{L}\p{M}'’-])([bB][rR]|AP|[sS][pP])(?![\p{L}\p{M}'’-])/gu :
-      /^(tok|asaxi|xdi8|tlh)$/.test(lang) ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
-      lang === 'de' ? /(?<![a-zäöüßà-öø-ÿ\u0300-\u036f])(br|AP|SP)(?![a-zäöüßà-öø-ÿ\u0300-\u036f])/gi :
-      /^(pl|ru|uk)$/.test(lang) ? /(?<![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])([bB][rR]|AP|[sS][pP])(?![a-ząćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])/g :
-      /^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|ko|vi)$/.test(lang) ? /(\b(?:[bB][rR]|AP|[sS][pP])\b)/g : /(\b(?:br|AP|SP)\b)/gi);
+    // 希顶语（xdi8）的 b/r/1~5 均为有效字母，仅保留不带数字的 br/AP/SP。
+    var parts = text.split(lang === 'eo' || lang === 'fi' || ROMANCE_LANG.test(lang) || SOUTHEAST_ASIAN_LANG.test(lang) ? /(?<![\p{L}\p{M}0-9'’-])([bB][rR][1-5]?|AP|[sS][pP])(?![\p{L}\p{M}0-9'’-])/gu :
+      lang === 'xdi8' ? /(?<!\S)(br|BR|AP|SP)(?!\S)/g :
+      /^(tok|asaxi|tlh)$/.test(lang) ? /(?<!\S)(br[1-5]?|BR[1-5]?|AP|SP)(?!\S)/g :
+      lang === 'de' ? /(?<![a-z0-9äöüßà-öø-ÿ\u0300-\u036f])(br[1-5]?|AP|SP)(?![a-z0-9äöüßà-öø-ÿ\u0300-\u036f])/gi :
+      /^(pl|ru|uk)$/.test(lang) ? /(?<![a-z0-9ąćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])([bB][rR][1-5]?|AP|[sS][pP])(?![a-z0-9ąćęłńóśźżà-öø-ÿа-яёєіїґ\u0400-\u04ff\u0300-\u036f])/g :
+      /^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|ko|vi)$/.test(lang) ? /(\b(?:[bB][rR][1-5]?|AP|[sS][pP])\b)/g : /(\b(?:br[1-5]?|AP|SP)\b)/gi);
     if (parts.length > 1) {
       var syllables = [];
       parts.forEach(function (part) {
@@ -3620,19 +3625,52 @@
       var SMALL = { 'ゃ': 'a', 'ゅ': 'u', 'ょ': 'o' };
       var STEM = { 'き': 'ky', 'ぎ': 'gy', 'し': 'sh', 'じ': 'j', 'ち': 'ch', 'に': 'ny', 'ひ': 'hy', 'び': 'by', 'ぴ': 'py', 'み': 'my', 'り': 'ry', 'ぢ': 'dy' };
       var romanBuf = '';
-      var pendingStop = null;
-      var flushRoman = function () {
+      var pendingStop = null, pendingText = '', pendingAttached = false;
+      var attachedAfterKana = false;
+      var flushPendingStop = function () {
+        if (!pendingStop) return;
+        if (pendingAttached && out.length) {
+          var prevOut = out[out.length - 1];
+          prevOut.phones.push(pendingStop);
+          prevOut.text += pendingText;
+          prevOut.roman = (prevOut.roman ? prevOut.roman + ' ' : '') + 'cl';
+        } else {
+          out.push({ text: pendingText || 'cl', phones: [pendingStop], roman: 'cl' });
+        }
+        pendingStop = null; pendingText = ''; pendingAttached = false;
+      };
+      var flushRoman = function (beforeKana) {
         if (!romanBuf) return;
+        if (/^cl$/i.test(romanBuf)) {
+          if (beforeKana) {
+            flushPendingStop();
+            pendingStop = 'cl'; pendingText = romanBuf; pendingAttached = false;
+          } else if (attachedAfterKana && out.length) {
+            var prevKana = out[out.length - 1];
+            prevKana.phones.push('cl');
+            prevKana.text += romanBuf;
+            prevKana.roman = (prevKana.roman ? prevKana.roman + ' ' : '') + 'cl';
+          } else {
+            flushPendingStop();
+            out.push({ text: romanBuf, phones: ['cl'], roman: 'cl' });
+          }
+          romanBuf = '';
+          attachedAfterKana = false;
+          return;
+        }
         var ph0 = romajiToPhones(romanBuf);
+        if (pendingStop) { ph0.unshift(pendingStop); pendingStop = null; pendingText = ''; pendingAttached = false; }
         if (ph0.length) out.push({ text: romanBuf, phones: ph0, roman: romanBuf });
         romanBuf = '';
+        attachedAfterKana = false;
       };
       var i3 = 0;
       while (i3 < norm.length) {
         var cp3 = norm.codePointAt(i3), cl3 = cp3 > 0xffff ? 2 : 1, ch3 = norm.slice(i3, i3 + cl3);
-        if (ch3 === ' ' || ch3 === '　' || ch3 === '\n') { flushRoman(); i3++; continue; }
+        if (ch3 === ' ' || ch3 === '　' || ch3 === '\n') { flushRoman(false); flushPendingStop(); attachedAfterKana = false; i3++; continue; }
         if (isHanCode(cp3)) {
-          flushRoman();
+          flushRoman(false);
+          flushPendingStop();
           var jd = cache.ja || (root.NSG_DICT.ja ? (cache.ja = makeMap(root.NSG_DICT.ja, 'ja')) : {});
           var rm = jd[ch3];
           if (rm) {
@@ -3641,11 +3679,13 @@
           } else {
             out.push({ text: ch3, phones: ['@'], roman: '?' });
           }
+          attachedAfterKana = true;
           i3 += cl3; continue;
         }
         var kc = ch3.charCodeAt(0);
         if (kc === 0x30FC || ch3 === 'ー') {         // 长音：延长上一拍的元音
-          flushRoman();
+          flushRoman(false);
+          flushPendingStop();
           var last = out[out.length - 1];
           if (last) {
             for (var q2 = last.phones.length - 1; q2 >= 0; q2--) {
@@ -3656,13 +3696,18 @@
         }
         var isK = (kc >= 0x3041 && kc <= 0x3096);
         if (isK) {
-          flushRoman();
-          if (ch3 === 'っ') {                       // 促音：把喉塞并进下一拍的声母
-            pendingStop = 't';
+          flushRoman(true);
+          if (ch3 === 'っ') {                       // 促音：并入下一拍声母，句尾或单拍时独立/附尾成持阻
+            flushPendingStop();
+            pendingStop = 'cl'; pendingText = ch3; pendingAttached = attachedAfterKana;
+            attachedAfterKana = false;
             i3++; continue;
           }
           if (ch3 === 'ん') {
-            out.push({ text: 'ん', phones: ['N_j'], roman: 'n' });
+            var nPh = ['N_j'], nTxt = 'ん', nRm = 'n';
+            if (pendingStop) { nPh.unshift(pendingStop); nTxt = pendingText + nTxt; nRm = 'cl' + nRm; pendingStop = null; pendingText = ''; pendingAttached = false; }
+            out.push({ text: nTxt, phones: nPh, roman: nRm });
+            attachedAfterKana = true;
             i3++; continue;
           }
           var nxt = norm[i3 + 1] || '';
@@ -3677,12 +3722,18 @@
           }
           if (!rmb) continue;
           var ph = romajiToPhones(rmb);
-          if (pendingStop) { ph.unshift(pendingStop); pendingStop = null; }
-          if (ph.length) out.push({ text: ch3 + (combo ? nxt : ''), phones: ph, roman: rmb });
+          var kanaTxt = ch3 + (combo ? nxt : ''), kanaRm = rmb;
+          if (pendingStop) { ph.unshift(pendingStop); kanaTxt = pendingText + kanaTxt; kanaRm = 'cl' + kanaRm; pendingStop = null; pendingText = ''; pendingAttached = false; }
+          if (ph.length) {
+            out.push({ text: kanaTxt, phones: ph, roman: kanaRm });
+            attachedAfterKana = true;
+          }
           continue;
         }
         if (/[a-zA-Z]/.test(ch3) || (ch3 === '-' && romanBuf)) { romanBuf += ch3; i3++; continue; }
-        flushRoman();
+        flushRoman(false);
+        flushPendingStop();
+        attachedAfterKana = false;
         if (ch3 === '-' && out.length) {
           var lastRm = out[out.length - 1];
           for (var q3 = lastRm.phones.length - 1; q3 >= 0; q3--) {
@@ -3692,7 +3743,8 @@
         }
         i3++;
       }
-      flushRoman();
+      flushRoman(false);
+      flushPendingStop();
       return out;
     }
     // 汉字逐字取音，罗马字按各拼音方案切分。
@@ -3975,7 +4027,7 @@
     var phones = [], kind = NSG.noteKind(note);
     if (note._phonemeError) return { phones: [], custom: !!note._phonesCustom, error: note._phonemeError };
     if (kind === 'rest') phones = ['SP'];
-    else if (kind === 'breath') phones = ['br'];
+    else if (kind === 'breath') phones = [NSG.breathPhoneOf(note)];
     else if (note.slur && previous) {
       var prior = previous.phones || [], index = prior.length - 1;
       while (index >= 0 && NSG.phoneOf(prior[index]).t !== 'V' && !NSG.phoneOf(prior[index]).syllabic) index--;
@@ -4064,7 +4116,7 @@
         /[\s,.\!\?;:，。！？；：、\(\)（）「」『』“”"…]+/)
       .filter(Boolean);
 
-    var SPECIAL_RE = /^(?:SP|AP|br|sil|pau)$/i;
+    var SPECIAL_RE = /^(?:SP|AP|br[1-5]?|sil|pau)$/i;
     var SLUR_RE = /^(?:[-—–―‿=＿~～]+)$/;
     var tokens = [];
 
@@ -4102,11 +4154,11 @@
             buf += chunk.slice(i, i + bcl); i += bcl;
           }
           if (buf) {
-            if (HAK_TEOCHEW.test(lang) && /^[a-zê1-8ˊˇˋ'’]+$/i.test(buf.normalize('NFC'))) {
+            if (SPECIAL_RE.test(buf)) tokens.push(buf.toUpperCase() === 'SP' ? 'SP' : buf.toUpperCase() === 'AP' ? 'AP' : buf.toLowerCase());
+            else if (HAK_TEOCHEW.test(lang) && /^[a-zê1-8ˊˇˋ'’]+$/i.test(buf.normalize('NFC'))) {
               var romanTokens = buf.normalize('NFC').match(DIALECT_ROMAN);
               if (romanTokens) tokens.push.apply(tokens, romanTokens);
-            } else if (SPECIAL_RE.test(buf)) tokens.push(buf.toUpperCase() === 'SP' ? 'SP' : buf.toUpperCase() === 'AP' ? 'AP' : buf.toLowerCase());
-            else tokens.push(buf);
+            } else tokens.push(buf);
           }
         }
       });

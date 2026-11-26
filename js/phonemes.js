@@ -41,7 +41,7 @@
      普通话 uo/o、粤语 o 听起来接近 u。这里取更开的中后元音，圆唇只留少量。 */
   /* 普通话 o/uo 与 ou 分开；唇音后 o 用试听选定的 o_lab，
      wo/duo/ong 使用 o。ou 使用独立 o_ou/U_ou，不能改变 iu/iong 和 wo 短过渡共用的 U。 */
-  P.o  = V3([625, 920, 2450], 0.05);      // ɔ̝（普通话 o/uo）；F2 仍须明显高于 u
+  P.o  = V3([565, 915, 2450], 0.06);      // o̞（普通话 o/uo）；收紧口型同时保留 F2 明显高于 u
   P.o_lab = V3([665, 920, 2450], 0.05);  // b/p/m/f + o：J 版稍开的主元音
   P.oU = V3([510, 1130, 2450], 0.03);     // 保留 iu 的原主元音及显式音素兼容
   P.o_ou = V3([470, 950, 2450], 0.05);   // ou：G 版主元音
@@ -66,7 +66,7 @@
   P.u_medial = Object.assign({}, P.u, { onset: 0.045 });
   P.y_medial = Object.assign({}, P.y, { onset: 0.055 });
   P.u_labial = Object.assign({}, P.u_o, { onset: 0.050 });
-  P['7'] = V3([500, 1400, 2450], 0);      // ɤ（拼音 e）
+  P['7'] = V3([465, 1340, 2450], 0);      // ɤ（拼音 e）：半闭后不圆唇，避免口型过开
   P['@'] = V3([500, 1500, 2500], 0);      // ə
   P['3'] = V3([490, 1350, 1690], 0.03);   // ɝ / ɚ
   P['1'] = V3([400, 1400, 2600], 0);      // ɿ（z c s 后）
@@ -168,19 +168,57 @@
   P.br = F(1700, 2200, 0.18, false);
   P.br.t = 'B';
   P.AP = P.br;
+  function B(f, b, lip, nz, na, profile) {
+    return { t: 'B', f: f, b: b, lip: lip || 0, nz: nz || 0, na: na, brProfile: profile };
+  }
+  /* 5 种差异化呼吸音（br1~br5）：覆盖轻柔短气口、标准饱满吸气、急促齿间抢气、深沉圆唇/鼻吸与叹息式呼气。 */
+  P.br1 = B([520, 1480, 2550, 3450, 4450], [190, 230, 340, 440, 560], 0.04, 0,
+    { f: 2300, b: 2200, g: 0.11, v: false },
+    { env: 'soft', tnLevel: 0.068, stdTnLevel: 0.040, tnLpHz: 3200, studioFricGain: 4.8,
+      sweep: [1850, 2500, 2000], studioSweep: [1950, 2650, 2100], peakAt: 0.55, bw: 2000, studioBw: 2300 });
+  P.br2 = B([660, 1280, 2480, 3400, 4400], [170, 210, 310, 420, 520], 0, 0,
+    { f: 2700, b: 2400, g: 0.21, v: false },
+    { env: 'full', tnLevel: 0.115, stdTnLevel: 0.068, tnLpHz: 4000, studioFricGain: 7.0,
+      sweep: [1900, 2900, 2150], studioSweep: [2150, 3150, 2400], peakAt: 0.64, bw: 2100, studioBw: 2500 });
+  P.br3 = B([360, 2050, 2850, 3650, 4650], [150, 190, 280, 380, 480], 0, 0,
+    { f: 4400, b: 2000, g: 0.17, v: false },
+    { env: 'gasp', tnLevel: 0.070, stdTnLevel: 0.042, tnLpHz: 5200, studioFricGain: 4.6,
+      sweep: [3200, 4600, 3500], studioSweep: [3600, 4900, 3900], peakAt: 0.42, bw: 1850, studioBw: 2150 });
+  P.br4 = B([340, 860, 2250, 3250, 4250], [180, 220, 330, 430, 540], 0.16, 0.45,
+    { f: 1450, b: 1600, g: 0.20, v: false },
+    { env: 'deep', tnLevel: 0.130, stdTnLevel: 0.075, tnLpHz: 2200, studioFricGain: 7.2,
+      sweep: [1050, 1550, 1180], studioSweep: [1150, 1680, 1280], peakAt: 0.70, bw: 1450, studioBw: 1750 });
+  P.br5 = B([610, 1180, 2420, 3350, 4350], [160, 200, 300, 400, 500], 0.03, 0,
+    { f: 2100, b: 2100, g: 0.18, v: false },
+    { env: 'sigh', tnLevel: 0.125, stdTnLevel: 0.078, tnLpHz: 3400, studioFricGain: 6.2,
+      sweep: [2650, 1750, 1150], studioSweep: [2950, 1850, 1250], peakAt: 0.35, bw: 1900, studioBw: 2250 });
   P.SP = { t: 'R' };
+  NSG.isBreathPhone = function (id) {
+    return /^br[1-5]?$/.test(String(id === undefined ? '' : id));
+  };
   NSG.specialPhone = function (text, lang) {
     var s = String(text === undefined ? '' : text).trim();
     if (/^br$/i.test(s) || s === 'AP' || (!/^(yue|nan|hak|nan-x-teochew|zh-x-sichuan|xdi8|tlh|ko|vi|pl|ru|uk|fi|eo|tok|asaxi|es|pt|it|fr|ro|fil|id|ms|th)$/.test(lang || '') && /^ap$/i.test(s))) return 'br';
+    // 希顶语（xdi8）的聊天字母表把 b、r、1~5 均用作有效音素字母，因此不将 br1~br5 抢占为呼吸。
+    if (/^br[1-5]$/i.test(s) && lang !== 'xdi8') return s.toLowerCase();
     if (/^SP$/i.test(s)) return 'SP';
     return null;
+  };
+  NSG.breathPhoneOf = function (n) {
+    if (!n) return 'br';
+    var lyric = String(n.lyric === undefined ? '' : n.lyric).trim();
+    var special = NSG.specialPhone(lyric, n.lang);
+    if (NSG.isBreathPhone(special)) return special;
+    var phone = n.phones && n.phones.length === 1 ? NSG.specialPhone(n.phones[0]) : null;
+    if (NSG.isBreathPhone(phone)) return phone;
+    return 'br';
   };
   NSG.noteKind = function (n) {
     var lyric = String(n.lyric === undefined ? '' : n.lyric).trim();
     var special = NSG.specialPhone(lyric, n.lang);
     var phone = n.phones && n.phones.length === 1 ? NSG.specialPhone(n.phones[0]) : null;
     if (n.rest || special === 'SP' || phone === 'SP' || /^(?:R|r|rest|休止|休止符)$/.test(lyric)) return 'rest';
-    if (special === 'br' || phone === 'br') return 'breath';
+    if (NSG.isBreathPhone(special) || NSG.isBreathPhone(phone)) return 'breath';
     return lyric ? 'voiced' : 'rest';
   };
 
@@ -222,6 +260,8 @@
   P.gv = S(1850, 560, 0.36, true);
   // 臺羅韵尾 -h = ʔ：只有闭塞，没有 h 的摩擦或塞音的爆破。
   P.q = { t: 'Q', f: [500, 1500, 2500], b: [70, 92, 132], nz: 0, dur: 35 };
+  // 日语促音 / 喉塞持阻标记 cl：纯闭塞无爆破，独立成音符时按音符时长持阻。
+  P.cl = Object.assign({}, P.q, { dur: 55 });
 
   /* 歌唱咬字基准（ms），是可继续试听调整的合成参数，并非实测语料统计。
      拼音 p/t/k 分别使用 ph/t_h/kh；不能与不送气的 b/d/g 共用时长。

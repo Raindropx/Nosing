@@ -223,7 +223,7 @@
         var wordEndX = self.beatX(timeline.tm.beatOf(wordEnds[group.headId] || phone.t1));
         c.save(); c.beginPath(); c.rect(x, y + 3, Math.max(0, wordEndX - x), 18); c.clip();
         c.font = '10px "Microsoft YaHei", sans-serif'; c.fillStyle = color.ink;
-        c.fillText(group.word || (phone.phone === 'SP' ? tr('phonePanel.canvas.rest', null, '休止') : phone.phone === 'br' ? tr('phonePanel.canvas.breath', null, '换气') : ''), Math.max(x + 3, self.kbW + 3), y + 15);
+        c.fillText(group.word || (phone.phone === 'SP' ? tr('phonePanel.canvas.rest', null, '休止') : NSG.isBreathPhone(phone.phone) ? tr('phonePanel.canvas.breath', null, '换气') : ''), Math.max(x + 3, self.kbW + 3), y + 15);
         c.restore();
       }
       if (themeId === 'aero' && color.hi) {
@@ -377,7 +377,7 @@
     var group = this._phoneGroup(phone), note = group.note, timing = this._timingFromGroup(group);
     if (field === 'symbol') {
       value = String(value).trim();
-      if (!NSG.PHONES[value] || value.indexOf('__') === 0 || /^(SP|br)$/.test(value)) {
+      if (!NSG.PHONES[value] || value.indexOf('__') === 0 || /^(SP|AP|br[1-5]?)$/.test(value)) {
         if (this.onPhoneError) this.onPhoneError(tr('phonePanel.invalidSymbol', null, '请输入一个有效的发声音素名称。休止和换气请通过歌词设置。'));
         return false;
       }

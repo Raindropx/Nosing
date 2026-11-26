@@ -948,7 +948,7 @@
     if (lyrics.some(function (s) { return /[ĉĝĥĵŝŭ]/i.test(s.normalize('NFC')); })) return 'eo';
     if (lyrics.some(function (s) { return /[\u3040-\u30ff\u3400-\u9fff]/.test(s); })) return undefined;
     if (lyrics.some(function (s) { return /^[a-z][a-z'’]*#[1-9]\d*$/i.test(s); })) return 'en';
-    var words = lyrics.filter(function (s) { return s && !slurMark(s) && !/^(?:R|rest|SP|br|AP)$/i.test(s); });
+    var words = lyrics.filter(function (s) { return s && !slurMark(s) && !/^(?:R|rest|SP|br[1-5]?|AP)$/i.test(s); });
     var pinyin = words.filter(function (s) { return PINYIN.has(s.toLowerCase().replace(/ü/g, 'v').replace(/u:/g, 'v').replace(/[1-5]$/, '')); });
     // Require a predominantly pinyin phrase, not an isolated ambiguous "you".
     var distinctPinyin = pinyin.some(function (s) {

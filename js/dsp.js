@@ -1219,13 +1219,27 @@
         note._start = tm.secOf(note.start);
         note._end = tm.secOf(note.start + note.dur);
         note._breath = true;
-        var breath = NSG.PHONES.br;
-        var breathPairs = (!timingOnly && studioMode) ? NSG.formantsOf(breath, timbre).pairs : null;
+        var breathId = NSG.breathPhoneOf ? NSG.breathPhoneOf(note) : 'br';
+        note._breathPhone = breathId;
+        var breath = NSG.PHONES[breathId] || NSG.PHONES.br;
+        var bp = breath.brProfile || null;
+        var breathPairs = !timingOnly ? NSG.formantsOf(breath, timbre).pairs : null;
+        if (breathPairs && bp && Array.isArray(breath.b)) {
+          var brBwScale = timbre.bwScale || 1;
+          for (var bbi = 0; bbi < Math.min(5, breath.b.length); bbi++) {
+            breathPairs[bbi][1] = Math.max(80, breath.b[bbi] * brBwScale);
+          }
+        }
+        var brTnLevel = bp ? bp.tnLevel : 0.085;
+        var brTnLp = bp ? bp.tnLpHz : 3800;
+        var brTn = (!timingOnly && studioMode) ? tractNoiseGain(breathPairs, timbre, brTnLevel, brTnLp, 2)
+          : (!timingOnly && bp && bp.stdTnLevel) ? tractNoiseGain(breathPairs, timbre, bp.stdTnLevel, brTnLp, 2) : 0;
         ev.push({ t0: note._start, t1: note._end, kind: 'B',
-          pairs: timingOnly ? null : (breathPairs || NSG.formantsOf(breath, timbre).pairs), av: 0, fric: breath.na.g,
-          tn: (!timingOnly && studioMode) ? tractNoiseGain(breathPairs, timbre, 0.085, 3800, 2) : 0,
-          tnLpHz: studioMode ? 3800 : 0,
-          fc: breath.na.f, fbw: breath.na.b, nasal: 0 });
+          pairs: breathPairs, av: 0, fric: breath.na.g,
+          tn: brTn,
+          tnLpHz: (studioMode || (bp && bp.stdTnLevel)) ? brTnLp : 0,
+          fc: breath.na.f, fbw: breath.na.b, nasal: breath.nz || 0,
+          brProfile: bp });
         tail = { b: ev.length - 1, note: note };
         soundEnd = note._end;
         prevChain = null;
@@ -1299,10 +1313,10 @@
           return { t: 'V', f: [440, 1280, 2420], b: [70, 92, 132], nz: 0, lip: 0.03 };
         }
         if (id === 'u_medial' && idx + 1 < phonesList.length && phonesList[idx + 1] === 'o') {
-          return { t: 'V', f: [420, 960, 2550], b: [75, 110, 150], nz: 0, lip: 0.14 };
+          return { t: 'V', f: [365, 860, 2400], b: [72, 102, 145], nz: 0, lip: 0.14 };
         }
         if (id === 'o' && idx > 0 && phonesList[idx - 1] === 'u_medial') {
-          return { t: 'V', f: [555, 980, 2450], b: [70, 92, 132], nz: 0, lip: 0.05 };
+          return { t: 'V', f: [495, 915, 2440], b: [70, 92, 132], nz: 0, lip: 0.07 };
         }
         if (id === 'o_ou') {
           return { t: 'V', f: [475, 1040, 2450], b: [70, 92, 132], nz: 0, lip: 0.04 };
@@ -1317,7 +1331,10 @@
           return { t: 'V', f: [350, 2140, 2750], b: [70, 92, 132], nz: 0, lip: 0, coda: phBase.coda, glide: phBase.glide };
         }
         if (id === '7') {
-          return { t: 'V', f: [540, 1480, 2660], b: [72, 96, 136], nz: 0, lip: 0 };
+          if (idx > 0 && /^(g|kh|h)$/.test(phonesList[idx - 1])) {
+            return { t: 'V', f: [450, 1290, 2500], b: [70, 94, 134], nz: 0, lip: 0 };
+          }
+          return { t: 'V', f: [470, 1360, 2540], b: [70, 94, 134], nz: 0, lip: 0 };
         }
         return phBase;
       }
@@ -1526,6 +1543,12 @@
         bodyStart = borrowIdx;
         borrowEv = ev[borrowIdx];
         borrowMax = (borrowEv.t1 - borrowEv.t0) * 0.5;
+      } else if (tail && tail.q === ev.length - 1) {
+        borrowIdx = tail.q;
+        bodyStart = borrowIdx;
+        borrowEv = ev[borrowIdx];
+        var qLen = borrowEv.t1 - borrowEv.t0;
+        borrowMax = Math.max(0, Math.min(qLen * 0.75, qLen - 0.015));
       }
       // A manually timed syllable keeps its boundaries when the next onset is scheduled.
       if (tail && tail.locked) { borrowMax = 0; prevTier1 = 0; prevTier2 = 0; prevSlacks1 = null; prevSlacks2 = null; }
@@ -1866,7 +1889,9 @@
           cur = tt1;
         }
         var tTailV = tLastNuc >= 0 ? tLastNuc : (tLastVowel >= 0 ? tLastVowel : tLastSonorant);
-        tail = tTailV >= 0 ? { v: tTailV, bodyStart: tFirstNuc >= 0 && tFirstNuc <= tTailV ? tFirstNuc : tTailV, end: ev.length, locked: !!manualTimes } : null;
+        var tIsStandaloneQ = phones.length === 1 && notePhone(phones[0]).t === 'Q' && ev.length > noteEv0;
+        tail = tTailV >= 0 ? { v: tTailV, bodyStart: tFirstNuc >= 0 && tFirstNuc <= tTailV ? tFirstNuc : tTailV, end: ev.length, locked: !!manualTimes }
+          : tIsStandaloneQ ? { q: ev.length - 1, locked: !!manualTimes } : null;
         var tLastIdx = phones.length - 1;
         var tLastCoda = noteInfo.hasVowel && tLastIdx > nuc && nuclei.indexOf(tLastIdx) < 0 &&
           NSG.phoneOf(phones[tLastIdx]).t !== 'V' && geminateRole[tLastIdx] === 'first' ? phones[tLastIdx] : '';
@@ -2404,7 +2429,9 @@
         cur = t1;
       }
       var tailV = lastNucleus >= 0 ? lastNucleus : (lastVowel >= 0 ? lastVowel : lastSonorant);
-      tail = tailV >= 0 ? { v: tailV, bodyStart: firstNucleus >= 0 && firstNucleus <= tailV ? firstNucleus : tailV, end: ev.length, locked: !!manualTimes } : null;
+      var isStandaloneQ = phones.length === 1 && notePhone(phones[0]).t === 'Q' && ev.length > noteEv0;
+      tail = tailV >= 0 ? { v: tailV, bodyStart: firstNucleus >= 0 && firstNucleus <= tailV ? firstNucleus : tailV, end: ev.length, locked: !!manualTimes }
+        : isStandaloneQ ? { q: ev.length - 1, locked: !!manualTimes } : null;
       var lastPhoneIdx = phones.length - 1;
       var lastCodaId = noteInfo.hasVowel && lastPhoneIdx > nuc && nuclei.indexOf(lastPhoneIdx) < 0 &&
         NSG.phoneOf(phones[lastPhoneIdx]).t !== 'V' && geminateRole[lastPhoneIdx] === 'first' ? phones[lastPhoneIdx] : '';
@@ -3231,8 +3258,20 @@
       }
       if (e && e.kind === 'B') {
         var bU = Math.max(0, Math.min(1, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
-        var bEnv;
-        if (humAmt > 0) {
+        var bEnv, bpEnv = e.brProfile ? e.brProfile.env : '';
+        if (bpEnv === 'soft') {
+          bEnv = Math.pow(Math.sin(Math.PI * bU), 1.15);
+        } else if (bpEnv === 'full') {
+          bEnv = Math.pow(Math.sin(Math.PI * Math.pow(bU, 0.70)), 0.80);
+        } else if (bpEnv === 'gasp') {
+          bEnv = Math.pow(Math.sin(Math.PI * Math.pow(bU, 0.48)), 0.65);
+        } else if (bpEnv === 'deep') {
+          bEnv = Math.pow(Math.sin(Math.PI * Math.pow(bU, 0.88)), 0.90);
+        } else if (bpEnv === 'sigh') {
+          var sAtt = Math.min(1, bU / 0.14);
+          sAtt = sAtt * sAtt * (3 - 2 * sAtt);
+          bEnv = sAtt * Math.pow(1 - bU, 1.35) * 1.45;
+        } else if (humAmt > 0) {
           // 非对称双段吸气包络：较快吸入、柔和滞留、起唱前轻顿；频心由咽喉滑向唇齿。
           var bSin = Math.sin(Math.PI * bU);
           var bAsym = Math.pow(Math.sin(Math.PI * Math.pow(bU, 0.72)), 0.85);
@@ -3930,17 +3969,26 @@
         }
         fricFOut *= 1 - 0.14 * Math.max(0, Math.min(0.4, liveLipOut));
       }
-      if (humAmt > 0 && e && e.kind === 'B') {
-        // Two-stage inhalation resonance: pharyngeal -> oral/teeth -> soft close.
+      if (e && e.kind === 'B') {
         var bU2 = Math.max(0, Math.min(1, (t - e.t0) / Math.max(1e-6, e.t1 - e.t0)));
-        if (studioMode) {
-          var bFreqSt = bU2 < 0.65 ? (1100 + 950 * (bU2 / 0.65)) : (2050 - 600 * ((bU2 - 0.65) / 0.35));
-          fricFOut = curFricF + (bFreqSt - curFricF) * humAmt;
-          fricBOut = curFricB + (1550 - curFricB) * humAmt;
-        } else {
-          var bFreq = bU2 < 0.65 ? (1350 + 1200 * (bU2 / 0.65)) : (2550 - 800 * ((bU2 - 0.65) / 0.35));
-          fricFOut = curFricF + (bFreq - curFricF) * humAmt;
-          fricBOut = curFricB + (1450 - curFricB) * humAmt;
+        if (e.brProfile) {
+          var bpSw = e.brProfile;
+          var sw = studioMode ? bpSw.studioSweep : bpSw.sweep;
+          var pk = bpSw.peakAt || 0.65;
+          var bFreqP = bU2 < pk ? (sw[0] + (sw[1] - sw[0]) * (bU2 / pk)) : (sw[1] + (sw[2] - sw[1]) * ((bU2 - pk) / Math.max(1e-6, 1 - pk)));
+          fricFOut = bFreqP;
+          fricBOut = studioMode ? bpSw.studioBw : bpSw.bw;
+        } else if (humAmt > 0) {
+          // Two-stage inhalation resonance: pharyngeal -> oral/teeth -> soft close.
+          if (studioMode) {
+            var bFreqSt = bU2 < 0.65 ? (1100 + 950 * (bU2 / 0.65)) : (2050 - 600 * ((bU2 - 0.65) / 0.35));
+            fricFOut = curFricF + (bFreqSt - curFricF) * humAmt;
+            fricBOut = curFricB + (1550 - curFricB) * humAmt;
+          } else {
+            var bFreq = bU2 < 0.65 ? (1350 + 1200 * (bU2 / 0.65)) : (2550 - 800 * ((bU2 - 0.65) / 0.35));
+            fricFOut = curFricF + (bFreq - curFricF) * humAmt;
+            fricBOut = curFricB + (1450 - curFricB) * humAmt;
+          }
         }
       }
       var effBreathCtrl = studioMode ? Math.max(0.008, timbre.breath || 0) : (timbre.breath || 0);
@@ -3964,6 +4012,10 @@
         ctrl[ctrlIdx].burstAmp = burstAmp;
         ctrl[ctrlIdx].isAffricateBurst = isAffrBurst;
         ctrl[ctrlIdx].isBreath = !!(e && e.kind === 'B');
+        if (e && e.kind === 'B' && e.brProfile) {
+          ctrl[ctrlIdx].breathCustomFreq = true;
+          ctrl[ctrlIdx].breathFricScale = e.brProfile.studioFricGain;
+        }
       }
       if (curTnLpHz > 0) ctrl[ctrlIdx].tnLpHz = curTnLpHz;
       if ((curTn < 1e-6 && (!e || !e.tnLpHz)) || (active && active._rest)) curTnLpHz = 0;
@@ -5104,7 +5156,7 @@
           else if (wIsPalSib) wFricHz = Math.min(5400, wFricHz * 1.18);
           else wFricHz = Math.min(3800, wFricHz * 1.12);
           wFricBw = Math.min(3600, wFricBw * (wIsPalSib ? 1.55 : 1.32));
-        } else if (studio && wc.isBreath) {
+        } else if (studio && wc.isBreath && !wc.breathCustomFreq) {
           wFricHz = 3100;
           wFricBw = Math.max(wFricBw, 2600);
         }
@@ -5150,7 +5202,7 @@
         if (wStIsSibilant) {
           var wStSibMult = wRawFricHz >= 5000 ? 1.72 : wRawFricHz >= 3700 ? 1.62 : 1.65;
           wcFric *= wStSibMult / Math.max(1, wFricHz / wRawFricHz);
-        } else if (studio && wc.isBreath) wcFric *= 6.8;
+        } else if (studio && wc.isBreath) wcFric *= (wc.breathFricScale || 6.8);
         var wBurstGain = (studio && wc.burstAmp > 0) ? wc.burstAmp * wvk * wfGain * fricTrim : 0;
         var wf0 = wc.f0 > 0 ? wc.f0 : 100;
         if (jrnd && !studio) wf0 *= 1 + jit * (jrnd() * 2 - 1);
@@ -5337,7 +5389,7 @@
         else if (isPalSib) frictionHz = Math.min(5400, frictionHz * 1.18);
         else frictionHz = Math.min(3800, frictionHz * 1.12);
         frictionBw = Math.min(3600, frictionBw * (isPalSib ? 1.55 : 1.32));
-      } else if (studio && c.isBreath) {
+      } else if (studio && c.isBreath && !c.breathCustomFreq) {
         frictionHz = 3100;
         frictionBw = Math.max(frictionBw, 2600);
       }
@@ -5406,7 +5458,7 @@
       if (stIsSibilant) {
         var stSibMult = rawFricHz >= 5000 ? 1.72 : rawFricHz >= 3700 ? 1.62 : 1.65;
         cFric *= stSibMult / Math.max(1, frictionHz / rawFricHz);
-      } else if (studio && c.isBreath) cFric *= 6.8;
+      } else if (studio && c.isBreath) cFric *= (c.breathFricScale || 6.8);
       if (studio) {
         var cBurstGain = c.burstAmp > 0 ? c.burstAmp * vk * frictionGain * fricTrim : 0;
         var cBurst = c.burstImpulse || 0;
@@ -6243,7 +6295,7 @@
     });
     built.notes.forEach(function (note) {
       if (note._rest || note._breath) phones.push({ noteId: note.id, index: 0,
-        phone: note._breath ? 'br' : 'SP', t0: note._start, t1: note._end,
+        phone: note._breath ? (note._breathPhone || 'br') : 'SP', t0: note._start, t1: note._end,
         crossfade: 0, maxCrossfade: 0, readOnly: true });
     });
     phones.sort(function (a, b) { return a.t0 - b.t0; });

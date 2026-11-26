@@ -1298,7 +1298,7 @@
     var words = [];
     for (var i = 0; i < notes.length && words.join('').length < 18; i++) {
       var lyr = notes[i].lyric;
-      if (lyr && !/^(?:-|‿|=|\+|\+~|\+\*|SP|br|AP)$/i.test(lyr)) words.push(lyr);
+      if (lyr && !/^(?:-|‿|=|\+|\+~|\+\*|SP|br[1-5]?|AP)$/i.test(lyr)) words.push(lyr);
     }
     var txt = words.join(' ').trim();
     return t('layer.noteCount', { n: notes.length }, notes.length + ' 音符') + (txt ? ' · ' + txt.slice(0, 20) : '');
@@ -1979,7 +1979,7 @@
   function bindPhoneInspector() {
     var ids = { symbol: 'phoneSymbol', start: 'phoneStart', duration: 'phoneDuration', anticipation: 'phoneAnticipation', crossfade: 'phoneCrossfade', word: 'phoneWordGroup' };
     var options = document.createDocumentFragment();
-    Object.keys(NSG.PHONES).filter(function (id) { return id.indexOf('__') !== 0 && !/^(SP|br)$/.test(id); }).sort().forEach(function (id) {
+    Object.keys(NSG.PHONES).filter(function (id) { return id.indexOf('__') !== 0 && !/^(SP|AP|br[1-5]?)$/.test(id); }).sort().forEach(function (id) {
       var option = document.createElement('option'); option.value = id; options.appendChild(option);
     });
     $('#phoneSymbols').appendChild(options);
