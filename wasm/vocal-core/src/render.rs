@@ -285,11 +285,11 @@ impl VocalEngine {
         let mut mid_hp = 0.0_f64;
         let mid_lp_coef = (-2.0 * PI * 4800.0 / sr).exp();
         let mid_hp_coef = (-2.0 * PI * if studio { 1450.0 } else { 1600.0 } / sr).exp();
-        let mid_norm = if studio { 3.10 } else if hd { 3.2 } else { 2.1 };
+        let mid_norm = if studio { 2.2 } else if hd { 3.2 } else { 2.1 };
         let mut air_form_res = if studio && has_upper_air { Some(Resonator::new(false)) } else { None };
         let mut air_lp1 = 0.0_f64;
         let mut air_lp2 = 0.0_f64;
-        let air_lp_coef = (-2.0 * PI * if studio { 14200.0 } else { 13500.0 } / sr).exp();
+        let air_lp_coef = (-2.0 * PI * if studio { 16500.0 } else { 13500.0 } / sr).exp();
 
         let mut fry_parity: u32 = 0;
         let mut fry_gain_cur = 1.0_f64;
@@ -312,16 +312,16 @@ impl VocalEngine {
         let mut rad_y = 0.0_f64;
         let mut fric_rad_prev = 0.0_f64;
         let mut fric_rad_y = 0.0_f64;
-        let fric_rad_coef = (-2.0 * PI * 6800.0 / sr).exp();
+        let fric_rad_coef = (-2.0 * PI * if studio { 13000.0 } else { 6800.0 } / sr).exp();
         let mut br_lp1 = 0.0_f64;
         let mut br_lp2 = 0.0_f64;
         let breath_lp_coef = (-2.0 * PI * if studio { 5600.0 } else { 3400.0 } / sr).exp();
         let mut sib_air_hp = 0.0_f64;
         let mut sib_air_lp1 = 0.0_f64;
         let mut sib_air_lp2 = 0.0_f64;
-        let sib_air_hp_coef = (-2.0 * PI * 6200.0 / sr).exp();
-        let sib_air_lp_coef = (-2.0 * PI * 10600.0 / sr).exp();
-        let fu_w0 = 2.0 * PI * 13600.0 / sr;
+        let sib_air_hp_coef = (-2.0 * PI * 6800.0 / sr).exp();
+        let sib_air_lp_coef = (-2.0 * PI * 13800.0 / sr).exp();
+        let fu_w0 = 2.0 * PI * 15800.0 / sr;
         let fu_cw = fu_w0.cos();
         let fu_al = fu_w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
         let fu_a0 = 1.0 + fu_al;
@@ -336,20 +336,22 @@ impl VocalEngine {
         let mut fu_y2 = 0.0_f64;
         let mut breath_gate = 0.0_f64;
         let a_br_gate = 1.0 - (-1.0 / (sr * 0.003)).exp();
-        let mut cur_a_rad = (-2.0 * PI * 4800.0 / sr).exp();
+        let mut cur_a_rad = (-2.0 * PI * 5000.0 / sr).exp();
         let mut rad_step = 0.0_f64;
         let mut prev_burst_imp = 0.0_f64;
         let mut shock_env = 0.0_f64;
         let mut shock_amp = 0.0_f64;
         let mut shock_is_affr = false;
+        let mut shock_is_velar = false;
         let shock_alpha = (-1.0 / (sr * 0.0022)).exp();
-        let shock_alpha_affr = (-1.0 / (sr * 0.0028)).exp();
+        let shock_alpha_affr = (-1.0 / (sr * 0.0038)).exp();
+        let shock_alpha_vel = (-1.0 / (sr * 0.0052)).exp();
         let mut shock_phase = 1.0_f64;
         let shock_phase_step = 1.0 / (sr * 0.00035);
         let mut last_f0 = -1.0_f64;
         let mut consonant_lp = 0.0_f64;
         let mut tract_lp = 0.0_f64;
-        let consonant_coef = (-2.0 * PI * 1800.0 / sr).exp();
+        let consonant_coef = (-2.0 * PI * if studio { 3600.0 } else { 1800.0 } / sr).exp();
         let mut tract_soft1 = 0.0_f64;
         let mut tract_soft2 = 0.0_f64;
         let mut tn_soft_coef = 0.0_f64;
@@ -369,9 +371,9 @@ impl VocalEngine {
         let mut prev_cavity_gain = 1.0_f64;
 
         let bcoef = (-2.0 * PI * 6000.0 / sr).exp();
-        let asp_coef = (-2.0 * PI * if studio { 950.0 } else { 1000.0 } / sr).exp();
+        let asp_coef = (-2.0 * PI * if studio { 1250.0 } else { 1000.0 } / sr).exp();
         let mut asp_lp = 0.0_f64;
-        let mut asp_lp2 = 0.0_f64;
+        let cav_scale = if studio { nas_scale.powf(0.72).clamp(0.86, 1.24) } else { 1.0 };
         let air_coef = (-2.0 * PI * 6500.0 / sr).exp();
         let body_coef = (-2.0 * PI * 2800.0 / sr).exp();
         let mut asp_air = 0.0_f64;
@@ -439,7 +441,10 @@ impl VocalEngine {
             let c_asp_sc = frames[base + 40];
             let c_burst_imp = frames[base + 41];
             let c_burst_gain = frames[base + 42];
-            let is_affr_burst = frames[base + 43] != 0.0;
+            let burst_flags = frames[base + 43] as u32;
+            let is_affr_burst = (burst_flags & 1) != 0;
+            let is_stop_release = (burst_flags & 2) != 0;
+            let is_velar_burst = (burst_flags & 4) != 0;
             let raw_fric_hz = frames[base + 44];
             let is_breath = frames[base + 45] != 0.0;
 
@@ -481,16 +486,16 @@ impl VocalEngine {
                         + 0.08 * (pairs[0].0 - 500.0)
                         - 0.05 * (pairs[1].0 - 1500.0))
                         .clamp(4200.0, 5250.0);
-                    pn.set(sr, hop_f, px_st_hz, 5.0, -2.6 * (0.45 + 0.55 * humanize_amt), first);
+                    pn.set(sr, hop_f, px_st_hz, 5.0, -2.4 * (0.45 + 0.55 * humanize_amt), first);
                 }
                 if let Some(ref mut hs) = hpc_shelf {
                     hs.set(sr, hop_f, pairs[5].0, first);
                 }
                 if let Some(ref mut afr) = air_form_res {
-                    let fc_air = (4800.0 + 1.15 * pairs[1].0 - 1400.0 * c_lip).clamp(5200.0, 7600.0);
-                    afr.set(&rc, fc_air, 6400.0, first);
+                    let fc_air = (5000.0 + 1.15 * pairs[1].0 - 1300.0 * c_lip).clamp(5200.0, 7800.0);
+                    afr.set(&rc, fc_air, 6800.0, first);
                 }
-                let f_rad_st = (4800.0 + 2.0 * (pairs[0].0 - 450.0) - 2000.0 * c_lip).clamp(3600.0, 6600.0);
+                let f_rad_st = (5000.0 + 2.0 * (pairs[0].0 - 450.0) - 1900.0 * c_lip).clamp(3800.0, 6800.0);
                 let tgt_a_rad = (-2.0 * PI * f_rad_st / sr).exp();
                 if first {
                     cur_a_rad = tgt_a_rad;
@@ -509,11 +514,11 @@ impl VocalEngine {
                 }
             }
             let c_rd_open_st = if studio { ((c_rd - 0.72) / 1.35).max(0.0) } else { 0.0 };
-            let c_st_asp_gate = if studio { 0.28 * (0.45 + 2.0 * c_rd_open_st * c_rd_open_st) * (1.0 + 2.2 * c_abd) } else { 1.0 };
+            let c_st_asp_gate = if studio { 0.36 * (0.48 + 1.9 * c_rd_open_st * c_rd_open_st) * (1.0 + 2.0 * c_abd) } else { 1.0 };
             let f0_for_turb = if f0 > 0.0 { f0 } else { 200.0 };
             let low_turb_scale = (250.0 / f0_for_turb.max(120.0)).clamp(0.85, 1.28);
             let c_st_turb_gain = if studio {
-                (eff_breath * 0.032 + 0.0068 * c_rd_open_st.powf(1.45)) * low_turb_scale * (1.0 + 2.2 * c_abd) * (0.35 + 0.65 * c_asp_sc)
+                (eff_breath * 0.055 + 0.0080 * c_rd_open_st.powf(1.35)) * low_turb_scale * (1.0 + 2.0 * c_abd) * (0.25 + 0.75 * c_asp_sc)
             } else {
                 0.0
             };
@@ -528,8 +533,11 @@ impl VocalEngine {
             n_pole.set(&rc, np_hz, 100.0, first);
             n_zero.set(sr, hop_f, nzf, nasal_zero_bw(np_hz, nzf), first);
             let st_is_sibilant = studio && raw_fric_hz >= 2800.0 && c_front_cavity > 0.05 && !is_breath;
+            let st_is_broad_fric = studio && !st_is_sibilant && !is_breath && !is_stop_release && raw_fric_hz >= 1400.0 && raw_fric_hz < 2800.0;
             let sib_air_amt = if st_is_sibilant {
-                if raw_fric_hz >= 5000.0 { 0.22 } else if raw_fric_hz >= 3700.0 { 0.30 } else { 0.16 }
+                if raw_fric_hz >= 5000.0 { 0.34 } else if raw_fric_hz >= 3700.0 { 0.46 } else { 0.28 }
+            } else if st_is_broad_fric {
+                0.68
             } else {
                 0.0
             };
@@ -541,14 +549,18 @@ impl VocalEngine {
                     last_shock_bw = 1600.0;
                 } else if !(shock_env > 0.01) {
                     last_shock_hz = friction_hz;
-                    last_shock_bw = (friction_bw * 0.8).max(900.0);
+                    last_shock_bw = if studio && is_velar_burst {
+                        (friction_bw * 0.65).max(750.0)
+                    } else {
+                        (friction_bw * 0.8).max(900.0)
+                    };
                 }
                 let snap_shock = first || (c_burst_imp > 0.7 && prev_burst_imp <= 0.15 && shock_env <= 0.01);
                 sr_sh.set(&rc, last_shock_hz, last_shock_bw, snap_shock);
             }
             if let Some(ref mut fc) = front_cavity {
                 let cavity_fc = if studio { raw_cav_fc } else { (friction_hz / 25.0).round() * 25.0 };
-                fc.set(sr, hop_f, cavity_fc, studio, first);
+                fc.set(sr, hop_f, cavity_fc, studio, first, cav_scale);
                 if first {
                     prev_cavity_gain = cavity_gain;
                 }
@@ -562,7 +574,14 @@ impl VocalEngine {
                     shock_env = 1.0;
                     shock_phase = 0.0;
                     shock_is_affr = is_affr_burst;
-                    shock_amp = if shock_is_affr { (c_burst_gain * 0.65).min(0.085) } else { (c_burst_gain * 0.70).min(0.060) };
+                    shock_is_velar = is_velar_burst && !is_affr_burst;
+                    shock_amp = if shock_is_affr {
+                        (c_burst_gain * 0.45).min(0.055)
+                    } else if shock_is_velar {
+                        (c_burst_gain * 0.42).min(0.042)
+                    } else {
+                        (c_burst_gain * 0.62).min(0.055)
+                    };
                 }
                 prev_burst_imp = c_burst_imp;
             }
@@ -752,10 +771,6 @@ impl VocalEngine {
                 let asp_white = noise.next() * 2.0 - 1.0;
                 asp_lp = (1.0 - asp_coef) * asp_white + asp_coef * asp_lp;
                 let mut asp_colour = asp_lp;
-                if studio {
-                    asp_lp2 = (1.0 - asp_coef) * asp_lp + asp_coef * asp_lp2;
-                    asp_colour = asp_lp2;
-                }
                 if research && !studio {
                     asp_air = (1.0 - air_coef) * asp_white + air_coef * asp_air;
                     asp_body = (1.0 - body_coef) * asp_white + body_coef * asp_body;
@@ -783,7 +798,8 @@ impl VocalEngine {
                         mid_lp = (1.0 - mid_lp_coef) * g_white_st + mid_lp_coef * mid_lp;
                         mid_hp = (1.0 - mid_hp_coef) * mid_lp + mid_hp_coef * mid_hp;
                         let mid_band_st = (mid_lp - mid_hp) * mid_norm;
-                        s += mid_band_st * c_st_turb_gain * (0.35 + 0.65 * amp.min(1.0)) * flow_sq;
+                        let turb_mod = 0.62 + 0.45 * open_gate;
+                        s += mid_band_st * c_st_turb_gain * (0.35 + 0.65 * amp.min(1.0)) * turb_mod;
                     }
                     s += asp_colour * 1.41 * asp * 0.55 * c_st_asp_gate * asp_mod;
                 } else {
@@ -866,8 +882,12 @@ impl VocalEngine {
                     let st_nas_gain = if studio { 0.85 } else { 0.5 };
                     let ny = if nasal_lowpass_hz > 0.0 {
                         nasal_lp1 = (1.0 - nasal_coef) * nasal_raw + nasal_coef * nasal_lp1;
-                        nasal_lp2 = (1.0 - nasal_coef) * nasal_lp1 + nasal_coef * nasal_lp2;
-                        nasal_lp2 * nasal_amt * st_nas_gain
+                        if studio {
+                            nasal_lp1 * nasal_amt * st_nas_gain
+                        } else {
+                            nasal_lp2 = (1.0 - nasal_coef) * nasal_lp1 + nasal_coef * nasal_lp2;
+                            nasal_lp2 * nasal_amt * st_nas_gain
+                        }
                     } else {
                         nasal_raw * nasal_amt * st_nas_gain
                     };
@@ -917,6 +937,10 @@ impl VocalEngine {
                 } else {
                     fz * fg * fric_trim
                 };
+                if studio && !is_breath && tn_amt > 1e-6 {
+                    let tn_air_mult = if is_stop_release { 0.014 } else { 0.045 };
+                    friction += sib_air_lp2 * tn_amt * tn_air_mult;
+                }
                 if studio {
                     if let Some(ref mut sr_sh) = shock_res {
                         let mut shock_in = 0.0_f64;
@@ -925,8 +949,11 @@ impl VocalEngine {
                             if shock_phase < 1.0 { shock_phase += shock_phase_step; }
                             let n_turb = noise.next() * 2.0 - 1.0;
                             if shock_is_affr {
-                                shock_in = shock_env * (n_w * 1.10 + n_turb * 0.65);
+                                shock_in = shock_env * (n_w * 0.65 + n_turb * 0.70);
                                 shock_env *= shock_alpha_affr;
+                            } else if shock_is_velar {
+                                shock_in = shock_env * (n_w * 0.55 + n_turb * 0.78);
+                                shock_env *= shock_alpha_vel;
                             } else {
                                 shock_in = shock_env * (n_w + n_turb * 0.35);
                                 shock_env *= shock_alpha;

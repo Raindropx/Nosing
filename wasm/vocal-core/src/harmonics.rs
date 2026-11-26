@@ -241,7 +241,7 @@ pub fn chain_power(
     let rate = rc.sr;
     let calibrated = rc.mode_b && rate == 48000.0 && !studio;
     let rad_shelf = rc.mode_b && studio;
-    let rad_a = if rad_shelf { (-2.0 * PI * 4800.0 / rate).exp() } else { 0.0 };
+    let rad_a = if rad_shelf { (-2.0 * PI * 5000.0 / rate).exp() } else { 0.0 };
     let rad_num2 = if rad_shelf { (1.0 - rad_a) * (1.0 - rad_a) } else { 1.0 };
     let rad_den_b = 1.0 + rad_a * rad_a;
     let rad_2a = 2.0 * rad_a;
@@ -836,7 +836,7 @@ impl VocalSource {
         let rd_high_u = ((c_rd - 0.8) / 0.7).clamp(0.0, 1.0);
         let st_high_ceil = 0.42 - 0.16 * rd_high_u;
         let st_high_start = 5600.0 - 900.0 * rd_high_u;
-        let rad_a_hi = if studio { (-2.0 * PI * 4800.0 / rc.sr).exp() } else { 0.0 };
+        let rad_a_hi = if studio { (-2.0 * PI * 5000.0 / rc.sr).exp() } else { 0.0 };
         let rad_num2_hi = (1.0 - rad_a_hi) * (1.0 - rad_a_hi);
         let rad_den_b_hi = 1.0 + rad_a_hi * rad_a_hi;
         let rad_2a_hi = 2.0 * rad_a_hi;
@@ -900,7 +900,7 @@ impl VocalSource {
         );
         let colour = (3.0 * (pairs[1].0.max(200.0) / 1500.0).log2()).clamp(-5.0, 3.0);
         let level_db = if studio {
-            -32.0
+            -31.2
                 + 4.5 * strength
                 + (eff_tilt * 0.5).clamp(-3.0, 3.0)
                 + 0.65 * colour

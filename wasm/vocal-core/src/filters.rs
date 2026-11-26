@@ -538,6 +538,7 @@ pub struct FricativeFrontCavity {
     r_j: f64, r_j_t: f64, r_j_step: f64,
     last_f: f64,
     last_studio: bool,
+    last_scale: f64,
     steady: bool,
     s_int: usize, s_ap: f64, int_d: usize, ap: f64,
 }
@@ -560,7 +561,7 @@ impl FricativeFrontCavity {
             r_lip: 0.36, r_lip_t: 0.36, r_lip_step: 0.0,
             r_stub: 0.4, r_stub_t: 0.4, r_stub_step: 0.0,
             r_j: 0.16, r_j_t: 0.16, r_j_step: 0.0,
-            last_f: -1.0, last_studio: false, steady: false,
+            last_f: -1.0, last_studio: false, last_scale: -1.0, steady: false,
             s_int: 1, s_ap: 0.0, int_d: 1, ap: 0.0,
         }
     }
@@ -589,11 +590,13 @@ impl FricativeFrontCavity {
     }
 
     #[inline]
-    pub fn set(&mut self, sr: f64, hop: f64, hz: f64, studio: bool, snap: bool) {
+    pub fn set(&mut self, sr: f64, hop: f64, hz: f64, studio: bool, snap: bool, cav_scale: f64) {
         let f = hz.max(1000.0);
-        if f != self.last_f || studio != self.last_studio {
+        let sc = if studio { cav_scale.clamp(0.86, 1.24) } else { 1.0 };
+        if f != self.last_f || studio != self.last_studio || sc != self.last_scale {
             self.last_f = f;
             self.last_studio = studio;
+            self.last_scale = sc;
             let amt = self.amount;
             let t_pal = ((f - 3100.0) / (4200.0 - 3100.0)).clamp(0.0, 1.0);
             let t_alv = ((f - 4200.0) / (6100.0 - 4200.0)).clamp(0.0, 1.0);
@@ -601,8 +604,8 @@ impl FricativeFrontCavity {
                 let sx = sh + (x - sh) * t_pal;
                 sx + (s - sx) * t_alv
             };
-            let f_pole = if studio { place(3500.0, 6100.0, 7800.0) } else { place(2750.0, 5600.0, 8200.0) };
-            let lp_hz = if studio { place(8200.0, 8600.0, 11200.0) } else { place(9000.0, 10500.0, 16500.0) };
+            let f_pole = if studio { (place(3600.0, 5800.0, 8200.0) * sc).min(10200.0) } else { place(2750.0, 5600.0, 8200.0) };
+            let lp_hz = if studio { place(9500.0, 11500.0, 14500.0) } else { place(9000.0, 10500.0, 16500.0) };
             let f_zero = place(1350.0, 2350.0, 2700.0);
             let lp_zero = place(2400.0, 2300.0, 4200.0);
             let couple = |light_v: f64, strong_v: f64| -> f64 {

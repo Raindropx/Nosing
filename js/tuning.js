@@ -1051,7 +1051,7 @@
     }
     return result;
   }
-  function pitchModel(notes, pit) {
+  function pitchModel(notes, pit, opt) {
     var sorted = notes.slice().sort(function (a, b) { return a.start - b.start; });
     var records = [], byId = Object.create(null);
     sorted.forEach(function (n, i) {
@@ -1061,10 +1061,28 @@
       var join = adjacent(prev, n) && !legacy;
       var span = Math.min(0.16, n.dur * 0.35, join ? prev.dur * 0.35 : 0.16);
       if (!pts.length) {
+        var leadSpan = span, tailSpan = span;
+        if (join && opt && opt.tm && opt.consonantAware) {
+          var spb = Math.max(0.15, opt.tm.spbAt ? opt.tm.spbAt(n.start) : 0.5);
+          var isSlurNote = !!(n.slur || n._slur);
+          var hasObs = false, hasSonCons = false;
+          if (!isSlurNote) {
+            var rph = (n._resolvedPhones && n._resolvedPhones.length) ? n._resolvedPhones : n.phones;
+            var ph0 = (rph && rph.length && NSG.phoneOf) ? NSG.phoneOf(rph[0]) : null;
+            if (ph0) {
+              if (ph0.t === 'S' || ph0.t === 'A' || ph0.t === 'F') hasObs = true;
+              else if (ph0.t === 'N' || ph0.t === 'L' || ph0.t === 'G' || ph0.t === 'T') hasSonCons = true;
+            }
+          }
+          var preSec = isSlurNote ? 0.068 : hasObs ? 0.055 : hasSonCons ? 0.048 : 0.042;
+          var postSec = isSlurNote ? 0.068 : hasObs ? 0.020 : hasSonCons ? 0.030 : 0.036;
+          leadSpan = Math.min(prev.dur * 0.35, preSec / spb);
+          tailSpan = Math.min(n.dur * 0.35, postSec / spb);
+        }
         var prevRecord = records[i - 1];
-        var previousCents = join ? interp(prevRecord.points, prev.dur - span) : 0;
+        var previousCents = join ? interp(prevRecord.points, prev.dur - leadSpan) : 0;
         var from = join ? (prev.pitch - n.pitch) * 100 + previousCents : 0;
-        pts = join ? [[-span, from, 's'], [span, 0, 's']] : [[0, 0, 's'], [span, 0, 's']];
+        pts = join ? [[-leadSpan, from, 's'], [tailSpan, 0, 's']] : [[0, 0, 's'], [tailSpan, 0, 's']];
         if (legacy) pts = pb.map(function (p) { return [p[0] * n.dur, p[1], p[2]]; });
       }
       if (pts.length === 1) pts.push([pts[0][0] + Math.max(0.001, span), pts[0][1], pts[0][2]]);
