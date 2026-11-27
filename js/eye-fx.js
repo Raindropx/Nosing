@@ -1,4 +1,4 @@
-/* 莫名其妙的眼睛模式 · 动态视觉效果引擎（25 种演出：8 种晒调教 + 17 种莫名其妙×120，支持隐藏播放指针，全主题自适应） */
+/* 莫名其妙的眼睛模式 · 钢琴卷帘动态视觉效果引擎 */
 (function (root) {
   'use strict';
   var NSG = root.NSG = root.NSG || {};
@@ -1625,12 +1625,356 @@
     ja: ['あっ…', '惜しい!', 'アーム弱すぎ!', 'もう一回!', '落ちた!']
   };
 
-  /* ========================================================================
-   * 25 种模式定义
-   * 8 种正常/晒调教模式 (showcase: true) + 17 种莫名其妙×120模式
-   * ======================================================================== */
+  var EGG_SIZZLE_LINES = {
+    zh: ['滋啦~', '滋滋作响!', '加点黄油!', '香气扑鼻!', '火候刚好!'],
+    en: ['SIZZLE~', 'CRACK!', 'BUTTER UP!', 'CRISPY!', 'HOT PAN!'],
+    ja: ['ジュワ〜', 'パカッ!', 'バター投入!', 'いい香り!', 'アツアツ!']
+  };
+  var EGG_FLIP_LINES = {
+    zh: ['翻面!!', '起飞!', '空中转体!', '神翻面!', '接住了!', '糖心完美!'],
+    en: ['FLIP!!', 'NICE TOSS!', '360° EGG!', 'CAUGHT IT!', 'SUNNY SIDE!'],
+    ja: ['クルッ!!', 'ナイス返し!', '大回転!', 'キャッチ!', '半熟完璧!']
+  };
+  var EGG_BURN_LINES = {
+    zh: ['煎糊了!!', '快关火!!', '焦香风味!', '黑炭蛋!!'],
+    en: ['BURNT!!', 'TOO LONG!!', 'EXTRA CRISPY!', 'CHARCOAL!!'],
+    ja: ['焦げた!!', '火を止めて!!', '真っ黒!!', 'カリカリすぎ!']
+  };
+  var EGG_SPLAT_LINES = {
+    zh: ['翻车了!!', '蛋黄破了!', '掉锅外了!!', '惨烈粘锅!'],
+    en: ['SPLAT!!', 'BROKEN YOLK!', 'DROPPED IT!!', 'PAN FAIL!'],
+    ja: ['落ちた!!', '黄身割れ!', '大惨事!!', 'べちゃっ!']
+  };
+  var CUSTOMS_PASS_TAGS = {
+    zh: ['准予放行', '音准合格', '丝滑通关', '免检VIP', '唱功优良'],
+    en: ['APPROVED', 'PITCH OK', 'CLEARED', 'VIP PASS', 'SMOOTH!'],
+    ja: ['入国許可', '音程良好', '通過OK', 'VIP通行', '合格!!']
+  };
+  var CUSTOMS_DENY_TAGS = {
+    zh: ['遣返!!', '查无此词!', '违禁歌词!', '暂扣核查!'],
+    en: ['DENIED!!', 'UNKNOWN!', 'DETAINED!', 'NO ENTRY!'],
+    ja: ['入国拒否!', '辞書不一致!', '没収!!', '強制送還!']
+  };
+  var CUSTOMS_TRANSIT_TAGS = {
+    zh: ['经停签', '长音加签', '复检通过', '转机盖章'],
+    en: ['TRANSIT', 'VISA EXT', 'RE-CHECK', 'STAMPED'],
+    ja: ['経由印', '延長許可', '再審査OK', '乗継印']
+  };
+  var NOODLE_SLURP_LINES = {
+    zh: ['吸溜~', '嘶溜溜!!', '引力嗦面!', '香迷糊了!', '视界暴风吸入!', '加面!!'],
+    en: ['SLURP~', 'SCHLURP!!', 'SPAGHETTIFY!', 'SO GOOD!', 'GRAVITY NOM!'],
+    ja: ['ズルズル〜', 'ズズッ!!', '時空すすり!', 'うますぎ!', '替え玉!!']
+  };
+  var NOODLE_FINISH_LINES = {
+    zh: ['吨吨吨!', '真香!', '光盘!', '嗝~', '再来一碗!'],
+    en: ['BURP~', 'DELISH!', 'CLEAN BOWL!', 'MORE!!', 'YUM!'],
+    ja: ['完食!!', 'ごちそうさま!', 'おかわり!', 'ぷはぁ〜', '絶品!']
+  };
+
+  var NOTE_NAMES_12 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  function midiNoteName(pitch) {
+    var p = Math.round(Number(pitch) || 60);
+    return NOTE_NAMES_12[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
+  }
+  function midiToHz(pitch, cents) {
+    return 440 * Math.pow(2, ((Number(pitch) || 69) + (Number(cents) || 0) / 100 - 69) / 12);
+  }
+  function pickLine(pool) {
+    var arr = pool[langCode()] || pool.zh;
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+  function samplePitchCents(roll, n, rel, nInfo) {
+    if (!nInfo || !NSG.TUNING || !NSG.TUNING.hasPitch(n)) return 0;
+    try {
+      return roll._centsAt(n, clamp(rel, 0, 1), nInfo, !!roll.showVibrato) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /* 机械八音盒黄铜齿轮绘制 */
+  function drawClockworkGear(c, x, y, r, teeth, rot, fillCol, strokeCol, rubyCore) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    var outerR = r + 3.2;
+    var innerR = r - 1.2;
+    c.beginPath();
+    for (var i = 0; i < teeth; i++) {
+      var a0 = (i / teeth) * Math.PI * 2;
+      var a1 = ((i + 0.22) / teeth) * Math.PI * 2;
+      var a2 = ((i + 0.52) / teeth) * Math.PI * 2;
+      var a3 = ((i + 0.74) / teeth) * Math.PI * 2;
+      if (i === 0) c.moveTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
+      else c.lineTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
+      c.lineTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
+      c.lineTo(Math.cos(a2) * outerR, Math.sin(a2) * outerR);
+      c.lineTo(Math.cos(a3) * innerR, Math.sin(a3) * innerR);
+    }
+    c.closePath();
+    c.fillStyle = fillCol;
+    c.strokeStyle = strokeCol;
+    c.lineWidth = 1.1;
+    c.fill();
+    c.stroke();
+
+    // 镂空轮辐
+    var holeR = Math.max(2, r * 0.26);
+    var ringR = r * 0.56;
+    c.fillStyle = strokeCol;
+    for (var k = 0; k < 4; k++) {
+      var ha = k * Math.PI * 0.5;
+      c.beginPath();
+      c.arc(Math.cos(ha) * ringR, Math.sin(ha) * ringR, holeR, 0, Math.PI * 2);
+      c.fill();
+    }
+    // 中心轴与红宝石轴承
+    c.fillStyle = rubyCore ? '#e11d48' : '#fef3c7';
+    c.strokeStyle = strokeCol;
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(0, 0, Math.max(2.3, r * 0.24), 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    if (rubyCore) {
+      c.fillStyle = 'rgba(255,255,255,0.75)';
+      c.beginPath();
+      c.arc(-0.9, -0.9, Math.max(0.8, r * 0.08), 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+
+  /* 煎蛋本体绘制（支持 3D 翻面背面焦香、焦边程度、破蛋黄翻车状态） */
+  function drawFriedEggShape(c, rx, ry, opts) {
+    opts = opts || {};
+    var cooked = clamp(opts.cooked || 0, 0, 1);
+    var burnt = !!opts.burnt;
+    var underside = !!opts.underside;
+    var splat = !!opts.splat;
+    var seed = opts.seed || 0.3;
+
+    // 不规则花边蛋白轮廓
+    c.beginPath();
+    var segs = 16;
+    for (var i = 0; i <= segs; i++) {
+      var a = (i / segs) * Math.PI * 2;
+      var wob = 1 + 0.14 * Math.sin(a * 3 + seed * 9) + 0.08 * Math.cos(a * 5 - seed * 14);
+      var px = Math.cos(a) * rx * wob;
+      var py = Math.sin(a) * ry * wob;
+      if (i === 0) c.moveTo(px, py);
+      else c.lineTo(px, py);
+    }
+    c.closePath();
+
+    var eg = c.createRadialGradient(-rx * 0.12, -ry * 0.15, Math.min(rx, ry) * 0.15, 0, 0, Math.max(rx, ry) * 1.15);
+    if (burnt) {
+      eg.addColorStop(0, underside ? '#593318' : '#e7cf9c');
+      eg.addColorStop(0.68, underside ? '#3a1f0e' : '#9c6626');
+      eg.addColorStop(1, '#27150a');
+    } else if (underside) {
+      eg.addColorStop(0, '#f8e6bd');
+      eg.addColorStop(0.62, '#e3ad59');
+      eg.addColorStop(1, '#9c5b1f');
+    } else {
+      eg.addColorStop(0, '#ffffff');
+      eg.addColorStop(0.72, '#fff9e6');
+      eg.addColorStop(1, cooked > 0.45 ? '#d99642' : '#f1d69c');
+    }
+    c.fillStyle = eg;
+    c.fill();
+    c.strokeStyle = burnt ? '#1e0f07' : (cooked > 0.4 ? '#9e6223' : '#c9a66b');
+    c.lineWidth = burnt ? 1.8 : 1.3;
+    c.stroke();
+
+    // 焦脆泡泡质感（翻面背面或煎久后更明显）
+    if (underside || cooked > 0.35) {
+      c.fillStyle = burnt ? 'rgba(30, 14, 6, 0.55)' : 'rgba(176, 102, 28, 0.32)';
+      for (var bi = 0; bi < 4; bi++) {
+        var ba = bi * 1.65 + seed * 5;
+        c.beginPath();
+        c.arc(Math.cos(ba) * rx * 0.56, Math.sin(ba) * ry * 0.5, 1.4 + (bi % 2) * 0.9, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+
+    // 蛋黄（正面饱满透亮；背面隐约透出暖黄；翻车则流淌开来！）
+    var yx = (seed - 0.5) * rx * 0.25;
+    var yy = (seed - 0.5) * ry * 0.15;
+    var yRx = Math.max(3.8, Math.min(rx * 0.44, ry * 0.68));
+    var yRy = Math.max(3.2, yRx * 0.82);
+
+    if (underside) {
+      c.fillStyle = 'rgba(245, 158, 11, 0.32)';
+      c.beginPath();
+      c.ellipse(yx, yy, yRx * 0.9, yRy * 0.85, 0, 0, Math.PI * 2);
+      c.fill();
+      return;
+    }
+
+    if (splat) {
+      // 破蛋黄流淌效果
+      c.fillStyle = '#f59e0b';
+      c.beginPath();
+      c.ellipse(yx, yy, yRx * 1.35, yRy * 0.72, 0.22, 0, Math.PI * 2);
+      c.ellipse(yx + yRx * 0.9, yy + yRy * 0.35, yRx * 0.6, yRy * 0.42, -0.3, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = '#b45309';
+      c.lineWidth = 1;
+      c.stroke();
+    } else {
+      var yg = c.createRadialGradient(yx - yRx * 0.25, yy - yRy * 0.28, yRx * 0.12, yx, yy, yRx * 1.1);
+      yg.addColorStop(0, '#ffe97d');
+      yg.addColorStop(0.5, '#ffad1f');
+      yg.addColorStop(1, '#d96b08');
+      c.fillStyle = yg;
+      c.beginPath();
+      c.ellipse(yx, yy, yRx, yRy, 0, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = 'rgba(180, 83, 9, 0.45)';
+      c.lineWidth = 0.9;
+      c.stroke();
+      // 糖心月牙高光
+      c.fillStyle = 'rgba(255, 255, 240, 0.88)';
+      c.beginPath();
+      c.ellipse(yx - yRx * 0.32, yy - yRy * 0.32, yRx * 0.3, yRy * 0.17, -0.45, 0, Math.PI * 2);
+      c.fill();
+    }
+    // 撒几粒黑胡椒与绿色欧芹碎
+    c.fillStyle = '#292524';
+    c.fillRect(yx - rx * 0.52, yy + ry * 0.18, 1.5, 1.5);
+    c.fillRect(yx + rx * 0.48, yy - ry * 0.22, 1.5, 1.5);
+    c.fillStyle = '#22c55e';
+    c.beginPath();
+    c.arc(yx + yRx * 0.65, yy - yRy * 0.55, 1.5, 0, Math.PI * 2);
+    c.fill();
+  }
+
+  /* 官印 / 签证章绘制（支持绿/红/琥珀方章与圆章） */
+  function drawCustomsSeal(c, x, y, text, kind, rot, scale) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot || -0.14);
+    if (scale && scale !== 1) c.scale(scale, scale);
+
+    var isDeny = kind === 'deny';
+    var isTransit = kind === 'transit';
+    var col = isDeny ? '#e11d48' : (isTransit ? '#d97706' : '#059669');
+    var bg = isDeny ? 'rgba(225, 29, 72, 0.14)' : (isTransit ? 'rgba(217, 119, 6, 0.14)' : 'rgba(5, 150, 105, 0.14)');
+
+    if (isTransit) {
+      // 圆弧检疫/中转章
+      var r = 12.5;
+      c.fillStyle = bg;
+      c.strokeStyle = col;
+      c.lineWidth = 1.8;
+      c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.lineWidth = 0.9;
+      c.beginPath(); c.arc(0, 0, r - 2.6, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = col;
+      c.font = 'bold 8px Tahoma, "Microsoft YaHei", sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(text, 0, 0.5);
+    } else {
+      // 双边框方形通关/遣返章
+      c.font = 'bold 9.5px Tahoma, "Microsoft YaHei", sans-serif';
+      var tw = Math.max(32, c.measureText(text).width + 12);
+      var th = 17;
+      c.fillStyle = bg;
+      c.strokeStyle = col;
+      c.lineWidth = 2;
+      roundRect(c, -tw / 2, -th / 2, tw, th, 2.5);
+      c.fill(); c.stroke();
+      c.lineWidth = 0.85;
+      roundRect(c, -tw / 2 + 2.2, -th / 2 + 2.2, tw - 4.4, th - 4.4, 1.5);
+      c.stroke();
+      c.fillStyle = col;
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText((isDeny ? '✕ ' : '✓ ') + text, 0, 0.6);
+    }
+    c.restore();
+  }
+
+  /* 鸣门卷鱼板（黑洞拉面配菜） */
+  function drawNarutomaki(c, x, y, r, rot) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot || 0);
+    c.fillStyle = '#fffaf0';
+    c.strokeStyle = '#f472b6';
+    c.lineWidth = 1.2;
+    c.beginPath();
+    for (var i = 0; i <= 16; i++) {
+      var a = (i / 16) * Math.PI * 2;
+      var rr = r * (1 + 0.14 * Math.sin(a * 8));
+      if (i === 0) c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      else c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    c.closePath();
+    c.fill(); c.stroke();
+    // 粉色漩涡纹
+    c.strokeStyle = '#ec4899';
+    c.lineWidth = Math.max(1, r * 0.22);
+    c.beginPath();
+    for (var s = 0; s <= 18; s++) {
+      var t = s / 18;
+      var sa = t * Math.PI * 3.1;
+      var sr = t * r * 0.68;
+      if (s === 0) c.moveTo(0, 0);
+      else c.lineTo(Math.cos(sa) * sr, Math.sin(sa) * sr);
+    }
+    c.stroke();
+    c.restore();
+  }
+
+  /* 精致中式/日式拉面碗绘制 */
+  function drawRamenBowl(c, x, y, scale, tilt, brothLevel) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(tilt || 0);
+    c.scale(scale, scale);
+    // 碗底足
+    c.fillStyle = '#7f1d1d';
+    c.fillRect(-6, 9, 12, 3.2);
+    // 红黑漆面碗身
+    var bg = c.createLinearGradient(-15, 0, 15, 11);
+    bg.addColorStop(0, '#ef4444');
+    bg.addColorStop(0.55, '#b91c1c');
+    bg.addColorStop(1, '#7f1d1d');
+    c.fillStyle = bg;
+    c.strokeStyle = '#450a0a';
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.moveTo(-15, -1);
+    c.quadraticCurveTo(-13.5, 10, 0, 10.5);
+    c.quadraticCurveTo(13.5, 10, 15, -1);
+    c.closePath();
+    c.fill(); c.stroke();
+    // 金色回纹装饰带
+    c.strokeStyle = '#fde68a';
+    c.lineWidth = 1.1;
+    c.beginPath();
+    c.moveTo(-12.8, 2.5);
+    c.lineTo(12.8, 2.5);
+    c.stroke();
+    // 碗口椭圆与金色浓汤
+    c.fillStyle = '#991b1b';
+    c.beginPath();
+    c.ellipse(0, -1, 15, 4.4, 0, 0, Math.PI * 2);
+    c.fill(); c.stroke();
+    var soupR = 13 * clamp(brothLevel === undefined ? 1 : brothLevel, 0.35, 1);
+    c.fillStyle = '#f59e0b';
+    c.beginPath();
+    c.ellipse(0, -0.6, soupR, soupR * 0.25, 0, 0, Math.PI * 2);
+    c.fill();
+    // 碗内葱花点缀
+    c.fillStyle = '#22c55e';
+    c.beginPath(); c.arc(-5, -0.8, 1.4, 0, Math.PI * 2); c.arc(4.5, -0.4, 1.3, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
   var MODES = [
-    /* --- A. 适合晒调教（8种） --- */
+    /* --- A. 适合晒调教 --- */
     {
       id: 'karaokeGlow',
       showcase: true,
@@ -2981,7 +3325,1155 @@
       }
     },
 
-    /* --- B. 莫名其妙程度×120（17种） --- */
+    {
+      id: 'pitchBlueprint',
+      showcase: true,
+      usesPit: true,
+      hidePlayhead: true,
+      linger: 1.05,
+      nameKey: 'eye.mode.pitchBlueprint',
+      fallbackName: '蓝晒音高图',
+      eyeColor: { iris: '#38bdf8', ring: '#d6f5ff', pupil: '#092440' },
+      onEnterNote: function (fx, n, st, geo) {
+        var cy = geo.y + geo.h * 0.5;
+        fx.spawn({ kind: 'ring', x: geo.x + 2, y: cy, r: 4, maxR: Math.max(26, geo.h * 1.8), color: '#7ee8ff', lineW: 1.6, life: 0.55 });
+        fx.spawn({ kind: 'spark', x: geo.x + 2, y: cy, vx: 18, vy: -18, r: 2.0, color: '#ffffff', life: 0.4 });
+      },
+      onControlPoint: function (fx, n, cp) {
+        var ms = fx.modeState;
+        if (!ms.cpMarks) ms.cpMarks = [];
+        ms.cpMarks.push({
+          beat: cp.beat,
+          y: cp.y,
+          cents: Math.round(cp.cents || 0),
+          age: 0,
+          life: 2.2
+        });
+        if (ms.cpMarks.length > 26) ms.cpMarks.shift();
+        fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 2.5, maxR: 19, color: '#9cf0ff', lineW: 1.5, life: 0.55 });
+        fx.spawn({ kind: 'spark', x: cp.x, y: cp.y, vx: 0, vy: -16, r: 2.2, color: '#ffffff', life: 0.45 });
+      },
+      onStep: function (fx, dt, roll, T, A, jumped) {
+        var ms = fx.modeState;
+        var ctx = getPlaybackNoteContext(roll, roll.playPos);
+        var pitchInfo = roll._lastPitchInfo || null;
+        var targetY = (roll.rulerH + roll.gridBottom()) * 0.5;
+        var liveCents = 0, liveNote = null;
+        if (ctx.cur) {
+          liveNote = ctx.cur;
+          var rel = ctx.cur.dur > 0 ? clamp((roll.playPos - ctx.cur.start) / ctx.cur.dur, 0, 1) : 0;
+          var nInfo = pitchInfo ? pitchInfo[ctx.cur.id] : null;
+          targetY = samplePitchY(roll, ctx.cur, rel, nInfo);
+          liveCents = samplePitchCents(roll, ctx.cur, rel, nInfo);
+        } else if (ctx.prev && ctx.next) {
+          var g0 = ctx.prev.start + ctx.prev.dur, g1 = ctx.next.start;
+          var u = clamp((roll.playPos - g0) / Math.max(1e-4, g1 - g0), 0, 1);
+          var su = u * u * (3 - 2 * u);
+          targetY = noteCenterY(roll, ctx.prev) + (noteCenterY(roll, ctx.next) - noteCenterY(roll, ctx.prev)) * su;
+        } else if (ctx.next) {
+          targetY = noteCenterY(roll, ctx.next);
+        } else if (ctx.prev) {
+          targetY = noteCenterY(roll, ctx.prev);
+        }
+        targetY = clamp(targetY, roll.rulerH + 16, roll.gridBottom() - 16);
+        stepSmoothFollowerY(fx, roll, dt, jumped, targetY, 20);
+        ms.liveNote = liveNote;
+        ms.liveCents = liveCents;
+        if (ms.cpMarks) {
+          for (var i = ms.cpMarks.length - 1; i >= 0; i--) {
+            ms.cpMarks[i].age += dt;
+            if (ms.cpMarks[i].age >= ms.cpMarks[i].life) ms.cpMarks.splice(i, 1);
+          }
+        }
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        var ms = fx.modeState;
+        var gridH = roll.gridBottom();
+        var liveY = ms.followY !== undefined ? ms.followY : (roll.rulerH + gridH) * 0.5;
+        var dark = isDarkPalette(T);
+        var lineCol = dark ? '#9ef0ff' : '#0c4a7a';
+        var glowCol = dark ? 'rgba(110, 232, 255, 0.24)' : 'rgba(18, 98, 166, 0.20)';
+
+        c.save();
+        // 紫外曝光扫幕微光（T 尺左侧蓝晒显影光带）
+        var swW = Math.min(44, Math.max(12, px - roll.kbW));
+        var sw = c.createLinearGradient(px - swW, 0, px, 0);
+        sw.addColorStop(0, 'rgba(56, 189, 248, 0)');
+        sw.addColorStop(1, glowCol);
+        c.fillStyle = sw;
+        c.fillRect(px - swW, roll.rulerH, swW, gridH - roll.rulerH);
+
+        // 精密蓝晒丁字尺标尺头（黄铜 + 普鲁士蓝游标卡尺）
+        var headW = 24, headH = Math.max(13, Math.min(roll.rulerH - 2, 18));
+        var hg = c.createLinearGradient(px - headW / 2, 0, px + headW / 2, 0);
+        hg.addColorStop(0, '#0a335c');
+        hg.addColorStop(0.5, '#19629c');
+        hg.addColorStop(1, '#08294a');
+        c.fillStyle = hg;
+        c.strokeStyle = '#9ef0ff';
+        c.lineWidth = 1.2;
+        roundRect(c, px - headW / 2, 1, headW, headH, 3);
+        c.fill(); c.stroke();
+        // 游标刻度线
+        c.strokeStyle = '#e0faff';
+        c.lineWidth = 1;
+        c.beginPath();
+        for (var tk = -8; tk <= 8; tk += 4) {
+          c.moveTo(px + tk, headH - (tk === 0 ? 7 : 4));
+          c.lineTo(px + tk, headH - 0.5);
+        }
+        c.stroke();
+
+        // 垂直工程参考细线 + 当前音高水平校准虚线
+        c.strokeStyle = lineCol;
+        c.lineWidth = 1.4;
+        c.beginPath();
+        c.moveTo(px, headH + 1);
+        c.lineTo(px, gridH);
+        c.stroke();
+
+        c.save();
+        c.globalAlpha *= 0.36;
+        c.setLineDash([4, 4]);
+        c.strokeStyle = lineCol;
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(roll.kbW, liveY);
+        c.lineTo(roll.w, liveY);
+        c.stroke();
+        c.restore();
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        var gridH = roll.gridBottom();
+        var viewW = Math.max(1, roll.w - roll.kbW);
+        var viewH = Math.max(1, gridH - roll.rulerH);
+        var px = clamp(roll.beatX(roll.playPos), roll.kbW, roll.w);
+        var baseA = c.globalAlpha;
+
+        // 1. 普鲁士蓝晒显影纸底色（已扫过区域呈蓝晒显影质感，未扫过区域保留淡蓝草稿感）
+        c.save();
+        var sweptW = Math.max(0, px - roll.kbW);
+        c.fillStyle = A.isDark ? 'rgba(7, 38, 76, 0.38)' : 'rgba(13, 66, 118, 0.16)';
+        c.fillRect(roll.kbW, roll.rulerH, sweptW, viewH);
+        c.fillStyle = A.isDark ? 'rgba(6, 26, 52, 0.18)' : 'rgba(20, 82, 138, 0.06)';
+        c.fillRect(px, roll.rulerH, Math.max(0, roll.w - px), viewH);
+
+        // 精细图纸定位十字标 (+) 与四角图框标线
+        var inkBlue = A.isDark ? '#8be8ff' : '#0f5080';
+        var chalk = A.isDark ? '#eefbff' : '#0b3a63';
+        c.strokeStyle = colorAlpha(inkBlue, A.isDark ? 0.22 : 0.20);
+        c.lineWidth = 1;
+        var bStart = Math.floor(roll.scrollBeat);
+        var bStep = roll.pxBeat < 28 ? 4 : (roll.pxBeat < 56 ? 2 : 1);
+        var bEnd = Math.ceil(roll.scrollBeat + viewW / Math.max(1, roll.pxBeat));
+        var yStep = Math.max(24, roll.rowH * 4);
+        c.beginPath();
+        for (var b = Math.floor(bStart / bStep) * bStep; b <= bEnd; b += bStep) {
+          var gx = roll.beatX(b);
+          if (gx < roll.kbW + 6 || gx > roll.w - 6) continue;
+          for (var gy = roll.rulerH + yStep * 0.5; gy < gridH - 6; gy += yStep) {
+            c.moveTo(gx - 3, gy); c.lineTo(gx + 3, gy);
+            c.moveTo(gx, gy - 3); c.lineTo(gx, gy + 3);
+          }
+        }
+        c.stroke();
+
+        // 四角工程图纸裁切角标
+        c.strokeStyle = colorAlpha(inkBlue, 0.55);
+        c.lineWidth = 1.4;
+        var pad = 10, arm = 14;
+        c.beginPath();
+        c.moveTo(roll.kbW + pad, roll.rulerH + pad + arm); c.lineTo(roll.kbW + pad, roll.rulerH + pad); c.lineTo(roll.kbW + pad + arm, roll.rulerH + pad);
+        c.moveTo(roll.w - pad - arm, roll.rulerH + pad); c.lineTo(roll.w - pad, roll.rulerH + pad); c.lineTo(roll.w - pad, roll.rulerH + pad + arm);
+        c.moveTo(roll.kbW + pad, gridH - pad - arm); c.lineTo(roll.kbW + pad, gridH - pad); c.lineTo(roll.kbW + pad + arm, gridH - pad);
+        c.moveTo(roll.w - pad - arm, gridH - pad); c.lineTo(roll.w - pad, gridH - pad); c.lineTo(roll.w - pad, gridH - pad - arm);
+        c.stroke();
+
+        // 2. 每个活跃/余韵音符的蓝晒工程剖面图 + 音高偏差包络 + 粉笔白精绘 PIT 曲线
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo;
+          var alpha = it.active ? 1 : it.exitAlpha;
+          if (alpha <= 0) continue;
+          var hasPitch = !NSG.TUNING || NSG.TUNING.hasPitch(it.n);
+          var prog = it.active ? clamp(it.rel, 0, 1) : 1;
+          var xRight = roll.beatX(it.n.start + prog * it.n.dur);
+          var left = Math.max(roll.kbW, g.x);
+          var right = Math.min(roll.w, xRight);
+          if (right <= left - 1) continue;
+          var drawW = Math.max(0, right - left);
+          var baseY = noteCenterY(roll, it.n);
+          var bandH = Math.max(roll.rowH * 1.15, 16);
+
+          c.save();
+          c.globalAlpha = baseA * alpha;
+
+          // 音符蓝晒测量框与 ±100¢ 虚线公差轨
+          c.fillStyle = A.isDark ? 'rgba(30, 128, 198, 0.16)' : 'rgba(15, 86, 146, 0.11)';
+          c.fillRect(left, baseY - bandH, drawW, bandH * 2);
+
+          // 音符本体斜向 45° 工程剖面斜线填充
+          c.save();
+          c.beginPath();
+          c.rect(left, g.y, drawW, g.h);
+          c.clip();
+          c.strokeStyle = colorAlpha(inkBlue, 0.34);
+          c.lineWidth = 1;
+          c.beginPath();
+          for (var hx = left - g.h; hx < right + g.h; hx += 7) {
+            c.moveTo(hx, g.y + g.h);
+            c.lineTo(hx + g.h, g.y);
+          }
+          c.stroke();
+          c.restore();
+
+          // 底部标尺刻度线与顶部尺寸标注线 |<── 1.00b ──>|
+          c.strokeStyle = colorAlpha(inkBlue, 0.56);
+          c.lineWidth = 1;
+          c.beginPath();
+          c.moveTo(left, baseY + bandH); c.lineTo(right, baseY + bandH);
+          var stride = clamp(roll.pxBeat / 4, 12, 32);
+          for (var tk2 = g.x + Math.ceil((left - g.x) / stride) * stride; tk2 <= right; tk2 += stride) {
+            var major = Math.abs(((tk2 - g.x) / Math.max(1, roll.pxBeat)) % 1) < 0.08;
+            c.moveTo(tk2, baseY + bandH);
+            c.lineTo(tk2, baseY + bandH - (major ? 6 : 3.5));
+          }
+          c.stroke();
+
+          // ±100¢ 虚线基准线
+          c.save();
+          c.setLineDash([3, 3]);
+          c.strokeStyle = colorAlpha(inkBlue, 0.35);
+          c.beginPath();
+          c.moveTo(left, baseY - bandH); c.lineTo(right, baseY - bandH);
+          c.moveTo(left, baseY); c.lineTo(right, baseY);
+          c.stroke();
+          c.restore();
+
+          if (g.w > 30 && drawW > 18) {
+            var dimY = Math.max(roll.rulerH + 11, baseY - bandH - 7);
+            c.strokeStyle = colorAlpha(inkBlue, 0.62);
+            c.lineWidth = 1;
+            c.beginPath();
+            c.moveTo(left, dimY - 3); c.lineTo(left, dimY + 3);
+            c.moveTo(right, dimY - 3); c.lineTo(right, dimY + 3);
+            c.moveTo(left, dimY); c.lineTo(right, dimY);
+            c.stroke();
+            if (drawW > 46) {
+              var dimLbl = midiNoteName(it.n.pitch) + ' · ' + it.n.dur.toFixed(2) + 'b';
+              c.fillStyle = colorAlpha(chalk, 0.85);
+              c.font = 'bold 9px Consolas, "Courier New", monospace';
+              c.textAlign = 'center'; c.textBaseline = 'bottom';
+              c.fillText(dimLbl, (left + right) * 0.5, dimY - 2);
+            }
+          }
+
+          if (hasPitch && drawW > 1) {
+            // 采样可见范围内已唱过的高精度 PIT 曲线
+            var totalLen = Math.max(0.001, it.n.dur * roll.pxBeat);
+            var steps = Math.min(180, Math.max(4, Math.ceil(drawW / 3)));
+            var pts = [];
+            for (var s = 0; s <= steps; s++) {
+              var sx = left + (drawW * s) / steps;
+              var sRel = clamp((sx - g.x) / totalLen, 0, 1);
+              pts.push({ x: sx, y: samplePitchY(roll, it.n, sRel, it.nInfo) });
+            }
+
+            // 音高偏差包络面积填充（直观呈现揉音与滑音幅度）
+            c.beginPath();
+            c.moveTo(pts[0].x, baseY);
+            for (var f = 0; f < pts.length; f++) c.lineTo(pts[f].x, pts[f].y);
+            c.lineTo(pts[pts.length - 1].x, baseY);
+            c.closePath();
+            c.fillStyle = A.isDark ? 'rgba(110, 238, 255, 0.22)' : 'rgba(14, 116, 178, 0.18)';
+            c.fill();
+
+            // 双层蓝晒音高主线：柔光青晕 + 锐利粉笔白/深蓝工程线
+            c.lineCap = 'round';
+            c.lineJoin = 'round';
+            c.beginPath();
+            for (var p = 0; p < pts.length; p++) { if (!p) c.moveTo(pts[p].x, pts[p].y); else c.lineTo(pts[p].x, pts[p].y); }
+            c.strokeStyle = A.isDark ? 'rgba(86, 224, 255, 0.45)' : 'rgba(22, 138, 204, 0.36)';
+            c.lineWidth = 5;
+            c.stroke();
+            c.strokeStyle = A.isDark ? '#f2fdff' : '#093961';
+            c.lineWidth = 2.1;
+            c.stroke();
+
+            // 活跃音符前端实时切线矢量（体现滑音斜率！）
+            if (it.active && pts.length >= 3) {
+              var pLast = pts[pts.length - 1];
+              var pPrev = pts[Math.max(0, pts.length - 4)];
+              var tdx = pLast.x - pPrev.x, tdy = pLast.y - pPrev.y;
+              var tlen = Math.hypot(tdx, tdy);
+              if (tlen > 0.5 && Math.abs(tdy) > 0.8) {
+                var ux = (tdx / tlen) * 24, uy = (tdy / tlen) * 24;
+                c.save();
+                c.setLineDash([2, 2]);
+                c.strokeStyle = A.isDark ? '#7ee8ff' : '#0284c7';
+                c.lineWidth = 1.2;
+                c.beginPath();
+                c.moveTo(pLast.x - ux * 0.5, pLast.y - uy * 0.5);
+                c.lineTo(pLast.x + ux, pLast.y + uy);
+                c.stroke();
+                c.restore();
+              }
+            }
+          }
+          c.restore();
+        }
+
+        // 3. 右下角精密工程图签标题栏（Title Block）
+        if (viewW > 220 && viewH > 110) {
+          var ms = fx.modeState;
+          var tbW = 166, tbH = 44;
+          var tbX = roll.w - tbW - 14, tbY = gridH - tbH - 14;
+          c.save();
+          c.globalAlpha = baseA * 0.86;
+          c.fillStyle = A.isDark ? 'rgba(6, 28, 56, 0.78)' : 'rgba(232, 246, 255, 0.84)';
+          c.strokeStyle = colorAlpha(inkBlue, 0.72);
+          c.lineWidth = 1.2;
+          c.fillRect(tbX, tbY, tbW, tbH);
+          c.strokeRect(tbX, tbY, tbW, tbH);
+          c.beginPath();
+          c.moveTo(tbX, tbY + 16); c.lineTo(tbX + tbW, tbY + 16);
+          c.moveTo(tbX + 86, tbY + 16); c.lineTo(tbX + 86, tbY + tbH);
+          c.stroke();
+          c.fillStyle = chalk;
+          c.font = 'bold 9px Consolas, "Courier New", monospace';
+          c.textAlign = 'left'; c.textBaseline = 'middle';
+          c.fillText('CYANOTYPE PITCH SPEC · NSG', tbX + 6, tbY + 8.5);
+          var noteTxt = ms.liveNote ? (midiNoteName(ms.liveNote.pitch) + ' ' + Math.round(midiToHz(ms.liveNote.pitch, ms.liveCents)) + 'Hz') : 'STANDBY';
+          var centVal = Math.round(ms.liveCents || 0);
+          var centTxt = (centVal >= 0 ? '+' : '') + centVal + '¢';
+          c.fillText(noteTxt, tbX + 6, tbY + 30);
+          c.fillStyle = Math.abs(centVal) > 35 ? '#fbbf24' : inkBlue;
+          c.fillText('DEV ' + centTxt, tbX + 92, tbY + 30);
+          c.restore();
+        }
+        c.restore();
+      },
+      renderOver: function (fx, c, roll, T, A) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var inkBlue = A.isDark ? '#98f0ff' : '#0b4f82';
+        var chalk = A.isDark ? '#ffffff' : '#082f52';
+
+        // 1. 经过的 PIT 控制点工程圆规标节点与音分引出标注
+        if (ms.cpMarks && ms.cpMarks.length) {
+          for (var i = 0; i < ms.cpMarks.length; i++) {
+            var mk = ms.cpMarks[i];
+            var mx = roll.beatX(mk.beat);
+            if (mx < roll.kbW - 20 || mx > roll.w + 20) continue;
+            var ma = clamp(1 - mk.age / mk.life, 0, 1);
+            c.save();
+            c.globalAlpha = baseA * ma;
+            c.strokeStyle = inkBlue;
+            c.lineWidth = 1.2;
+            c.beginPath(); c.arc(mx, mk.y, 4.2, 0, Math.PI * 2); c.stroke();
+            c.beginPath();
+            c.moveTo(mx + 3, mk.y - 3); c.lineTo(mx + 12, mk.y - 12); c.lineTo(mx + 34, mk.y - 12);
+            c.stroke();
+            c.fillStyle = chalk;
+            c.font = 'bold 9px Consolas, monospace';
+            c.textAlign = 'left'; c.textBaseline = 'bottom';
+            c.fillText((mk.cents >= 0 ? '+' : '') + mk.cents + '¢', mx + 13, mk.y - 13);
+            c.restore();
+          }
+        }
+
+        // 2. 跟踪当前音高的旋转分度圆规游标 + 基准偏离卡尺 + 45°工程歌词标签
+        var px = roll.beatX(roll.playPos);
+        if (px < roll.kbW - 24 || px > roll.w + 24) return;
+        var liveY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+        var activeN = ms.liveNote;
+        var rOuter = 11 + (activeN ? (1.8 * Math.sin(fx.elapsed * 8) * amp) : 0);
+
+        c.save();
+        c.globalAlpha = baseA;
+        // 旋转分段刻度外环
+        c.save();
+        c.translate(px, liveY);
+        c.rotate(fx.elapsed * (activeN ? 1.4 : 0.45) * Math.max(0.2, amp));
+        c.strokeStyle = colorAlpha(inkBlue, 0.85);
+        c.lineWidth = 1.3;
+        for (var q = 0; q < 4; q++) {
+          var qa = q * Math.PI * 0.5;
+          c.beginPath();
+          c.arc(0, 0, rOuter, qa + 0.16, qa + Math.PI * 0.5 - 0.16);
+          c.stroke();
+        }
+        c.restore();
+
+        // 十字准星与发光圆心
+        c.strokeStyle = chalk;
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.moveTo(px - rOuter - 5, liveY); c.lineTo(px - 4, liveY);
+        c.moveTo(px + 4, liveY); c.lineTo(px + rOuter + 5, liveY);
+        c.moveTo(px, liveY - rOuter - 5); c.lineTo(px, liveY - 4);
+        c.moveTo(px, liveY + 4); c.lineTo(px, liveY + rOuter + 5);
+        c.stroke();
+        c.fillStyle = '#ffffff';
+        c.strokeStyle = inkBlue;
+        c.lineWidth = 1.6;
+        c.beginPath(); c.arc(px, liveY, 3.2, 0, Math.PI * 2); c.fill(); c.stroke();
+
+        // 若正在发音，画基准音高到当前音高的垂直游标卡尺与 45° 引出标签
+        if (activeN) {
+          var baseY = noteCenterY(roll, activeN);
+          var cVal = Math.round(ms.liveCents || 0);
+          if (Math.abs(liveY - baseY) > 2) {
+            c.strokeStyle = Math.abs(cVal) > 40 ? '#fbbf24' : inkBlue;
+            c.lineWidth = 1.3;
+            c.beginPath();
+            c.moveTo(px + 15, baseY); c.lineTo(px + 19, baseY);
+            c.lineTo(px + 19, liveY); c.lineTo(px + 15, liveY);
+            c.stroke();
+          }
+          var flipLeft = px > roll.w - 135;
+          var flipDown = liveY < roll.rulerH + 42;
+          var sx = flipLeft ? -1 : 1;
+          var sy = flipDown ? 1 : -1;
+          var elbowX = px + sx * 22;
+          var elbowY = liveY + sy * 22;
+          var tag = cleanLyric(activeN) + ' · ' + midiNoteName(activeN.pitch) + (cVal ? (' ' + (cVal > 0 ? '+' : '') + cVal + '¢') : '');
+          c.font = 'bold 11px Consolas, "Microsoft YaHei", monospace';
+          var tw = c.measureText(tag).width + 14;
+          var endX = elbowX + sx * tw;
+
+          c.strokeStyle = inkBlue;
+          c.lineWidth = 1.3;
+          c.beginPath();
+          c.moveTo(px + sx * 9, liveY + sy * 9);
+          c.lineTo(elbowX, elbowY);
+          c.lineTo(endX, elbowY);
+          c.stroke();
+
+          var boxX = flipLeft ? endX : elbowX;
+          var boxY = elbowY - (flipDown ? 0 : 19);
+          c.fillStyle = A.isDark ? 'rgba(7, 36, 68, 0.90)' : 'rgba(235, 248, 255, 0.94)';
+          c.strokeStyle = inkBlue;
+          c.lineWidth = 1.1;
+          roundRect(c, boxX, boxY, tw, 19, 3);
+          c.fill(); c.stroke();
+          c.fillStyle = chalk;
+          c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.fillText(tag, boxX + tw * 0.5, boxY + 9.8);
+        }
+        c.restore();
+      }
+    },
+
+    {
+      id: 'silkFan',
+      showcase: true,
+      usesPit: true,
+      hidePlayhead: true,
+      linger: 0.95,
+      nameKey: 'eye.mode.silkFan',
+      fallbackName: '折扇行歌',
+      eyeColor: { iris: '#1a8a80', ring: '#f2d388', pupil: '#1f2d2c' },
+      onEnterNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        ms.fanOpenVel = (ms.fanOpenVel || 0) + 6.5;
+        ms.fanOpenTarget = 1.0;
+        ms.tasselVel = (ms.tasselVel || 0) + (Math.random() < 0.5 ? -3.4 : 3.4);
+        ms.paletteIdx = Math.abs(Math.round(n.pitch || 60)) % 4;
+        if (!ms.petals) ms.petals = [];
+        var px = fx.roll.beatX(fx.roll.playPos);
+        var py = geo.y + geo.h * 0.5;
+        var cols = ['#f9a8d4', '#fde68a', '#fda4af', '#fff7ed'];
+        for (var i = 0; i < 7; i++) {
+          var ang = -Math.PI * 0.9 + Math.random() * Math.PI * 0.8;
+          var spd = 28 + Math.random() * 58;
+          ms.petals.push({
+            x: px + (Math.random() - 0.5) * 26,
+            y: py + (Math.random() - 0.5) * 18,
+            vx: Math.cos(ang) * spd - 12,
+            vy: Math.sin(ang) * spd - 14,
+            rot: Math.random() * Math.PI * 2,
+            vrot: (Math.random() - 0.5) * 7,
+            spin: Math.random() * Math.PI * 2,
+            size: 3.2 + Math.random() * 2.8,
+            color: cols[i % cols.length],
+            gold: i === 0 || i === 4,
+            age: 0,
+            life: 1.1 + Math.random() * 0.7
+          });
+        }
+        if (ms.petals.length > 90) ms.petals.splice(0, ms.petals.length - 90);
+        fx.spawn({ kind: 'ring', x: px, y: py, r: 6, maxR: 34, color: '#f3cf7a', lineW: 1.8, life: 0.58 });
+      },
+      onControlPoint: function (fx, n, cp) {
+        var ms = fx.modeState;
+        ms.twirlBoost = 1.0;
+        ms.tasselVel = (ms.tasselVel || 0) + 4.2;
+        if (!ms.petals) ms.petals = [];
+        for (var i = 0; i < 6; i++) {
+          var a = (i / 6) * Math.PI * 2;
+          ms.petals.push({
+            x: cp.x, y: cp.y,
+            vx: Math.cos(a) * 44, vy: Math.sin(a) * 34 - 16,
+            rot: a, vrot: 6, spin: a,
+            size: 3.4, color: i % 2 ? '#fde68a' : '#fb7185',
+            gold: i % 2 === 1, age: 0, life: 1.0
+          });
+        }
+        fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 3, maxR: 20, color: '#d94848', lineW: 1.8, life: 0.55 });
+      },
+      onStep: function (fx, dt, roll, T, A, jumped) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        if (jumped) {
+          ms.ribbonA = [];
+          ms.ribbonB = [];
+        }
+        if (!ms.ribbonA) ms.ribbonA = [];
+        if (!ms.ribbonB) ms.ribbonB = [];
+        if (!ms.petals) ms.petals = [];
+
+        var ctx = getPlaybackNoteContext(roll, roll.playPos);
+        var pitchInfo = roll._lastPitchInfo || null;
+        var targetY = (roll.rulerH + roll.gridBottom()) * 0.5;
+        if (ctx.cur) {
+          var rel = ctx.cur.dur > 0 ? clamp((roll.playPos - ctx.cur.start) / ctx.cur.dur, 0, 1) : 0;
+          var nInfo = pitchInfo ? pitchInfo[ctx.cur.id] : null;
+          targetY = samplePitchY(roll, ctx.cur, rel, nInfo);
+          ms.fanOpenTarget = 0.88 + 0.14 * Math.sin(fx.elapsed * 5.2);
+          ms.restAge = 0;
+        } else {
+          ms.restAge = (ms.restAge || 0) + dt;
+          ms.fanOpenTarget = ms.restAge > 0.65 ? 0.14 : 0.48;
+          if (ctx.prev && ctx.next) {
+            var g0 = ctx.prev.start + ctx.prev.dur, g1 = ctx.next.start;
+            var u = clamp((roll.playPos - g0) / Math.max(1e-4, g1 - g0), 0, 1);
+            var su = u * u * (3 - 2 * u);
+            targetY = noteCenterY(roll, ctx.prev) + (noteCenterY(roll, ctx.next) - noteCenterY(roll, ctx.prev)) * su - Math.sin(u * Math.PI) * 14 * amp;
+          } else if (ctx.next) {
+            targetY = noteCenterY(roll, ctx.next);
+          } else if (ctx.prev) {
+            targetY = noteCenterY(roll, ctx.prev);
+          }
+        }
+        targetY = clamp(targetY, roll.rulerH + 26, roll.gridBottom() - 22);
+        var prevY = ms.followY !== undefined ? ms.followY : targetY;
+        var curY = stepSmoothFollowerY(fx, roll, dt, jumped, targetY, 15);
+        var dy = (curY - prevY) / Math.max(0.004, dt);
+        ms.pitchTilt = clamp((ms.pitchTilt || 0) + (clamp(dy * 0.0014, -0.34, 0.34) - (ms.pitchTilt || 0)) * (1 - Math.exp(-12 * dt)), -0.38, 0.38);
+
+        // 扇面开合弹性阻尼物理
+        if (ms.fanOpen === undefined) ms.fanOpen = 0.25;
+        if (ms.fanOpenVel === undefined) ms.fanOpenVel = 0;
+        var fForce = (ms.fanOpenTarget - ms.fanOpen) * 58 - ms.fanOpenVel * 9.5;
+        ms.fanOpenVel += fForce * dt;
+        ms.fanOpen = clamp(ms.fanOpen + ms.fanOpenVel * dt, 0.08, 1.18);
+
+        // 扇坠流苏单摆物理
+        if (ms.tasselAng === undefined) ms.tasselAng = 0;
+        if (ms.tasselVel === undefined) ms.tasselVel = 0;
+        ms.tasselVel += (-26 * ms.tasselAng - 4.2 * ms.tasselVel - dy * 0.008 * amp) * dt;
+        ms.tasselAng = clamp(ms.tasselAng + ms.tasselVel * dt, -0.95, 0.95);
+        ms.twirlBoost = Math.max(0, (ms.twirlBoost || 0) - dt * 3.2);
+        ms.activeNote = ctx.cur;
+
+        // 记录双翼丝绸飘带（拍位坐标系，滚屏与相对运动完美同步）
+        var px = roll.beatX(roll.playPos);
+        var fanR = clamp(roll.rowH * 2.55, 36, 56);
+        var spread = clamp(0.18 + ms.fanOpen * 1.02 * Math.max(0.35, amp), 0.16, 1.32);
+        var baseRot = (ms.pitchTilt || 0) * amp + Math.sin(fx.elapsed * 3.4) * 0.06 * amp;
+        var tipLA = -Math.PI * 0.5 - spread + baseRot;
+        var tipRA = -Math.PI * 0.5 + spread + baseRot;
+        var pushSilk = function (arr, tx, ty) {
+          var b = roll.scrollBeat + (tx - roll.kbW) / Math.max(1, roll.pxBeat);
+          var last = arr.length ? arr[arr.length - 1] : null;
+          if (!last || Math.hypot(tx - roll.beatX(last.beat), ty - last.y) > 2.6) {
+            arr.push({ beat: b, y: ty, t: fx.elapsed, open: ms.fanOpen });
+            if (arr.length > 42) arr.shift();
+          }
+          while (arr.length && fx.elapsed - arr[0].t > 0.72) arr.shift();
+        };
+        if (roll.isPlaying || ctx.cur) {
+          pushSilk(ms.ribbonA, px + Math.cos(tipLA) * fanR, curY + Math.sin(tipLA) * fanR);
+          pushSilk(ms.ribbonB, px + Math.cos(tipRA) * fanR, curY + Math.sin(tipRA) * fanR);
+        }
+
+        // 飘落花瓣与金箔物理更新
+        for (var pi = ms.petals.length - 1; pi >= 0; pi--) {
+          var p = ms.petals[pi];
+          p.age += dt;
+          if (p.age >= p.life) { ms.petals.splice(pi, 1); continue; }
+          p.vx *= Math.pow(0.42, dt);
+          p.vy = Math.min(48, p.vy + 34 * dt);
+          p.x += (p.vx + Math.sin(fx.elapsed * 4.5 + p.spin) * 18 * amp) * dt;
+          p.y += p.vy * dt;
+          p.rot += p.vrot * dt;
+          p.spin += dt * 5.2;
+        }
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        var ms = fx.modeState;
+        var fanY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+        c.save();
+        // 顶部白玉金簪滑扣 + 垂落丝线直连折扇扇钉
+        var headY = Math.min(roll.rulerH - 4, 14);
+        c.strokeStyle = 'rgba(240, 206, 128, 0.55)';
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.moveTo(px, headY + 4);
+        c.lineTo(px, Math.max(roll.rulerH, fanY));
+        c.stroke();
+
+        // 翡翠金簪头
+        c.fillStyle = '#249483';
+        c.strokeStyle = '#f3d078';
+        c.lineWidth = 1.5;
+        c.beginPath();
+        c.ellipse(px, headY * 0.65, 9, 4.2, 0, 0, Math.PI * 2);
+        c.fill(); c.stroke();
+        c.fillStyle = '#fff8dc';
+        c.beginPath(); c.arc(px - 2.5, headY * 0.65 - 1, 1.4, 0, Math.PI * 2); c.fill();
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var baseA = c.globalAlpha;
+        var amp = fx.getMotionAmp();
+
+        // 1. 双翼敦煌丝绸飘带（青绿与朱金双纱，随旋律起伏）
+        var drawRibbon = function (arr, colMain, colEdge, widthMax, waveSign) {
+          if (!arr || arr.length < 3) return;
+          c.save();
+          c.lineCap = 'round';
+          c.lineJoin = 'round';
+          for (var i = 1; i < arr.length; i++) {
+            var p0 = arr[i - 1], p1 = arr[i];
+            var x0 = roll.beatX(p0.beat), x1 = roll.beatX(p1.beat);
+            if (Math.abs(x1 - x0) > 130) continue;
+            var u = i / arr.length;
+            var lifeA = clamp(1 - (fx.elapsed - p1.t) / 0.72, 0, 1);
+            var w0 = Math.sin(fx.elapsed * 6.5 - i * 0.45) * 4.5 * (1 - u) * waveSign * amp;
+            var w1 = Math.sin(fx.elapsed * 6.5 - (i + 1) * 0.45) * 4.5 * (1 - u) * waveSign * amp;
+            c.globalAlpha = baseA * u * lifeA * 0.52;
+            c.strokeStyle = colMain;
+            c.lineWidth = Math.max(1.2, widthMax * Math.sin(u * Math.PI) * (0.45 + 0.55 * p1.open));
+            c.beginPath();
+            c.moveTo(x0, p0.y + w0);
+            c.lineTo(x1, p1.y + w1);
+            c.stroke();
+
+            c.globalAlpha = baseA * u * lifeA * 0.7;
+            c.strokeStyle = colEdge;
+            c.lineWidth = 1;
+            c.stroke();
+          }
+          c.restore();
+        };
+        drawRibbon(ms.ribbonA, '#218c84', '#f6dc94', 11, 1);
+        drawRibbon(ms.ribbonB, '#cf4d59', '#ffe8a8', 9.5, -1);
+
+        // 2. 音符洒金锦缎画卷光晕 + 朱砂金线 PIT 曲线
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo;
+          var alpha = it.active ? 1 : it.exitAlpha;
+          if (alpha <= 0) continue;
+          var prog = it.active ? clamp(it.rel, 0, 1) : 1;
+
+          c.save();
+          c.globalAlpha = baseA * alpha;
+          // 柔和锦缎底纹
+          var sg = c.createLinearGradient(g.x, g.y, g.x + g.w * prog, g.y + g.h);
+          sg.addColorStop(0, A.isDark ? 'rgba(30, 118, 110, 0.34)' : 'rgba(28, 128, 118, 0.20)');
+          sg.addColorStop(1, A.isDark ? 'rgba(240, 198, 108, 0.28)' : 'rgba(218, 162, 62, 0.22)');
+          c.fillStyle = sg;
+          roundRect(c, g.x - 1, g.y - 2, Math.max(4, g.w * prog + 2), g.h + 4, 4);
+          c.fill();
+          c.strokeStyle = A.isDark ? 'rgba(248, 218, 134, 0.72)' : 'rgba(186, 132, 36, 0.68)';
+          c.lineWidth = 1.4;
+          c.stroke();
+
+          if (roll.showPitch && it.nInfo && (!NSG.TUNING || NSG.TUNING.hasPitch(it.n))) {
+            var curve = samplePitchCurve(roll, it.n, it.nInfo, 0, prog, Math.max(10, Math.ceil(g.w * prog / 4)));
+            if (curve.length > 1) {
+              c.lineCap = 'round'; c.lineJoin = 'round';
+              c.strokeStyle = 'rgba(246, 212, 122, 0.42)';
+              c.lineWidth = 4.6;
+              c.beginPath();
+              for (var k = 0; k < curve.length; k++) { if (!k) c.moveTo(curve[k].x, curve[k].y); else c.lineTo(curve[k].x, curve[k].y); }
+              c.stroke();
+              c.strokeStyle = A.isDark ? '#fff1c1' : '#b8333f';
+              c.lineWidth = 1.9;
+              c.stroke();
+            }
+          }
+          c.restore();
+        }
+      },
+      renderOver: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var px = roll.beatX(roll.playPos);
+        var fanY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+
+        // 1. 华美十二骨描金折扇本体（带扇面水墨远山、明月洒金、玉坠流苏）
+        if (px >= roll.kbW - 60 && px <= roll.w + 60) {
+          var palettes = [
+            { silkA: '#125c5a', silkB: '#28998e', paper: '#f7ead0', accent: '#f3d078' }, // 孔雀青绿
+            { silkA: '#8b2332', silkB: '#d2525c', paper: '#fbe9d8', accent: '#ffe194' }, // 朱砂绯红
+            { silkA: '#233669', silkB: '#4c6ea8', paper: '#eae8df', accent: '#f6d88c' }, // 靛蓝月白
+            { silkA: '#245947', silkB: '#4ca17b', paper: '#f4edd6', accent: '#f7d882' }  // 翠竹松烟
+          ];
+          var pal = palettes[(ms.paletteIdx || 0) % palettes.length];
+          var fanR = clamp(roll.rowH * 2.55, 36, 56);
+          var innerR = fanR * 0.34;
+          var spread = clamp(0.16 + (ms.fanOpen || 0.25) * 1.04 * Math.max(0.35, amp), 0.14, 1.34);
+          var wristRot = (ms.pitchTilt || 0) * amp + Math.sin(fx.elapsed * 3.4) * 0.06 * amp + (ms.twirlBoost || 0) * 0.25 * Math.sin(fx.elapsed * 22);
+          var aStart = -Math.PI * 0.5 - spread;
+          var aEnd = -Math.PI * 0.5 + spread;
+
+          c.save();
+          c.globalAlpha = baseA;
+          c.translate(px, fanY);
+
+          // 玉珠与朱红丝绸流苏（垂挂于扇钉之下，真实单摆晃动）
+          c.save();
+          c.rotate((ms.tasselAng || 0) * Math.max(0.25, amp));
+          c.strokeStyle = '#d93848';
+          c.lineWidth = 1.6;
+          c.beginPath(); c.moveTo(0, 2); c.lineTo(0, 12); c.stroke();
+          // 翡翠玉珠
+          c.fillStyle = '#34d399';
+          c.strokeStyle = '#065f46';
+          c.lineWidth = 1;
+          c.beginPath(); c.arc(0, 12, 3.2, 0, Math.PI * 2); c.fill(); c.stroke();
+          // 丝缕流苏须
+          for (var ti = -2; ti <= 2; ti++) {
+            var swayT = Math.sin(fx.elapsed * 8 + ti) * 1.2 * amp;
+            c.strokeStyle = ti === 0 ? '#fde68a' : '#e11d48';
+            c.lineWidth = ti === 0 ? 1.4 : 1.1;
+            c.beginPath();
+            c.moveTo(ti * 0.7, 15);
+            c.quadraticCurveTo(ti * 1.5 + swayT, 22, ti * 2.1 + swayT * 1.4, 29);
+            c.stroke();
+          }
+          c.restore();
+
+          c.rotate(wristRot);
+
+          // 扇面本体裁剪与折叠立体光影
+          c.save();
+          c.beginPath();
+          c.arc(0, 0, fanR, aStart, aEnd);
+          c.arc(0, 0, innerR, aEnd, aStart, true);
+          c.closePath();
+
+          var fg = c.createRadialGradient(0, -fanR * 0.25, innerR * 0.6, 0, 0, fanR);
+          fg.addColorStop(0, pal.paper);
+          fg.addColorStop(0.45, pal.silkB);
+          fg.addColorStop(1, pal.silkA);
+          c.fillStyle = fg;
+          c.fill();
+
+          c.clip();
+          // 扇面内绘：淡金明月 + 远山青黛 + 洒金星点
+          c.fillStyle = 'rgba(255, 245, 204, 0.82)';
+          c.beginPath();
+          c.arc(fanR * 0.22, -fanR * 0.64, fanR * 0.14, 0, Math.PI * 2);
+          c.fill();
+          c.fillStyle = 'rgba(15, 23, 42, 0.28)';
+          c.beginPath();
+          c.moveTo(-fanR, -innerR * 0.5);
+          c.quadraticCurveTo(-fanR * 0.35, -fanR * 0.72, 0, -fanR * 0.48);
+          c.quadraticCurveTo(fanR * 0.38, -fanR * 0.78, fanR, -innerR * 0.4);
+          c.lineTo(fanR, 0); c.lineTo(-fanR, 0); c.closePath();
+          c.fill();
+
+          // 12 道折叠纸扇立体折痕明暗条
+          var folds = 12;
+          for (var fi = 0; fi < folds; fi++) {
+            var fa = aStart + ((aEnd - aStart) * fi) / folds;
+            var fb = aStart + ((aEnd - aStart) * (fi + 1)) / folds;
+            c.beginPath();
+            c.moveTo(0, 0);
+            c.arc(0, 0, fanR + 1, fa, fb);
+            c.closePath();
+            c.fillStyle = (fi % 2 === 0) ? 'rgba(255, 255, 255, 0.14)' : 'rgba(8, 12, 24, 0.15)';
+            c.fill();
+          }
+
+          // 洒金宣纸碎金箔点缀
+          c.fillStyle = 'rgba(255, 236, 160, 0.72)';
+          for (var gi = 0; gi < 9; gi++) {
+            var ga = aStart + (aEnd - aStart) * ((gi * 0.37 + 0.11) % 1);
+            var gr = innerR + (fanR - innerR) * (0.22 + ((gi * 0.53) % 0.7));
+            c.fillRect(Math.cos(ga) * gr, Math.sin(ga) * gr, 1.8, 1.8);
+          }
+          c.restore();
+
+          // 金箔扇边描线
+          c.strokeStyle = pal.accent;
+          c.lineWidth = 2;
+          c.beginPath(); c.arc(0, 0, fanR, aStart, aEnd); c.stroke();
+          c.strokeStyle = 'rgba(255, 246, 208, 0.75)';
+          c.lineWidth = 1;
+          c.beginPath(); c.arc(0, 0, fanR - 3.2, aStart, aEnd); c.stroke();
+
+          // 竹制小扇骨与紫檀大骨
+          for (var ri = 0; ri <= 12; ri++) {
+            var ra = aStart + ((aEnd - aStart) * ri) / 12;
+            var isGuard = (ri === 0 || ri === 12);
+            c.strokeStyle = isGuard ? '#4a2518' : 'rgba(222, 184, 118, 0.78)';
+            c.lineWidth = isGuard ? 3.2 : 1.05;
+            c.beginPath();
+            c.moveTo(0, 0);
+            c.lineTo(Math.cos(ra) * (isGuard ? fanR + 1 : fanR * 0.88), Math.sin(ra) * (isGuard ? fanR + 1 : fanR * 0.88));
+            c.stroke();
+          }
+
+          // 鎏金镶玉扇钉
+          c.fillStyle = '#f3d078';
+          c.strokeStyle = '#5c3317';
+          c.lineWidth = 1.2;
+          c.beginPath(); c.arc(0, 0, 4.2, 0, Math.PI * 2); c.fill(); c.stroke();
+          c.fillStyle = '#ffffff';
+          c.beginPath(); c.arc(-1.1, -1.1, 1.2, 0, Math.PI * 2); c.fill();
+          c.restore();
+        }
+
+        // 2. 飘落花瓣与金箔粒子
+        if (ms.petals && ms.petals.length) {
+          for (var pi = 0; pi < ms.petals.length; pi++) {
+            var pt = ms.petals[pi];
+            var pa = clamp(1 - pt.age / pt.life, 0, 1);
+            c.save();
+            c.globalAlpha = baseA * pa;
+            c.translate(pt.x, pt.y);
+            c.rotate(pt.rot);
+            c.scale(1, Math.max(0.28, Math.abs(Math.cos(pt.spin))));
+            c.fillStyle = pt.color;
+            if (pt.gold) {
+              c.fillRect(-pt.size * 0.55, -pt.size * 0.55, pt.size * 1.1, pt.size * 1.1);
+            } else {
+              c.beginPath();
+              c.ellipse(0, 0, pt.size, pt.size * 0.54, 0, 0, Math.PI * 2);
+              c.fill();
+            }
+            c.restore();
+          }
+        }
+
+        // 3. 行歌诗意歌词 + 朱砂方印
+        for (var li = 0; li < items.length; li++) {
+          var it = items[li], g = it.geo;
+          var la = it.active ? clamp(it.age * 4.5, 0, 1) : it.exitAlpha * 0.85;
+          if (la <= 0) continue;
+          var lyr = cleanLyric(it.n);
+          var rise = it.active ? Math.min(8, it.age * 12) : 8 + it.exitAge * 14;
+          var tx = clamp(g.x + g.w * 0.5, roll.kbW + 30, roll.w - 30);
+          var ty = Math.max(roll.rulerH + 16, g.y - 14 - rise);
+          c.save();
+          c.globalAlpha = baseA * la;
+          var fsz = clamp(roll.rowH * 0.96, 14, 21);
+          drawTextHalo(c, lyr, tx, ty, fsz, A.isDark ? '#fff4d4' : '#2a1f16', A.halo, 3.2, 'center', '"KaiTi", "STKaiti", "Yu Mincho", Georgia, serif');
+          // 旁落迷你朱砂闲章
+          if (it.active) {
+            var sx = tx + Math.max(14, lyr.length * fsz * 0.36) + 7;
+            if (sx < roll.w - 14) {
+              c.fillStyle = '#c83232';
+              roundRect(c, sx - 5, ty - 5, 10, 10, 1.5);
+              c.fill();
+              c.fillStyle = '#fff5e6';
+              c.font = 'bold 7px "KaiTi", serif';
+              c.textAlign = 'center'; c.textBaseline = 'middle';
+              c.fillText('歌', sx, ty + 0.5);
+            }
+          }
+          c.restore();
+        }
+      }
+    },
+
+    {
+      id: 'musicBoxStrip',
+      showcase: true,
+      usesPit: true,
+      hidePlayhead: true,
+      linger: 0.95,
+      nameKey: 'eye.mode.musicBoxStrip',
+      fallbackName: '八音盒纸带',
+      eyeColor: { iris: '#d49b4b', ring: '#fbf0cf', pupil: '#4a3520' },
+      onEnterNote: function (fx, n, st, geo) {
+        if (NSG.TUNING && !NSG.TUNING.hasPitch(n)) return;
+        var ms = fx.modeState;
+        if (!ms.tines) ms.tines = Object.create(null);
+        ms.tines[n.pitch] = { amp: 1.0, phase: Math.random() * 6, flash: 1.0 };
+        var px = fx.roll.beatX(fx.roll.playPos);
+        var cy = geo.y + geo.h * 0.5;
+        fx.spawn({ kind: 'ring', x: px, y: cy, r: 4, maxR: 28, color: '#ffe49e', lineW: 1.8, life: 0.58 });
+        fx.spawn({ kind: 'ring', x: px, y: cy, r: 2, maxR: 16, color: '#ffffff', lineW: 1.2, life: 0.42 });
+        for (var i = 0; i < 5; i++) {
+          var a = -Math.PI * 0.65 + (i / 4) * Math.PI * 1.3;
+          var sp = 28 + Math.random() * 44;
+          fx.spawn({
+            kind: 'spark',
+            x: px + 4, y: cy,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp - 12,
+            r: 1.8 + Math.random() * 1.2,
+            color: i % 2 ? '#fff4c2' : '#f5b841',
+            life: 0.55 + Math.random() * 0.3
+          });
+        }
+        fx.spawn({
+          kind: 'glyph',
+          text: (n.pitch % 2 === 0) ? '♪' : '♫',
+          x: px + 14,
+          y: cy - 4,
+          vx: 16 + Math.random() * 14,
+          vy: -34 - Math.random() * 18,
+          size: 13,
+          color: '#ffe082',
+          life: 0.82
+        });
+      },
+      onControlPoint: function (fx, n, cp) {
+        var ms = fx.modeState;
+        if (!ms.tines) ms.tines = Object.create(null);
+        var cur = ms.tines[n.pitch];
+        ms.tines[n.pitch] = {
+          amp: Math.max(cur ? cur.amp : 0, 0.7),
+          phase: Math.random() * 6,
+          flash: 0.85
+        };
+        fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 2.5, maxR: 16, color: '#fde68a', lineW: 1.4, life: 0.45 });
+        fx.spawn({ kind: 'spark', x: cp.x, y: cp.y, vx: 12, vy: -22, r: 2.0, color: '#ffffff', life: 0.42 });
+      },
+      onStep: function (fx, dt, roll) {
+        var ms = fx.modeState;
+        if (!ms.tines) ms.tines = Object.create(null);
+        var keys = Object.keys(ms.tines);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i], tn = ms.tines[k];
+          tn.amp *= Math.exp(-dt * 4.4);
+          tn.flash = Math.max(0, tn.flash - dt * 3.2);
+          if (tn.amp < 0.015 && tn.flash <= 0) delete ms.tines[k];
+        }
+        ms.gearAngle = (roll.playPos || 0) * Math.PI * 1.35 + (roll.isPlaying ? 0 : fx.elapsed * 0.15);
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        var ms = fx.modeState;
+        var gridH = roll.gridBottom();
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var tines = ms.tines || {};
+        var gearAng = ms.gearAngle || 0;
+
+        c.save();
+        c.globalAlpha = baseA;
+
+        // 1. 顶部黄铜压纸滚轴与齿盘（取代红色播放指针头）
+        var topH = Math.min(roll.rulerH - 2, 17);
+        var barG = c.createLinearGradient(px - 6, 0, px + 6, 0);
+        barG.addColorStop(0, '#785328');
+        barG.addColorStop(0.35, '#f6d88c');
+        barG.addColorStop(0.7, '#c48f3d');
+        barG.addColorStop(1, '#5e3f1c');
+        c.fillStyle = barG;
+        c.strokeStyle = '#3d2810';
+        c.lineWidth = 1.2;
+        roundRect(c, px - 12, 1, 24, topH, 3);
+        c.fill(); c.stroke();
+        drawClockworkGear(c, px, topH * 0.5 + 1, 5.5, 8, gearAng, '#f5d27a', '#4a3014', true);
+
+        // 2. 贯穿琴键高度的古董黄铜梳齿座（Comb Bridge）
+        var bridgeW = 8;
+        c.fillStyle = barG;
+        c.fillRect(px - bridgeW * 0.5, roll.rulerH, bridgeW, gridH - roll.rulerH);
+        c.strokeStyle = 'rgba(61, 40, 16, 0.72)';
+        c.lineWidth = 1;
+        c.strokeRect(px - bridgeW * 0.5, roll.rulerH, bridgeW, gridH - roll.rulerH);
+
+        // 3. 随音高渐变的钢制八音盒音梳齿（低音长、高音短，拨动时高频余震发金光！）
+        var minP = Math.floor(roll.yPitch ? roll.yPitch(gridH) : 36);
+        var maxP = Math.ceil(roll.yPitch ? roll.yPitch(roll.rulerH) : 96);
+        if (!isFinite(minP) || !isFinite(maxP) || maxP - minP > 128) { minP = 36; maxP = 96; }
+        var pLo = Math.min(minP, maxP), pHi = Math.max(minP, maxP);
+        for (var p = pLo; p <= pHi; p++) {
+          var ty = Math.round(roll.rowY(p)) + 1 + Math.max(4, roll.rowH - 2) * 0.5;
+          if (ty < roll.rulerH + 10 || ty > gridH - 12) continue;
+          var fracLow = clamp((ty - roll.rulerH) / Math.max(1, gridH - roll.rulerH), 0, 1);
+          var tineLen = 10 + fracLow * 16;
+          var tv = tines[p];
+          var vib = tv ? Math.sin(fx.elapsed * 64 + tv.phase) * tv.amp * 3.8 * Math.max(0.25, amp) : 0;
+          var flash = tv ? tv.flash : 0;
+
+          // 音梳拨齿阴影与主体
+          c.strokeStyle = flash > 0.08 ? '#fff3b0' : '#94a3b8';
+          c.lineWidth = Math.max(1.2, Math.min(2.6, roll.rowH * 0.16));
+          c.lineCap = 'round';
+          c.beginPath();
+          c.moveTo(px + bridgeW * 0.35, ty);
+          c.quadraticCurveTo(px + bridgeW * 0.35 + tineLen * 0.55, ty + vib * 0.4, px + bridgeW * 0.35 + tineLen, ty + vib);
+          c.stroke();
+
+          if (flash > 0.05) {
+            c.fillStyle = colorAlpha('#ffe58f', flash * 0.9);
+            c.beginPath();
+            c.arc(px + bridgeW * 0.35 + tineLen, ty + vib, 2.6 + flash * 2.2, 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+
+        // 4. 底部咬合旋转的双黄铜发条齿轮
+        if (gridH - roll.rulerH > 72) {
+          drawClockworkGear(c, px - 10, gridH - 18, 11, 10, gearAng, '#d9a44b', '#4a3014', true);
+          drawClockworkGear(c, px + 8, gridH - 12, 7.5, 8, -gearAng * 1.25 + 0.3, '#f3d17c', '#4a3014', false);
+        }
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        var gridH = roll.gridBottom();
+        var viewW = Math.max(1, roll.w - roll.kbW);
+        var viewH = Math.max(1, gridH - roll.rulerH);
+        var px = roll.beatX(roll.playPos);
+        var baseA = c.globalAlpha;
+
+        c.save();
+        // 1. 温暖复古羊皮打孔纸带质感背景
+        c.fillStyle = A.isDark ? 'rgba(66, 48, 26, 0.28)' : 'rgba(244, 226, 184, 0.34)';
+        c.fillRect(roll.kbW, roll.rulerH, viewW, viewH);
+
+        // 每 4 拍一道纸带折痕线
+        var b0 = Math.floor(roll.scrollBeat / 4) * 4;
+        var b1 = Math.ceil(roll.scrollBeat + viewW / Math.max(1, roll.pxBeat));
+        c.strokeStyle = A.isDark ? 'rgba(240, 212, 152, 0.12)' : 'rgba(138, 102, 52, 0.16)';
+        c.lineWidth = 1;
+        c.beginPath();
+        for (var fb = b0; fb <= b1; fb += 4) {
+          var fxX = roll.beatX(fb);
+          if (fxX > roll.kbW && fxX < roll.w) {
+            c.moveTo(fxX, roll.rulerH + 14);
+            c.lineTo(fxX, gridH - 14);
+          }
+        }
+        c.stroke();
+
+        // 上下边缘齿轮进纸导轨与打孔齿孔带（随滚屏同步行进！）
+        var marginH = 13;
+        c.fillStyle = A.isDark ? 'rgba(92, 66, 36, 0.45)' : 'rgba(222, 194, 138, 0.56)';
+        c.fillRect(roll.kbW, roll.rulerH, viewW, marginH);
+        c.fillRect(roll.kbW, gridH - marginH, viewW, marginH);
+        c.strokeStyle = A.isDark ? 'rgba(218, 175, 96, 0.45)' : 'rgba(138, 102, 52, 0.48)';
+        c.beginPath();
+        c.moveTo(roll.kbW, roll.rulerH + marginH); c.lineTo(roll.w, roll.rulerH + marginH);
+        c.moveTo(roll.kbW, gridH - marginH); c.lineTo(roll.w, gridH - marginH);
+        c.stroke();
+
+        var sprockStep = Math.max(0.25, Math.ceil(16 / Math.max(1, roll.pxBeat)) * 0.25);
+        var sStart = Math.floor(roll.scrollBeat / sprockStep) * sprockStep;
+        c.fillStyle = A.isDark ? 'rgba(16, 12, 10, 0.72)' : 'rgba(72, 52, 30, 0.46)';
+        for (var sb = sStart; sb <= b1; sb += sprockStep) {
+          var sx = roll.beatX(sb);
+          if (sx < roll.kbW - 6 || sx > roll.w + 6) continue;
+          c.beginPath(); c.arc(sx, roll.rulerH + marginH * 0.5, 2.6, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.arc(sx, gridH - marginH * 0.5, 2.6, 0, Math.PI * 2); c.fill();
+        }
+
+        // 2. 视口内全部可见音符化作纸带冲压圆孔（经过梳齿后泛起暖金余晖）
+        var notes = roll.activeTrackVisible === false ? [] : (roll.notes || []);
+        var holeR = clamp(roll.rowH * 0.34, 3.2, 6.2);
+        var holeStep = Math.max(18, roll.pxBeat * 0.5);
+        for (var ni = 0; ni < notes.length; ni++) {
+          var n = notes[ni];
+          if (!n || (NSG.TUNING && !NSG.TUNING.hasPitch(n))) continue;
+          var nx = roll.beatX(n.start);
+          var nw = Math.max(6, n.dur * roll.pxBeat);
+          if (nx > roll.w + 24 || nx + nw < roll.kbW - 24) continue;
+          var ny = noteCenterY(roll, n);
+          if (ny < roll.rulerH + marginH || ny > gridH - marginH) continue;
+
+          // 音符起点主冲孔 + 长音延音辅助小孔
+          var count = Math.min(24, Math.max(1, Math.floor(nw / holeStep)));
+          for (var hi = 0; hi < count; hi++) {
+            var hx = nx + (hi === 0 ? Math.min(6, nw * 0.3) : hi * holeStep);
+            if (hx < roll.kbW - 8 || hx > roll.w + 8) continue;
+            var hr = hi === 0 ? holeR : holeR * 0.65;
+            var passed = hx <= px + 2;
+            c.fillStyle = passed ? (A.isDark ? '#f5b841' : '#854d0e') : (A.isDark ? '#1a1410' : '#4a3723');
+            c.beginPath();
+            c.ellipse(hx, ny, hr * 1.15, hr * 0.86, 0, 0, Math.PI * 2);
+            c.fill();
+            c.strokeStyle = passed ? '#fef08a' : (A.isDark ? 'rgba(232, 200, 140, 0.42)' : 'rgba(255, 248, 224, 0.72)');
+            c.lineWidth = passed ? 1.3 : 1;
+            c.stroke();
+          }
+        }
+
+        // 3. 活跃音符上的共鸣金丝 PIT 弦线
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo;
+          var alpha = it.active ? 1 : it.exitAlpha;
+          if (alpha <= 0 || !roll.showPitch || !it.nInfo || (NSG.TUNING && !NSG.TUNING.hasPitch(it.n))) continue;
+          var prog = it.active ? clamp(it.rel, 0, 1) : 1;
+          var curve = samplePitchCurve(roll, it.n, it.nInfo, 0, prog, Math.max(10, Math.ceil(g.w * prog / 4)));
+          if (curve.length > 1) {
+            c.save();
+            c.globalAlpha = baseA * alpha * 0.9;
+            c.lineCap = 'round'; c.lineJoin = 'round';
+            c.strokeStyle = 'rgba(245, 184, 65, 0.42)';
+            c.lineWidth = 4.4;
+            c.beginPath();
+            for (var k = 0; k < curve.length; k++) { if (!k) c.moveTo(curve[k].x, curve[k].y); else c.lineTo(curve[k].x, curve[k].y); }
+            c.stroke();
+            c.strokeStyle = '#fff5cc';
+            c.lineWidth = 1.7;
+            c.stroke();
+            c.restore();
+          }
+        }
+        c.restore();
+      },
+      renderOver: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var px = roll.beatX(roll.playPos);
+        var baseA = c.globalAlpha;
+
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo;
+          var alpha = it.active ? 1 : it.exitAlpha * 0.85;
+          if (alpha <= 0) continue;
+
+          // 拨弦瞬间在纸孔与音梳交汇处闪耀星轮金芒
+          if (it.active && px >= roll.kbW - 12 && px <= roll.w + 12) {
+            var cy = g.y + g.h * 0.5;
+            c.save();
+            c.globalAlpha = baseA * 0.92;
+            c.fillStyle = '#fff3b0';
+            c.shadowColor = '#f59e0b';
+            c.shadowBlur = A.isPixel ? 0 : 12;
+            drawStar(c, px, cy, 8, 7.5 + Math.sin(fx.elapsed * 28) * 1.4, 3.2, (ms.gearAngle || 0) * 1.5);
+            c.fill();
+            c.shadowBlur = 0;
+            c.restore();
+          }
+
+          // 复古雕花体歌词微浮
+          var tx = clamp(g.x + g.w * 0.5, roll.kbW + 26, roll.w - 26);
+          var ty = Math.max(roll.rulerH + 22, g.y - 11 - (it.active ? 0 : it.exitAge * 10));
+          c.save();
+          c.globalAlpha = baseA * alpha;
+          drawTextHalo(c, cleanLyric(it.n), tx, ty, clamp(roll.rowH * 0.88, 13, 19), A.isDark ? '#fef3c7' : '#4a2e12', A.halo, 2.8, 'center', 'Georgia, "Songti SC", serif');
+          c.restore();
+        }
+      }
+    },
+
+    /* --- B. 莫名其妙 --- */
     {
       id: 'escapeLegs',
       showcase: false,
@@ -6920,6 +8412,1154 @@
           c.restore();
         }
         drawRhythmResults(fx, c, roll, T, A);
+      }
+    },
+    {
+      id: 'breakfastFlip',
+      showcase: false,
+      usesPit: false,
+      hidePlayhead: true,
+      linger: 1.05,
+      nameKey: 'eye.mode.breakfastFlip',
+      fallbackName: '煎蛋请翻面',
+      eyeColor: { iris: '#ffad20', ring: '#fff5d6', pupil: '#2b343b' },
+      onEnterNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        if (!ms.missCache) ms.missCache = Object.create(null);
+        if (!ms.shells) ms.shells = [];
+        st.splat = isNoteG2pMiss(fx.roll, n, ms.missCache);
+        st.flips = 0;
+        st.flipT = 0;
+        st.flipDur = 0.42;
+        st.nextAutoFlip = 0.85;
+        st.cooked = 0;
+        st.burnt = false;
+        ms.panWhip = 0.65;
+
+        // 啪！磕开鸡蛋壳飞向两侧！
+        var cx = geo.x + Math.min(geo.w * 0.35, 16), cy = geo.y + geo.h * 0.5;
+        for (var side = -1; side <= 1; side += 2) {
+          ms.shells.push({
+            x: cx, y: cy - 6,
+            vx: side * (55 + Math.random() * 40),
+            vy: -95 - Math.random() * 45,
+            rot: side * 0.4,
+            vrot: side * (7 + Math.random() * 5),
+            side: side,
+            age: 0, life: 0.85
+          });
+        }
+        if (ms.shells.length > 24) ms.shells.splice(0, ms.shells.length - 24);
+
+        // 热油滋啦火花 + 香喷喷蒸汽
+        for (var i = 0; i < 6; i++) {
+          fx.spawn({
+            kind: i % 2 ? 'drop' : 'puff',
+            x: cx + (Math.random() - 0.5) * 16,
+            y: cy,
+            vx: (Math.random() - 0.5) * 85,
+            vy: -45 - Math.random() * 65,
+            r: i % 2 ? 2.1 : 4.2,
+            color: i % 2 ? '#fbbf24' : 'rgba(255,255,255,0.85)',
+            life: 0.48 + Math.random() * 0.25
+          });
+        }
+        if (Math.random() < 0.62) {
+          fx.spawn({
+            kind: 'glyph',
+            text: pickLine(EGG_SIZZLE_LINES),
+            x: clamp(cx, fx.roll.kbW + 34, fx.roll.w - 34),
+            y: Math.max(fx.roll.rulerH + 16, cy - 22),
+            vx: (Math.random() - 0.5) * 18,
+            vy: -36,
+            size: 12,
+            color: '#fbbf24',
+            life: 0.68
+          });
+        }
+      },
+      onControlPoint: function (fx, n, cp) {
+        var st = fx.noteStates[n.id];
+        var ms = fx.modeState;
+        if (st && !st.splat) {
+          st.flipT = 0.001;
+          st.flips = (st.flips || 0) + 1;
+          st.flipDur = 0.40;
+          st.nextAutoFlip = (n.dur > 0 ? clamp((fx.roll.playPos - n.start) / n.dur, 0, 1) * n.dur : 0) + 0.9;
+        }
+        ms.panWhip = 1.0;
+        for (var i = 0; i < 7; i++) {
+          fx.spawn({
+            kind: 'drop',
+            x: cp.x, y: cp.y,
+            vx: (Math.random() - 0.5) * 110,
+            vy: -75 - Math.random() * 65,
+            r: 2.0 + Math.random() * 1.1,
+            color: i % 3 === 0 ? '#ffffff' : '#fcd34d',
+            life: 0.52
+          });
+        }
+        fx.spawn({
+          kind: 'glyph',
+          text: pickLine(EGG_FLIP_LINES),
+          x: clamp(cp.x, fx.roll.kbW + 36, fx.roll.w - 36),
+          y: Math.max(fx.roll.rulerH + 18, cp.y - 26),
+          vx: (Math.random() - 0.5) * 20,
+          vy: -46,
+          size: 13,
+          color: '#ff9500',
+          life: 0.72
+        });
+      },
+      onExitNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        var cx = clamp(geo.x + geo.w * 0.5, fx.roll.kbW + 34, fx.roll.w - 34);
+        var cy = Math.max(fx.roll.rulerH + 18, geo.y - 16);
+        ms.panWhip = st.splat ? -0.45 : 0.85;
+        if (st.splat) {
+          fx.spawn({ kind: 'glyph', text: pickLine(EGG_SPLAT_LINES), x: cx, y: cy, vx: 0, vy: -30, size: 13, color: '#ef4444', life: 0.85 });
+          for (var s = 0; s < 6; s++) {
+            fx.spawn({ kind: 'drop', x: cx, y: geo.y + geo.h * 0.5, vx: (Math.random() - 0.5) * 100, vy: -35 - Math.random() * 45, r: 2.6, color: '#f59e0b', life: 0.55 });
+          }
+        } else if (st.burnt) {
+          fx.spawn({ kind: 'glyph', text: pickLine(EGG_BURN_LINES), x: cx, y: cy, vx: 0, vy: -38, size: 13, color: '#94a3b8', life: 0.85 });
+          for (var b = 0; b < 5; b++) {
+            fx.spawn({ kind: 'puff', x: cx + (Math.random() - 0.5) * 18, y: geo.y, vx: (Math.random() - 0.5) * 22, vy: -38 - Math.random() * 24, r: 6, color: 'rgba(40,40,46,0.75)', life: 0.9 });
+          }
+        } else {
+          // 完美起锅装盘！给最后再颠一次小弧线
+          st.landHop = 0.34;
+          if (Math.random() < 0.48) {
+            fx.spawn({ kind: 'glyph', text: pickLine(EGG_FLIP_LINES), x: cx, y: cy, vx: 0, vy: -38, size: 12.5, color: '#fbbf24', life: 0.72 });
+          }
+          fx.spawn({ kind: 'star', x: cx, y: geo.y, vx: 18, vy: -45, r: 4.5, rot: 0, vrot: 9, color: '#fde047', life: 0.62 });
+        }
+      },
+      onStep: function (fx, dt, roll, T, A, jumped) {
+        var ms = fx.modeState;
+        var ctx = getPlaybackNoteContext(roll, roll.playPos);
+        var gridH = roll.gridBottom();
+        var targetY = (roll.rulerH + gridH) * 0.5 + 10;
+        if (ctx.cur) {
+          targetY = noteCenterY(roll, ctx.cur) + Math.max(6, roll.rowH * 0.42);
+        } else if (ctx.prev && ctx.next) {
+          var g0 = ctx.prev.start + ctx.prev.dur, g1 = ctx.next.start;
+          var u = clamp((roll.playPos - g0) / Math.max(1e-4, g1 - g0), 0, 1);
+          var su = u * u * (3 - 2 * u);
+          targetY = noteCenterY(roll, ctx.prev) + (noteCenterY(roll, ctx.next) - noteCenterY(roll, ctx.prev)) * su + 8;
+        } else if (ctx.next) {
+          targetY = noteCenterY(roll, ctx.next) + 8;
+        } else if (ctx.prev) {
+          targetY = noteCenterY(roll, ctx.prev) + 8;
+        }
+        targetY = clamp(targetY, roll.rulerH + 22, gridH - 12);
+        stepSmoothFollowerY(fx, roll, dt, jumped, targetY, 17);
+        ms.cooking = !!ctx.cur;
+        ms.panWhip = (ms.panWhip || 0) * Math.exp(-dt * 9.5);
+
+        // 推进活跃煎蛋的翻面动画、熟度与糊锅彩蛋
+        var keys = Object.keys(fx.noteStates);
+        for (var i = 0; i < keys.length; i++) {
+          var st = fx.noteStates[keys[i]];
+          if (!st) continue;
+          if (st.flipT > 0) {
+            st.flipT += dt;
+            if (st.flipT >= (st.flipDur || 0.42)) st.flipT = 0;
+          }
+          if (st.landHop > 0) st.landHop = Math.max(0, st.landHop - dt);
+        }
+        if (ctx.cur) {
+          var cst = fx.noteStates[ctx.cur.id];
+          if (cst && !cst.splat) {
+            var elapsedBeats = Math.max(0, roll.playPos - ctx.cur.start);
+            cst.cooked = clamp(elapsedBeats / 2.2, 0, 1);
+            if (elapsedBeats >= 2.25 && !cst.burnt) {
+              cst.burnt = true;
+              fx.spawn({
+                kind: 'glyph',
+                text: pickLine(EGG_BURN_LINES),
+                x: clamp(roll.beatX(roll.playPos), roll.kbW + 34, roll.w - 34),
+                y: Math.max(roll.rulerH + 18, noteTopY(roll, ctx.cur) - 22),
+                vx: 0, vy: -34, size: 13, color: '#f87171', life: 0.8
+              });
+            }
+            // 长音每拍自动帅气颠锅翻面！
+            if (roll.isPlaying && elapsedBeats >= (cst.nextAutoFlip || 0.85) && cst.flipT <= 0) {
+              cst.nextAutoFlip = elapsedBeats + 0.95;
+              cst.flipT = 0.001;
+              cst.flips = (cst.flips || 0) + 1;
+              ms.panWhip = 0.95;
+              var pxNow = roll.beatX(roll.playPos);
+              var pyNow = noteCenterY(roll, ctx.cur);
+              fx.spawn({ kind: 'drop', x: pxNow, y: pyNow, vx: (Math.random() - 0.5) * 90, vy: -75, r: 2.2, color: '#fcd34d', life: 0.45 });
+            }
+            // 持续煎制时冒出热气与油星
+            if (roll.isPlaying && Math.random() < 0.24) {
+              var sx = roll.beatX(roll.playPos);
+              if (sx >= roll.kbW && sx <= roll.w) {
+                fx.spawn({
+                  kind: cst.burnt ? 'puff' : (Math.random() < 0.6 ? 'puff' : 'spark'),
+                  x: sx + (Math.random() - 0.5) * 18,
+                  y: noteCenterY(roll, ctx.cur) - 4,
+                  vx: (Math.random() - 0.5) * 24,
+                  vy: -24 - Math.random() * 28,
+                  r: cst.burnt ? 4.8 : 3.2,
+                  color: cst.burnt ? 'rgba(55,55,62,0.7)' : 'rgba(255,250,235,0.75)',
+                  life: 0.65
+                });
+              }
+            }
+          }
+        }
+
+        // 蛋壳碎片重力下落
+        if (ms.shells) {
+          for (var si = ms.shells.length - 1; si >= 0; si--) {
+            var sh = ms.shells[si];
+            sh.age += dt;
+            if (sh.age >= sh.life) { ms.shells.splice(si, 1); continue; }
+            sh.vy += 420 * dt;
+            sh.x += sh.vx * dt;
+            sh.y += sh.vy * dt;
+            sh.rot += sh.vrot * dt;
+          }
+        }
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        // 顶部迷你厨师帽点单夹（取代默认红线）
+        var topH = Math.min(roll.rulerH - 2, 17);
+        c.save();
+        c.fillStyle = '#ffffff';
+        c.strokeStyle = '#334155';
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(px - 5, 7, 4.5, Math.PI * 0.7, Math.PI * 1.95);
+        c.arc(px, 5.5, 5.2, Math.PI, Math.PI * 2);
+        c.arc(px + 5, 7, 4.5, Math.PI * 1.05, Math.PI * 0.3);
+        c.lineTo(px + 7.5, topH);
+        c.lineTo(px - 7.5, topH);
+        c.closePath();
+        c.fill(); c.stroke();
+        c.fillStyle = '#ef4444';
+        c.fillRect(px - 7, topH - 3.5, 14, 2.2);
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        // 擦除原音符格子，因为它们全都下锅变成煎蛋啦！
+        for (var i = 0; i < items.length; i++) {
+          var g = items[i].geo;
+          roll._paintGridPatch(c, g.x - 2, g.y - 2, g.w + 4, g.h + 4, T);
+        }
+      },
+      renderOver: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var px = roll.beatX(roll.playPos);
+        var panY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+        var whip = (ms.panWhip || 0) * amp;
+
+        // 1. 先绘制已煎好落回音轨装盘的余韵煎蛋（插着歌词小旗！）
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo, st = it.st;
+          if (it.active) continue;
+          var alpha = it.exitAlpha;
+          if (alpha <= 0) continue;
+          var hopU = st.landHop ? clamp(st.landHop / 0.34, 0, 1) : 0;
+          var hopY = -Math.sin(hopU * Math.PI) * 16 * amp;
+          var splatDrop = st.splat ? Math.min(18, it.exitAge * 45) * amp : 0;
+          var cx = g.x + g.w * 0.5;
+          var cy = g.y + g.h * 0.5 + hopY + splatDrop;
+          var rx = clamp(g.w * 0.48, 13, 30);
+          var ry = clamp(g.h * 0.56, 8.5, 16);
+
+          c.save();
+          c.globalAlpha = baseA * alpha;
+          c.translate(cx, cy);
+          if (st.splat) c.rotate(0.22 * (st.seed < 0.5 ? -1 : 1));
+          drawFriedEggShape(c, rx, ry, {
+            cooked: st.cooked || 0.5,
+            burnt: st.burnt,
+            underside: (st.flips % 2 === 1) && !st.splat,
+            splat: st.splat,
+            seed: st.seed
+          });
+          // 早餐牙签歌词小旗
+          var lyr = cleanLyric(it.n);
+          c.strokeStyle = '#92400e';
+          c.lineWidth = 1.3;
+          c.beginPath(); c.moveTo(2, -2); c.lineTo(5, -ry - 14); c.stroke();
+          c.font = 'bold 10px Tahoma, "Microsoft YaHei", sans-serif';
+          var fw = Math.max(16, c.measureText(lyr).width + 8);
+          c.fillStyle = st.splat ? '#ef4444' : '#f59e0b';
+          c.strokeStyle = '#78350f';
+          c.lineWidth = 1;
+          roundRect(c, 5, -ry - 21, fw, 13, 2);
+          c.fill(); c.stroke();
+          c.fillStyle = '#ffffff';
+          c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.fillText(lyr, 5 + fw * 0.5, -ry - 14.2);
+          c.restore();
+        }
+
+        // 2. 炙热燃气火焰 + 铸铁煎锅本体（在活跃煎蛋正下方托举颠锅！）
+        if (px >= roll.kbW - 44 && px <= roll.w + 44) {
+          c.save();
+          c.globalAlpha = baseA;
+          c.translate(px, panY - whip * 9);
+          c.rotate(-whip * 0.24);
+
+          // 锅底蓝橙燃气灶小火苗（烹饪中更旺！）
+          var flameN = ms.cooking ? 5 : 3;
+          for (var fi = 0; fi < flameN; fi++) {
+            var fxOff = (fi - (flameN - 1) * 0.5) * 6.5;
+            var fh = (ms.cooking ? 9 : 5) + Math.sin(fx.elapsed * 32 + fi * 1.9) * 3;
+            c.fillStyle = fi % 2 === 0 ? 'rgba(56, 189, 248, 0.85)' : 'rgba(251, 146, 60, 0.85)';
+            c.beginPath();
+            c.moveTo(fxOff - 3, 6);
+            c.quadraticCurveTo(fxOff, 6 + fh, fxOff + 3, 6);
+            c.closePath();
+            c.fill();
+          }
+
+          // 木质防烫长手柄
+          c.strokeStyle = '#29170b';
+          c.lineWidth = 6.4;
+          c.lineCap = 'round';
+          c.beginPath(); c.moveTo(16, -1); c.lineTo(38, -9); c.stroke();
+          c.strokeStyle = '#9a5b32';
+          c.lineWidth = 4;
+          c.stroke();
+          // 金属铆钉衔接
+          c.fillStyle = '#cbd5e1';
+          c.beginPath(); c.arc(19, -2.2, 1.5, 0, Math.PI * 2); c.fill();
+
+          // 铸铁平底锅身与内锅反光
+          c.fillStyle = '#1e293b';
+          c.strokeStyle = '#0f172a';
+          c.lineWidth = 1.6;
+          c.beginPath();
+          c.ellipse(0, 1.5, 22, 8.2, 0, 0, Math.PI * 2);
+          c.fill(); c.stroke();
+          var pg = c.createLinearGradient(-18, -4, 18, 4);
+          pg.addColorStop(0, '#475569');
+          pg.addColorStop(0.5, '#64748b');
+          pg.addColorStop(1, '#334155');
+          c.fillStyle = pg;
+          c.beginPath();
+          c.ellipse(0, -1, 19.5, 5.8, 0, 0, Math.PI * 2);
+          c.fill();
+          c.strokeStyle = 'rgba(255,255,255,0.38)';
+          c.lineWidth = 1;
+          c.beginPath();
+          c.ellipse(0, -1, 19.5, 5.8, 0, Math.PI * 1.1, Math.PI * 1.85);
+          c.stroke();
+          c.restore();
+        }
+
+        // 3. 锅里滋滋弹跳 / 空中 3D 翻面的活跃音符煎蛋！
+        for (var j = 0; j < items.length; j++) {
+          var ait = items[j], ag = ait.geo, ast = ait.st;
+          if (!ait.active) continue;
+          var flipU = ast.flipT > 0 ? clamp(ast.flipT / (ast.flipDur || 0.42), 0, 1) : 0;
+          var tossH = flipU > 0 ? (4 * flipU * (1 - flipU) * clamp(42 + amp * 16, 22, 74)) : 0;
+          var sizzleJit = flipU > 0 ? 0 : Math.sin(fx.elapsed * 42 + ast.seed * 8) * 1.4 * amp;
+          var ex = px;
+          var ey = panY - 6 - whip * 9 - tossH + sizzleJit;
+          var spinCos = flipU > 0 ? Math.cos(flipU * Math.PI) : 1;
+          var scaleY = Math.max(0.14, Math.abs(spinCos));
+          var showingUnder = (flipU > 0.5) ? (ast.flips % 2 === 1) : (ast.flips % 2 === 0 && ast.flips > 0 && flipU > 0) ? true : ((ast.flips % 2 === 1) && flipU === 0);
+          var erx = clamp(ag.w * 0.44, 14, 24);
+          var ery = clamp(ag.h * 0.54, 9, 14);
+
+          c.save();
+          c.globalAlpha = baseA;
+          c.translate(ex, ey);
+          c.rotate(flipU > 0 ? (flipU * Math.PI * 0.18 * (ast.flips % 2 ? 1 : -1)) : (-whip * 0.22));
+          c.scale(1 + (1 - scaleY) * 0.16, scaleY);
+          drawFriedEggShape(c, erx, ery, {
+            cooked: ast.cooked || 0,
+            burnt: ast.burnt,
+            underside: showingUnder,
+            splat: ast.splat,
+            seed: ast.seed
+          });
+          c.restore();
+
+          // 活跃煎蛋上方漂浮大歌词
+          drawTextHalo(c, cleanLyric(ait.n), clamp(ex, roll.kbW + 24, roll.w - 24), Math.max(roll.rulerH + 14, ey - ery - 14), clamp(roll.rowH * 0.92, 14, 20), '#fff8d6', 'rgba(42, 22, 8, 0.88)', 3.0);
+        }
+
+        // 4. 崩飞的两半裂纹鸡蛋壳
+        if (ms.shells && ms.shells.length) {
+          for (var si = 0; si < ms.shells.length; si++) {
+            var sh = ms.shells[si];
+            var sa = clamp(1 - sh.age / sh.life, 0, 1);
+            c.save();
+            c.globalAlpha = baseA * sa;
+            c.translate(sh.x, sh.y);
+            c.rotate(sh.rot);
+            c.fillStyle = '#fff9ee';
+            c.strokeStyle = '#a88c68';
+            c.lineWidth = 1.1;
+            c.beginPath();
+            c.arc(0, 0, 6.2, Math.PI * 0.1, Math.PI * 0.9, false);
+            c.lineTo(-2, -1); c.lineTo(0, 2); c.lineTo(2.5, -1);
+            c.closePath();
+            c.fill(); c.stroke();
+            c.restore();
+          }
+        }
+      }
+    },
+
+    {
+      id: 'noteCustoms',
+      showcase: false,
+      usesPit: false,
+      hidePlayhead: true,
+      linger: 1.15,
+      nameKey: 'eye.mode.noteCustoms',
+      fallbackName: '音符通关处',
+      eyeColor: { iris: '#059669', ring: '#fde68a', pupil: '#3b1d14' },
+      onEnterNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        if (!ms.missCache) ms.missCache = Object.create(null);
+        var denied = isNoteG2pMiss(fx.roll, n, ms.missCache);
+        st.denied = denied;
+        st.passportId = midiNoteName(n.pitch) + '-' + String(Math.floor(st.seed * 899 + 100));
+        st.stamps = [];
+        st.nextBeatStamp = 1.0;
+        st.squashT = 1.0;
+
+        var tag = pickLine(denied ? CUSTOMS_DENY_TAGS : CUSTOMS_PASS_TAGS);
+        st.stamps.push({
+          rel: clamp(0.18 + st.seed * 0.14, 0.14, 0.35),
+          text: tag,
+          kind: denied ? 'deny' : 'pass',
+          rot: (st.seed - 0.5) * 0.34,
+          age: 0
+        });
+        ms.slamT = 1.0;
+        ms.shakeT = 0.24;
+        ms.lastVerdict = denied ? 'deny' : 'pass';
+        ms.verdictHold = 0.7;
+        if (denied) ms.denyCount = (ms.denyCount || 0) + 1;
+        else ms.passCount = (ms.passCount || 0) + 1;
+
+        // 砸章印泥飞溅！
+        var sx = geo.x + Math.min(geo.w * 0.35, 20), sy = geo.y + geo.h * 0.5;
+        var inkCol = denied ? '#e11d48' : '#10b981';
+        fx.spawn({ kind: 'ring', x: sx, y: sy, r: 5, maxR: denied ? 42 : 30, color: inkCol, lineW: 2.8, life: 0.44 });
+        for (var i = 0; i < (denied ? 10 : 6); i++) {
+          var a = Math.random() * Math.PI * 2;
+          var sp = 42 + Math.random() * 68;
+          fx.spawn({ kind: 'drop', x: sx, y: sy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 25, r: 2.1, color: inkCol, life: 0.45 });
+        }
+        fx.spawn({
+          kind: 'glyph',
+          text: (denied ? '🚨 ' : '🛂 ') + tag,
+          x: clamp(sx, fx.roll.kbW + 40, fx.roll.w - 40),
+          y: Math.max(fx.roll.rulerH + 18, geo.y - 20),
+          vx: 0, vy: -34,
+          size: denied ? 13.5 : 12,
+          color: denied ? '#fb7185' : '#34d399',
+          life: 0.78
+        });
+      },
+      onControlPoint: function (fx, n, cp) {
+        var st = fx.noteStates[n.id];
+        if (st && st.stamps && st.stamps.length < 7) {
+          var rel = n.dur > 0 ? clamp((cp.beat - n.start) / n.dur, 0.08, 0.92) : 0.5;
+          st.stamps.push({
+            rel: rel,
+            text: langCode() === 'en' ? 'X-RAY' : '安检',
+            kind: 'transit',
+            rot: (Math.random() - 0.5) * 0.45,
+            age: 0
+          });
+          st.squashT = 0.65;
+        }
+        fx.modeState.slamT = Math.max(fx.modeState.slamT || 0, 0.72);
+        fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 3, maxR: 18, color: '#f59e0b', lineW: 1.8, life: 0.42 });
+        fx.spawn({ kind: 'spark', x: cp.x, y: cp.y, vx: 0, vy: -26, r: 2.2, color: '#fde047', life: 0.38 });
+      },
+      onStep: function (fx, dt, roll, T, A, jumped) {
+        var ms = fx.modeState;
+        if (jumped && fx.prevPlayPos !== null && roll.playPos < fx.prevPlayPos - 0.15) {
+          ms.passCount = 0;
+          ms.denyCount = 0;
+        }
+        var ctx = getPlaybackNoteContext(roll, roll.playPos);
+        var gridH = roll.gridBottom();
+        var targetY = (roll.rulerH + gridH) * 0.5;
+        if (ctx.cur) targetY = noteTopY(roll, ctx.cur);
+        else if (ctx.next) targetY = noteTopY(roll, ctx.next);
+        else if (ctx.prev) targetY = noteTopY(roll, ctx.prev);
+        targetY = clamp(targetY, roll.rulerH + 26, gridH - 14);
+        stepSmoothFollowerY(fx, roll, dt, jumped, targetY, 19);
+
+        ms.slamT = Math.max(0, (ms.slamT || 0) - dt * 4.8);
+        ms.shakeT = Math.max(0, (ms.shakeT || 0) - dt);
+        ms.verdictHold = Math.max(0, (ms.verdictHold || 0) - dt);
+
+        // 关卡栏杆抬起/落下平滑角度
+        var gateTarget = ms.lastVerdict === 'deny' && ms.verdictHold > 0 ? 0 : (ctx.cur ? 1.15 : 0.45);
+        if (ms.gateAng === undefined) ms.gateAng = 0.45;
+        ms.gateAng += (gateTarget - ms.gateAng) * (1 - Math.exp(-14 * dt));
+
+        // 长音每满 1 拍狂盖一次中转签证章！
+        if (ctx.cur && roll.isPlaying) {
+          var cst = fx.noteStates[ctx.cur.id];
+          if (cst && !cst.denied && ctx.cur.dur >= 1.45) {
+            var elB = roll.playPos - ctx.cur.start;
+            if (elB >= (cst.nextBeatStamp || 1.0) && elB < ctx.cur.dur - 0.15 && cst.stamps.length < 7) {
+              cst.nextBeatStamp = elB + 1.0;
+              cst.stamps.push({
+                rel: clamp(elB / ctx.cur.dur, 0.1, 0.92),
+                text: pickLine(CUSTOMS_TRANSIT_TAGS),
+                kind: 'transit',
+                rot: (Math.random() - 0.5) * 0.35,
+                age: 0
+              });
+              cst.squashT = 0.8;
+              ms.slamT = 0.95;
+              ms.shakeT = 0.16;
+              var pxNow = roll.beatX(roll.playPos);
+              fx.spawn({ kind: 'ring', x: pxNow, y: noteCenterY(roll, ctx.cur), r: 4, maxR: 24, color: '#f59e0b', lineW: 2.0, life: 0.4 });
+            }
+          }
+        }
+
+        // 更新每个音符护照的受压回弹与印章入场计时
+        var keys = Object.keys(fx.noteStates);
+        for (var k = 0; k < keys.length; k++) {
+          var s = fx.noteStates[keys[k]];
+          if (!s) continue;
+          if (s.squashT > 0) s.squashT = Math.max(0, s.squashT - dt * 5.2);
+          if (s.stamps) {
+            for (var si = 0; si < s.stamps.length; si++) s.stamps[si].age += dt;
+          }
+        }
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        var ms = fx.modeState;
+        var gridH = roll.gridBottom();
+        var denied = ms.lastVerdict === 'deny' && (ms.verdictHold || 0) > 0;
+        var passed = ms.lastVerdict === 'pass' && (ms.verdictHold || 0) > 0;
+        var topH = Math.min(roll.rulerH - 1, 18);
+
+        c.save();
+        // 垂直海关检查线（玻璃闸机分隔线 + 底部黄黑警示斑马带）
+        c.strokeStyle = denied ? 'rgba(244, 63, 94, 0.72)' : 'rgba(16, 185, 129, 0.52)';
+        c.lineWidth = 1.6;
+        c.setLineDash([5, 4]);
+        c.beginPath(); c.moveTo(px, topH); c.lineTo(px, gridH); c.stroke();
+        c.setLineDash([]);
+
+        // 顶部海关闸口信号灯箱
+        c.fillStyle = '#1e293b';
+        c.strokeStyle = '#64748b';
+        c.lineWidth = 1.2;
+        roundRect(c, px - 14, 1, 28, topH - 1, 3);
+        c.fill(); c.stroke();
+        // 红灯 / 绿灯
+        c.fillStyle = denied ? '#ff2a4b' : '#450a0a';
+        c.beginPath(); c.arc(px - 6, topH * 0.5, 3.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = passed ? '#22c55e' : (denied ? '#14532d' : '#f59e0b');
+        c.beginPath(); c.arc(px + 6, topH * 0.5, 3.3, 0, Math.PI * 2); c.fill();
+
+        // 可抬落黄黑条纹关卡栏杆！
+        c.save();
+        c.translate(px + 13, topH * 0.55);
+        c.rotate(-(ms.gateAng || 0));
+        c.fillStyle = '#facc15';
+        c.strokeStyle = '#0f172a';
+        c.lineWidth = 1;
+        roundRect(c, 0, -2.2, 24, 4.4, 1.5);
+        c.fill(); c.stroke();
+        c.fillStyle = '#0f172a';
+        c.fillRect(5, -2.2, 4, 4.4);
+        c.fillRect(14, -2.2, 4, 4.4);
+        c.restore();
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var gridH = roll.gridBottom();
+        var px = roll.beatX(roll.playPos);
+        var baseA = c.globalAlpha;
+
+        // 擦除原音符格子，使其变成一本本等待盖章的护照！
+        for (var i = 0; i < items.length; i++) {
+          var g = items[i].geo;
+          roll._paintGridPatch(c, g.x - 2, g.y - 2, g.w + 4, g.h + 4, T);
+        }
+
+        // 海关安检红外激光扫描光扇
+        if (px >= roll.kbW - 20 && px <= roll.w + 20) {
+          var denied = ms.lastVerdict === 'deny' && (ms.verdictHold || 0) > 0;
+          var scanY = ms.followY !== undefined ? ms.followY : (roll.rulerH + gridH) * 0.5;
+          c.save();
+          c.globalAlpha = baseA * (denied ? 0.24 : 0.14);
+          var sg = c.createLinearGradient(px - 28, 0, px + 28, 0);
+          sg.addColorStop(0, 'rgba(16, 185, 129, 0)');
+          sg.addColorStop(0.5, denied ? '#ef4444' : '#10b981');
+          sg.addColorStop(1, 'rgba(16, 185, 129, 0)');
+          c.fillStyle = sg;
+          c.fillRect(px - 28, roll.rulerH, 56, gridH - roll.rulerH);
+          // 激光扫描横线
+          c.globalAlpha = baseA * 0.65;
+          c.strokeStyle = denied ? '#fb7185' : '#34d399';
+          c.lineWidth = 1.4;
+          var beamY = scanY + Math.sin(fx.elapsed * 16) * 8;
+          c.beginPath(); c.moveTo(px - 22, beamY); c.lineTo(px + 22, beamY); c.stroke();
+          c.restore();
+        }
+      },
+      renderOver: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var px = roll.beatX(roll.playPos);
+        var shakeX = (ms.shakeT > 0) ? Math.sin(fx.elapsed * 90) * 3.2 * (ms.shakeT / 0.24) * amp : 0;
+        var shakeY = (ms.shakeT > 0) ? Math.cos(fx.elapsed * 78) * 2.4 * (ms.shakeT / 0.24) * amp : 0;
+
+        // 1. 绘制变成旅行护照/通关单的音符 + 上面鲜红/翠绿的官印！
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo, st = it.st;
+          var alpha = it.active ? 1 : it.exitAlpha;
+          if (alpha <= 0) continue;
+
+          var sq = st.squashT ? (1 - 0.26 * Math.sin(st.squashT * Math.PI) * Math.min(1.2, amp)) : 1;
+          var rejectDrop = (!it.active && st.denied) ? Math.min(26, it.exitAge * 58) * amp : 0;
+          var rejectRot = (!it.active && st.denied) ? Math.min(0.28, it.exitAge * 0.8) * (st.seed < 0.5 ? -1 : 1) * amp : 0;
+          var pw = Math.max(g.w, 34);
+          var ph = Math.max(g.h + 6, 20);
+          var cx = g.x + g.w * 0.5 + (it.active ? shakeX * 0.45 : 0);
+          var cy = g.y + g.h * 0.5 + rejectDrop + (it.active ? shakeY * 0.45 : 0);
+
+          c.save();
+          c.globalAlpha = baseA * alpha;
+          c.translate(cx, cy);
+          c.rotate(rejectRot);
+          c.scale(1 / Math.max(0.7, sq), sq);
+
+          // 护照本米白内页与防伪边线
+          c.fillStyle = st.denied ? '#fff1f2' : '#fcf6e6';
+          c.strokeStyle = st.denied ? '#be123c' : '#8a6b43';
+          c.lineWidth = 1.5;
+          roundRect(c, -pw / 2, -ph / 2, pw, ph, 3.5);
+          c.fill(); c.stroke();
+
+          // 左侧深蓝/深红护照封面脊条
+          c.fillStyle = st.denied ? '#9f1239' : '#1e3a5f';
+          c.fillRect(-pw / 2 + 1, -ph / 2 + 1, 5, ph - 2);
+
+          // 迷你证件照框（带会紧张/开心/晕倒的音符小脸！）
+          var photoSz = Math.min(ph - 6, 13);
+          var photoX = -pw / 2 + 8;
+          var photoY = -photoSz / 2;
+          if (pw >= 32) {
+            c.fillStyle = '#e2e8f0';
+            c.strokeStyle = '#64748b';
+            c.lineWidth = 0.8;
+            c.fillRect(photoX, photoY, photoSz, photoSz);
+            c.strokeRect(photoX, photoY, photoSz, photoSz);
+            // 小脸表情
+            var fxC = photoX + photoSz * 0.5, fyC = photoY + photoSz * 0.5;
+            c.fillStyle = '#1e293b';
+            c.strokeStyle = '#1e293b';
+            c.lineWidth = 1;
+            if (st.denied) {
+              // X_X 惊恐被遣返脸
+              c.beginPath();
+              c.moveTo(fxC - 3.5, fyC - 2.5); c.lineTo(fxC - 1.2, fyC - 0.2);
+              c.moveTo(fxC - 1.2, fyC - 2.5); c.lineTo(fxC - 3.5, fyC - 0.2);
+              c.moveTo(fxC + 1.2, fyC - 2.5); c.lineTo(fxC + 3.5, fyC - 0.2);
+              c.moveTo(fxC + 3.5, fyC - 2.5); c.lineTo(fxC + 1.2, fyC - 0.2);
+              c.stroke();
+            } else if (it.active) {
+              // •_• 紧张接受审查脸
+              c.beginPath();
+              c.arc(fxC - 2.2, fyC - 1.2, 1.1, 0, Math.PI * 2);
+              c.arc(fxC + 2.2, fyC - 1.2, 1.1, 0, Math.PI * 2);
+              c.fill();
+              c.beginPath(); c.moveTo(fxC - 2, fyC + 2.5); c.lineTo(fxC + 2, fyC + 2.5); c.stroke();
+            } else {
+              // ^_^ 开心通关脸
+              c.beginPath();
+              c.arc(fxC - 2.2, fyC - 0.5, 1.6, Math.PI * 1.1, Math.PI * 1.9);
+              c.moveTo(fxC + 0.6, fyC - 0.5);
+              c.arc(fxC + 2.2, fyC - 0.5, 1.6, Math.PI * 1.1, Math.PI * 1.9);
+              c.stroke();
+            }
+          }
+
+          // 歌词姓名 + 护照编号
+          var txtX = -pw / 2 + 10 + (pw >= 32 ? photoSz + 2 : 0);
+          var maxTxtW = Math.max(8, pw / 2 - txtX - 3);
+          c.save();
+          c.beginPath(); c.rect(txtX, -ph / 2, maxTxtW, ph); c.clip();
+          c.fillStyle = '#0f172a';
+          c.font = 'bold ' + Math.round(clamp(ph * 0.46, 9, 12)) + 'px Tahoma, "Microsoft YaHei", sans-serif';
+          c.textAlign = 'left'; c.textBaseline = 'middle';
+          c.fillText(cleanLyric(it.n), txtX, -ph * 0.14);
+          if (ph >= 18) {
+            c.fillStyle = '#64748b';
+            c.font = '7.5px Consolas, monospace';
+            c.fillText(st.passportId || 'NSG-01', txtX, ph * 0.26);
+          }
+          c.restore();
+
+          // 盖在护照上的所有通关/中转/遣返印章！
+          if (st.stamps) {
+            for (var si = 0; si < st.stamps.length; si++) {
+              var sm = st.stamps[si];
+              var smPop = sm.age < 0.14 ? (1.45 - 0.45 * (sm.age / 0.14)) : 1;
+              var smX = -pw * 0.5 + pw * clamp(sm.rel, 0.12, 0.88);
+              var smY = ((si % 2 === 0) ? -2 : 3);
+              drawCustomsSeal(c, smX, smY, sm.text, sm.kind, sm.rot, smPop);
+            }
+          }
+          c.restore();
+        }
+
+        // 2. 沉重黄铜木柄液压大公章（随每次盖章狠狠砸下再弹起！）
+        if (px >= roll.kbW - 32 && px <= roll.w + 32) {
+          var slam = ms.slamT || 0;
+          var hoverY = (ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5);
+          // slam=1 时狠砸到底，之后高高抬起待命
+          var lift = (1 - Math.pow(slam, 0.55)) * 22 * Math.max(0.25, amp);
+          var stY = hoverY - 6 - lift + shakeY;
+          var denied = ms.lastVerdict === 'deny' && (ms.verdictHold || 0) > 0;
+
+          c.save();
+          c.globalAlpha = baseA;
+          c.translate(px + shakeX, stY);
+          c.rotate((1 - slam) * -0.14 * amp);
+
+          // 顶部实木球头手柄
+          var wg = c.createRadialGradient(-3, -24, 2, 0, -22, 10);
+          wg.addColorStop(0, '#d98a54');
+          wg.addColorStop(0.6, '#9a4d28');
+          wg.addColorStop(1, '#542611');
+          c.fillStyle = wg;
+          c.strokeStyle = '#2d1206';
+          c.lineWidth = 1.3;
+          c.beginPath(); c.arc(0, -23, 8.2, 0, Math.PI * 2); c.fill(); c.stroke();
+          // 颈部车木握柄与黄铜环箍
+          c.fillStyle = '#8b4523';
+          c.fillRect(-3.5, -16, 7, 9);
+          c.strokeRect(-3.5, -16, 7, 9);
+          c.fillStyle = '#f5d061';
+          c.fillRect(-4.5, -9, 9, 3);
+          // 宽大木质章座 + 蘸满红/绿印泥的橡胶底垫
+          c.fillStyle = '#b45a30';
+          roundRect(c, -15, -6, 30, 6.5, 2);
+          c.fill(); c.stroke();
+          c.fillStyle = denied ? '#e11d48' : '#059669';
+          c.fillRect(-14, 0.2, 28, 3.6);
+          c.restore();
+        }
+
+        // 3. 左下角海关通行统计单小 HUD
+        if ((ms.passCount || 0) + (ms.denyCount || 0) > 0) {
+          var hudX = roll.kbW + 14, hudY = roll.gridBottom() - 26;
+          c.save();
+          c.globalAlpha = baseA * 0.9;
+          var txt = 'PASS ' + (ms.passCount || 0) + '  ·  DENIED ' + (ms.denyCount || 0);
+          c.font = 'bold 10.5px Consolas, Tahoma, sans-serif';
+          var hw = c.measureText(txt).width + 16;
+          c.fillStyle = A.isDark ? 'rgba(15, 23, 42, 0.84)' : 'rgba(252, 246, 230, 0.90)';
+          c.strokeStyle = (ms.denyCount || 0) > 0 ? '#e11d48' : '#059669';
+          c.lineWidth = 1.3;
+          roundRect(c, hudX, hudY - 9, hw, 19, 4);
+          c.fill(); c.stroke();
+          c.fillStyle = A.isDark ? '#f8fafc' : '#1e293b';
+          c.textAlign = 'left'; c.textBaseline = 'middle';
+          c.fillText(txt, hudX + 8, hudY + 0.5);
+          c.restore();
+        }
+      }
+    },
+
+    {
+      id: 'noodleVortex',
+      showcase: false,
+      usesPit: false,
+      hidePlayhead: true,
+      linger: 0.9,
+      nameKey: 'eye.mode.noodleVortex',
+      fallbackName: '黑洞嗦面',
+      eyeColor: { iris: '#a855f7', ring: '#ffdf83', pupil: '#090414' },
+      onEnterNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        st.topping = ['naruto', 'egg', 'scallion'][Math.floor(st.seed * 3)];
+        ms.gulpPulse = 1.0;
+        ms.chopstickPinch = 1.0;
+        var px = fx.roll.beatX(fx.roll.playPos);
+        var cy = geo.y + geo.h * 0.5;
+        // 吸入热腾腾金黄拉面汤汁与紫金引力火花
+        for (var i = 0; i < 6; i++) {
+          var a = Math.random() * Math.PI * 2;
+          fx.spawn({
+            kind: i % 2 ? 'drop' : 'spark',
+            x: px + Math.cos(a) * 16,
+            y: cy + Math.sin(a) * 12,
+            vx: (Math.random() - 0.5) * 65,
+            vy: -30 - Math.random() * 55,
+            r: i % 2 ? 2.2 : 1.9,
+            color: i % 2 ? '#fbbf24' : '#e879f9',
+            life: 0.52
+          });
+        }
+        if (Math.random() < 0.6) {
+          fx.spawn({
+            kind: 'glyph',
+            text: pickLine(NOODLE_SLURP_LINES),
+            x: clamp(px, fx.roll.kbW + 42, fx.roll.w - 42),
+            y: Math.max(fx.roll.rulerH + 18, cy - 28),
+            vx: -18 + (Math.random() - 0.5) * 20,
+            vy: -34,
+            size: 12.5,
+            color: '#fde047',
+            life: 0.72
+          });
+        }
+      },
+      onControlPoint: function (fx, n, cp) {
+        var ms = fx.modeState;
+        if (!ms.orbitToppings) ms.orbitToppings = [];
+        ms.orbitToppings.push({
+          kind: Math.random() < 0.55 ? 'naruto' : 'scallion',
+          ang: Math.random() * Math.PI * 2,
+          r: 34 + Math.random() * 14,
+          speed: 5.2 + Math.random() * 2.4,
+          age: 0,
+          life: 1.45
+        });
+        if (ms.orbitToppings.length > 14) ms.orbitToppings.shift();
+        ms.gulpPulse = 1.0;
+        ms.chopstickPinch = 1.0;
+        fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 4, maxR: 26, color: '#c084fc', lineW: 2.0, life: 0.45 });
+        for (var i = 0; i < 5; i++) {
+          fx.spawn({ kind: 'drop', x: cp.x, y: cp.y, vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 45, r: 2.3, color: '#f59e0b', life: 0.48 });
+        }
+      },
+      onExitNote: function (fx, n, st, geo) {
+        var ms = fx.modeState;
+        var px = fx.roll.beatX(fx.roll.playPos);
+        var cy = geo.y + geo.h * 0.5;
+        ms.gulpPulse = 0.85;
+        // 嗦完最后一截拉面尾巴！紫金冲击环 + 满足热气！
+        fx.spawn({ kind: 'ring', x: px, y: cy, r: 6, maxR: 36, color: '#fbbf24', lineW: 2.2, life: 0.48 });
+        fx.spawn({ kind: 'puff', x: px, y: cy - 10, vx: -12, vy: -32, r: 5.2, color: 'rgba(255, 244, 214, 0.75)', life: 0.75 });
+        if (Math.random() < 0.42) {
+          fx.spawn({
+            kind: 'glyph',
+            text: pickLine(NOODLE_FINISH_LINES),
+            x: clamp(px, fx.roll.kbW + 36, fx.roll.w - 36),
+            y: Math.max(fx.roll.rulerH + 18, cy - 26),
+            vx: 0, vy: -36,
+            size: 12.5,
+            color: '#f0abfc',
+            life: 0.74
+          });
+        }
+      },
+      onStep: function (fx, dt, roll, T, A, jumped) {
+        var ms = fx.modeState;
+        var ctx = getPlaybackNoteContext(roll, roll.playPos);
+        var gridH = roll.gridBottom();
+        var targetY = (roll.rulerH + gridH) * 0.5;
+        if (ctx.cur) targetY = noteCenterY(roll, ctx.cur);
+        else if (ctx.prev && ctx.next) {
+          var g0 = ctx.prev.start + ctx.prev.dur, g1 = ctx.next.start;
+          var u = clamp((roll.playPos - g0) / Math.max(1e-4, g1 - g0), 0, 1);
+          var su = u * u * (3 - 2 * u);
+          targetY = noteCenterY(roll, ctx.prev) + (noteCenterY(roll, ctx.next) - noteCenterY(roll, ctx.prev)) * su;
+        } else if (ctx.next) targetY = noteCenterY(roll, ctx.next);
+        else if (ctx.prev) targetY = noteCenterY(roll, ctx.prev);
+        targetY = clamp(targetY, roll.rulerH + 26, gridH - 24);
+        stepSmoothFollowerY(fx, roll, dt, jumped, targetY, 16);
+
+        ms.slurping = !!ctx.cur;
+        ms.gulpPulse = Math.max(0, (ms.gulpPulse || 0) - dt * 3.4);
+        ms.chopstickPinch = Math.max(0, (ms.chopstickPinch || 0) - dt * 4.2);
+
+        if (ms.orbitToppings) {
+          for (var i = ms.orbitToppings.length - 1; i >= 0; i--) {
+            var tp = ms.orbitToppings[i];
+            tp.age += dt;
+            if (tp.age >= tp.life) { ms.orbitToppings.splice(i, 1); continue; }
+            tp.ang += tp.speed * dt;
+            tp.r = Math.max(7, tp.r * Math.pow(0.28, dt));
+          }
+        }
+      },
+      drawCustomPlayhead: function (fx, c, roll, T, px) {
+        // 顶部迷你吸积盘奇点信标（取代红线）
+        var cy = Math.min(roll.rulerH * 0.5, 9);
+        c.save();
+        c.strokeStyle = '#c084fc';
+        c.lineWidth = 1.8;
+        c.beginPath(); c.ellipse(px, cy, 11, 3.4, -0.25, 0, Math.PI * 2); c.stroke();
+        c.fillStyle = '#090414';
+        c.strokeStyle = '#fde68a';
+        c.lineWidth = 1.2;
+        c.beginPath(); c.arc(px, cy, 4.8, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.restore();
+        return true;
+      },
+      renderUnder: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var baseA = c.globalAlpha;
+        var px = roll.beatX(roll.playPos);
+        var bhY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+
+        // 1. 擦除正在被黑洞拉成面条嗦进去的音符原位！
+        for (var i = 0; i < items.length; i++) {
+          var g = items[i].geo;
+          roll._paintGridPatch(c, g.x - 2, g.y - 2, g.w + 4, g.h + 4, T);
+        }
+
+        if (px < roll.kbW - 50 || px > roll.w + 50) return;
+
+        // 2. 相对论引力透镜扭曲晕与弯曲时空同心环
+        c.save();
+        c.globalAlpha = baseA;
+        var lensR = 54 + (ms.gulpPulse || 0) * 14;
+        var lg = c.createRadialGradient(px, bhY, 10, px, bhY, lensR);
+        lg.addColorStop(0, 'rgba(18, 6, 38, 0.62)');
+        lg.addColorStop(0.45, 'rgba(139, 92, 246, 0.22)');
+        lg.addColorStop(0.78, 'rgba(245, 158, 11, 0.10)');
+        lg.addColorStop(1, 'rgba(139, 92, 246, 0)');
+        c.fillStyle = lg;
+        c.beginPath(); c.arc(px, bhY, lensR, 0, Math.PI * 2); c.fill();
+
+        // 即将被吸入的邻近音符出现紫色引力牵引丝！
+        var notes = roll.activeTrackVisible === false ? [] : (roll.notes || []);
+        for (var ni = 0; ni < notes.length; ni++) {
+          var n = notes[ni];
+          if (!n) continue;
+          var distB = n.start - roll.playPos;
+          if (distB > 0.01 && distB < 1.25) {
+            var nx = roll.beatX(n.start);
+            var ny = noteCenterY(roll, n);
+            var tug = 1 - distB / 1.25;
+            c.strokeStyle = colorAlpha('#c084fc', tug * 0.55);
+            c.lineWidth = 1.2 + tug * 1.2;
+            c.beginPath();
+            c.moveTo(nx, ny);
+            c.quadraticCurveTo((nx + px) * 0.5, (ny + bhY) * 0.5 - 10 * tug, px, bhY);
+            c.stroke();
+          }
+        }
+
+        // 3. 黑洞后半圈吸积盘（画在奇点黑球背后，营造 3D 卡冈图雅立体纵深！）
+        var diskR = 26 + (ms.gulpPulse || 0) * 5;
+        c.save();
+        c.translate(px, bhY);
+        c.rotate(-0.34);
+        c.strokeStyle = '#ff9d2e';
+        c.lineWidth = 5.5;
+        c.beginPath();
+        c.ellipse(0, 0, diskR, diskR * 0.34, 0, Math.PI, Math.PI * 2);
+        c.stroke();
+        c.strokeStyle = '#c084fc';
+        c.lineWidth = 2.6;
+        c.beginPath();
+        c.ellipse(0, 0, diskR * 1.18, diskR * 0.42, 0, Math.PI, Math.PI * 2);
+        c.stroke();
+        c.restore();
+        c.restore();
+      },
+      renderOver: function (fx, c, roll, T, A, items) {
+        var ms = fx.modeState;
+        var amp = fx.getMotionAmp();
+        var baseA = c.globalAlpha;
+        var px = roll.beatX(roll.playPos);
+        var bhY = ms.followY !== undefined ? ms.followY : (roll.rulerH + roll.gridBottom()) * 0.5;
+        var bhR = 13 + (ms.gulpPulse || 0) * 3.2 * Math.max(0.25, amp);
+        var diskR = 26 + (ms.gulpPulse || 0) * 5 * Math.max(0.25, amp);
+
+        // 1. 正在被拉面化（Spaghettification）的音符、飞舞金黄拉面丝与拉面碗！
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i], g = it.geo, st = it.st;
+          var alpha = it.active ? 1 : it.exitAlpha;
+          if (alpha <= 0) continue;
+
+          var cy = g.y + g.h * 0.5;
+          var prog = it.active ? clamp(it.rel, 0, 1) : 1;
+          // 拉面碗停在音符右侧未嗦完的一端，随着嗦面逐渐向黑洞被拽近！
+          var bowlAnchorX = Math.max(px + 28, g.x + g.w - prog * Math.min(g.w * 0.45, 22));
+          var bowlX = clamp(bowlAnchorX, roll.kbW + 18, roll.w - 18);
+          var bowlY = cy + 6;
+
+          c.save();
+          c.globalAlpha = baseA * alpha;
+
+          if (it.active) {
+            // 5 根被高速嗦进黑洞视界的弹性金黄拉面条！
+            var noodleCols = ['#d97706', '#f59e0b', '#fde047', '#fbbf24', '#fef08a'];
+            var slurpPhase = fx.elapsed * 22 + st.seed * 12;
+            for (var ni = 0; ni < 5; ni++) {
+              var offY = (ni - 2) * 3.1;
+              var sx = bowlX + (ni - 2) * 2.2;
+              var sy = bowlY - 2;
+              var midX = (sx + px) * 0.5;
+              var archH = 14 + ni * 3.5 + Math.sin(slurpPhase + ni * 1.35) * 8 * amp;
+              var cp1x = px + (sx - px) * 0.34;
+              var cp1y = bhY - archH * 0.72 + Math.cos(slurpPhase * 1.1 + ni) * 6 * amp;
+              var cp2x = midX + (sx - midX) * 0.35;
+              var cp2y = sy - archH - Math.sin(slurpPhase + ni * 1.8) * 5 * amp;
+
+              // 面条暗边 + 金黄面体
+              c.lineCap = 'round';
+              c.strokeStyle = 'rgba(120, 53, 15, 0.55)';
+              c.lineWidth = 3.4;
+              c.beginPath();
+              c.moveTo(px, bhY + offY * 0.25);
+              c.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, sx, sy);
+              c.stroke();
+
+              c.strokeStyle = noodleCols[ni];
+              c.lineWidth = 2.0;
+              c.stroke();
+            }
+
+            // 被潮汐力拉成面条状吸进黑洞的歌词文字！
+            var lyr = cleanLyric(it.n);
+            var lyrU = (fx.elapsed * 1.8 + st.seed) % 1;
+            var lx = bowlX + (px - bowlX) * lyrU;
+            var ly = bowlY - 12 + (bhY - (bowlY - 12)) * lyrU - Math.sin(lyrU * Math.PI) * 16;
+            c.save();
+            c.translate(lx, ly);
+            c.rotate(Math.atan2(bhY - ly, px - lx) * 0.25);
+            c.scale(1 + lyrU * 0.85 * Math.min(1.2, amp), Math.max(0.35, 1 - lyrU * 0.58));
+            drawTextHalo(c, lyr, 0, 0, clamp(roll.rowH * 0.85, 12, 17), '#fff7cc', '#3b0764', 2.6);
+            c.restore();
+
+            // 拉面碗内尚未吃完的缩水音符汤料 + 鸣门卷
+            drawRamenBowl(c, bowlX, bowlY, clamp(0.86 + (1 - prog) * 0.24, 0.82, 1.12), -0.1 * Math.sin(slurpPhase * 0.4) * amp, 1 - prog * 0.55);
+            if (st.topping === 'naruto') drawNarutomaki(c, bowlX + 4, bowlY - 3, 4.6, fx.elapsed * 3);
+          } else {
+            // 吃完后空碗晃晃悠悠淡出！
+            var emptyTilt = Math.sin(it.exitAge * 10 + st.seed * 6) * 0.35 * amp;
+            drawRamenBowl(c, bowlX, bowlY + it.exitAge * 12, 0.84, emptyTilt, 0.25);
+          }
+          c.restore();
+        }
+
+        if (px < roll.kbW - 50 || px > roll.w + 50) return;
+
+        // 2. 卡冈图雅黑洞本体：引力透镜上下光拱 + 绝对漆黑事件视界 + 前景炽热吸积盘！
+        c.save();
+        c.globalAlpha = baseA;
+        c.translate(px, bhY);
+
+        // 爱因斯坦引力透镜上下弯曲光环
+        c.strokeStyle = 'rgba(255, 224, 140, 0.65)';
+        c.lineWidth = 2.6;
+        c.shadowColor = '#f59e0b';
+        c.shadowBlur = A.isPixel ? 0 : 12;
+        c.beginPath(); c.arc(0, 0, bhR + 2.2, 0, Math.PI * 2); c.stroke();
+        c.shadowBlur = 0;
+
+        // 绝对漆黑奇点事件视界球
+        var cg = c.createRadialGradient(0, 0, bhR * 0.2, 0, 0, bhR);
+        cg.addColorStop(0, '#000000');
+        cg.addColorStop(0.82, '#07020f');
+        cg.addColorStop(1, '#2e1065');
+        c.fillStyle = cg;
+        c.beginPath(); c.arc(0, 0, bhR, 0, Math.PI * 2); c.fill();
+
+        // 视界内微弱旋转光子漩涡线
+        c.strokeStyle = 'rgba(192, 132, 252, 0.45)';
+        c.lineWidth = 1.1;
+        for (var sw = 0; sw < 3; sw++) {
+          var sa0 = fx.elapsed * 5 + sw * (Math.PI * 2 / 3);
+          c.beginPath();
+          c.arc(0, 0, bhR * 0.72, sa0, sa0 + 0.9);
+          c.stroke();
+        }
+
+        // 前半圈炽热吸积盘（横跨黑球前方！）
+        c.save();
+        c.rotate(-0.34);
+        c.strokeStyle = '#ff8c1a';
+        c.lineWidth = 6.2;
+        c.beginPath();
+        c.ellipse(0, 0, diskR, diskR * 0.34, 0, 0, Math.PI);
+        c.stroke();
+        c.strokeStyle = '#fff3b0';
+        c.lineWidth = 2.2;
+        c.beginPath();
+        c.ellipse(0, 0, diskR * 0.92, diskR * 0.30, 0, 0.12, Math.PI - 0.12);
+        c.stroke();
+        c.strokeStyle = 'rgba(216, 180, 254, 0.85)';
+        c.lineWidth = 1.6;
+        c.beginPath();
+        c.ellipse(0, 0, diskR * 1.16, diskR * 0.41, 0, 0.05, Math.PI - 0.05);
+        c.stroke();
+        c.restore();
+
+        // 3. 被黑洞俘获绕转的宇宙星尘与鸣门卷/葱花配菜！
+        if (ms.orbitToppings) {
+          for (var ti = 0; ti < ms.orbitToppings.length; ti++) {
+            var tp = ms.orbitToppings[ti];
+            var ox = Math.cos(tp.ang) * tp.r;
+            var oy = Math.sin(tp.ang) * tp.r * 0.46 - ox * 0.32;
+            var ts = clamp(1 - tp.age / tp.life, 0.25, 1);
+            if (tp.kind === 'naruto') {
+              drawNarutomaki(c, ox, oy, 5.2 * ts, tp.ang * 2);
+            } else {
+              c.strokeStyle = '#4ade80';
+              c.lineWidth = 1.8 * ts;
+              c.beginPath(); c.arc(ox, oy, 3.2 * ts, 0, Math.PI * 2); c.stroke();
+            }
+          }
+        }
+        // 常驻两颗高速公转星光
+        for (var stI = 0; stI < 2; stI++) {
+          var orbA = fx.elapsed * (4.2 + stI * 1.7) + stI * Math.PI;
+          var sx = Math.cos(orbA) * (diskR * 1.1);
+          var sy = Math.sin(orbA) * (diskR * 0.38) - sx * 0.32;
+          c.fillStyle = stI === 0 ? '#fef08a' : '#f0abfc';
+          drawStar(c, sx, sy, 4, 4.2, 1.6, orbA);
+          c.fill();
+        }
+
+        // 4. 漂浮在黑洞旁的宇宙发光挑面筷子！
+        var pinch = (ms.chopstickPinch || 0) * amp;
+        var chopBob = Math.sin(fx.elapsed * 11) * (ms.slurping ? 4 : 1.5) * amp;
+        c.save();
+        c.translate(14, -bhR - 12 + chopBob);
+        c.rotate(-0.22 - pinch * 0.14);
+        c.lineCap = 'round';
+        // 上筷
+        c.strokeStyle = '#451a03';
+        c.lineWidth = 4.2;
+        c.beginPath(); c.moveTo(-10, 14); c.lineTo(24, -14); c.stroke();
+        c.strokeStyle = '#f59e0b';
+        c.lineWidth = 2.4;
+        c.stroke();
+        // 下筷（夹面开合动作）
+        c.save();
+        c.rotate(0.14 - pinch * 0.12);
+        c.strokeStyle = '#451a03';
+        c.lineWidth = 4.2;
+        c.beginPath(); c.moveTo(-8, 17); c.lineTo(26, -6); c.stroke();
+        c.strokeStyle = '#fde68a';
+        c.lineWidth = 2.4;
+        c.stroke();
+        c.restore();
+        c.restore();
+
+        c.restore();
       }
     }
   ];
