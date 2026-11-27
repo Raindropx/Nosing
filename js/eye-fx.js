@@ -9271,7 +9271,32 @@
             });
           }
         }
-        if (ms.captured.length > 64) ms.captured.splice(0, ms.captured.length - 64);
+        // 3. 把音符上方的音素标签（如 dial / af / n）也拆成单个音素卷进吸积盘公转！
+        var pLabels = fx.roll && fx.roll._phoneLabels;
+        if (pLabels && pLabels.length) {
+          for (var pli = 0; pli < pLabels.length; pli++) {
+            var pl = pLabels[pli];
+            if (pl && pl.note && pl.note.id === n.id && pl.text) {
+              var toks = String(pl.text).trim().split(/\s+/);
+              for (var ti = 0; ti < Math.min(toks.length, 3); ti++) {
+                if (!toks[ti]) continue;
+                ms.captured.push({
+                  kind: 'phone',
+                  text: toks[ti],
+                  ang: -0.9 + ti * 0.65 + (Math.random() - 0.5) * 0.4,
+                  r: bhRNow * 1.65 + 20 + Math.random() * 24,
+                  speed: 3.0 + Math.random() * 1.8,
+                  spin: (Math.random() - 0.5) * 0.8,
+                  vspin: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4),
+                  age: 0,
+                  life: 1.4
+                });
+              }
+              break;
+            }
+          }
+        }
+        if (ms.captured.length > 72) ms.captured.splice(0, ms.captured.length - 72);
 
         fx.spawn({ kind: 'ring', x: px, y: cy, r: Math.max(24, bhRNow * 1.3), maxR: Math.max(6, bhRNow * 0.45), color: '#c084fc', lineW: 1.8, life: 0.36 });
         for (var k = 0; k < 5; k++) {
@@ -9317,7 +9342,7 @@
           age: 0,
           life: 1.35
         });
-        if (ms.captured.length > 64) ms.captured.splice(0, ms.captured.length - 64);
+        if (ms.captured.length > 72) ms.captured.splice(0, ms.captured.length - 72);
         fx.spawn({ kind: 'ring', x: cp.x, y: cp.y, r: 4, maxR: 28, color: '#38bdf8', lineW: 2.0, life: 0.46 });
         fx.spawn({ kind: 'star', x: cp.x, y: cp.y, vx: -18, vy: -32, r: 4.4, rot: 0, vrot: 10, color: '#fef08a', life: 0.52 });
       },
@@ -9353,13 +9378,15 @@
           if (nn.start < songStart) songStart = nn.start;
           if (nn.start + nn.dur > songEnd) songEnd = nn.start + nn.dur;
         }
-        if (jumped && fx.prevPlayPos !== null && roll.playPos < fx.prevPlayPos - 0.15) {
-          // 倒带或重播时按当前位置重置黑洞大小与质量
-          ms.captured = [];
+        if (!ms.bhInit || (jumped && fx.prevPlayPos !== null && roll.playPos < fx.prevPlayPos - 0.15)) {
+          // 首次进入或倒带/重播时按当前位置初始化已吞噬集合、黑洞大小与质量
+          var isRewind = !!(ms.bhInit && jumped);
+          ms.bhInit = true;
+          if (isRewind || !ms.captured) ms.captured = [];
           ms.eatenIds = Object.create(null);
           var preEaten = 0;
           for (var ei = 0; ei < notes.length; ei++) {
-            if (notes[ei] && notes[ei].start < roll.playPos - 1e-4) {
+            if (notes[ei] && notes[ei].start <= roll.playPos + 1e-4) {
               ms.eatenIds[notes[ei].id] = true;
               preEaten++;
             }
@@ -9368,6 +9395,17 @@
           ms.mass = 4.2 + preEaten * 1.8;
           ms.finaleT = 0;
           ms.bhRadius = undefined;
+        } else {
+          // 防止超短音符在单帧高速跨过时漏吸：凡已彻底越过播放头的音符一律计入已吞噬！
+          if (!ms.eatenIds) ms.eatenIds = Object.create(null);
+          for (var si2 = 0; si2 < notes.length; si2++) {
+            var sn = notes[si2];
+            if (sn && !ms.eatenIds[sn.id] && sn.start + sn.dur < roll.playPos - 1e-4) {
+              ms.eatenIds[sn.id] = true;
+              ms.eatenCount = (ms.eatenCount || 0) + 1;
+              ms.mass = (ms.mass || 4.2) + Math.max(0.8, sn.dur * 1.65);
+            }
+          }
         }
 
         // 计算歌曲总进度，让黑洞越吃越大、到歌曲结尾膨胀成巨无霸超级黑洞！
@@ -9474,7 +9512,18 @@
         var pullR = Math.max(88, bhR * 3.55 + 48);
         var pitchInfo = roll._lastPitchInfo || null;
 
-        // 1. 收集所有落入黑洞引力圈或已被吞噬的音符，一次性擦除它们的本体、音高线、控制点与颤音按钮！
+        // 1. 收集所有落入黑洞引力圈或已被吞噬的音符，一次性擦除它们的本体、音素标签、语种徽章、音高线、控制点与颤音按钮！
+        var phoneById = Object.create(null);
+        var pList = roll._phoneLabels || [];
+        for (var pli = 0; pli < pList.length; pli++) {
+          if (pList[pli] && pList[pli].note) phoneById[pList[pli].note.id] = pList[pli];
+        }
+        var badgeById = Object.create(null);
+        var bList = roll._langBadges || [];
+        for (var bli = 0; bli < bList.length; bli++) {
+          if (bList[bli] && bList[bli].note) badgeById[bList[bli].note.id] = bList[bli];
+        }
+
         var notes = roll.activeTrackVisible === false ? [] : (roll.notes || []);
         var affected = [];
         for (var i = 0; i < notes.length; i++) {
@@ -9482,11 +9531,14 @@
           if (!n) continue;
           var nx = roll.beatX(n.start);
           var nw = Math.max(6, n.dur * roll.pxBeat);
-          if (nx > roll.w + 48 || nx + nw < roll.kbW - 60) continue;
+          var pl = phoneById[n.id] || null;
+          var lb = badgeById[n.id] || null;
+          var rightBound = Math.max(nx + nw, pl ? (pl.x + pl.width) : 0, lb ? (lb.x + lb.width) : 0);
+          if (nx > roll.w + 48 || rightBound < roll.kbW - 60) continue;
           var ny = Math.round(roll.rowY(n.pitch)) + 1;
           var nh = Math.max(4, roll.rowH - 2);
           var cy = ny + nh * 0.5;
-          var nearX = clamp(px, nx, nx + nw);
+          var nearX = clamp(px, nx, rightBound);
           var dist = Math.hypot(nearX - px, cy - bhY);
           var st = fx.noteStates[n.id] || null;
           var eaten = !!(ms.eatenIds && ms.eatenIds[n.id] && roll.playPos > n.start + n.dur + 1e-4);
@@ -9499,6 +9551,15 @@
 
           // 擦除音符条
           roll._paintGridPatch(c, nx - 3, ny - 3, nw + 6, nh + 6, T);
+          // 擦除音符正上方的音素标签（如 dial af n / s r 7）与多语种角标！
+          if (pl) {
+            roll._paintGridPatch(c, pl.x - 4, pl.y - 3, pl.width + 10, 17, T);
+          } else if (roll.showPhones) {
+            roll._paintGridPatch(c, nx - 2, ny - 16, Math.max(nw + 14, 52), 16, T);
+          }
+          if (lb) {
+            roll._paintGridPatch(c, lb.x - 2, lb.y - 2, lb.width + 5, lb.height + 5, T);
+          }
           // 擦除音高线与颤音曲线包络区
           if (hasPitch && nInfo && (roll.showPitch || roll.showVibrato)) {
             var minPY = ny, maxPY = ny + nh;
@@ -9519,12 +9580,12 @@
               if (cps[ci].y < cMinY) cMinY = cps[ci].y;
               if (cps[ci].y > cMaxY) cMaxY = cps[ci].y;
             }
-            roll._paintGridPatch(c, cMinX - 9, cMinY - 9, (cMaxX - cMinX) + 18, (cMaxY - cMinY) + 18, T);
+            roll._paintGridPatch(c, cMinX - 10, cMinY - 10, (cMaxX - cMinX) + 20, (cMaxY - cMinY) + 20, T);
           }
           // 擦除音符下方的颤音 [~] 按钮及开启后的长度/深度/速率调节手柄！
           if (hasPitch && roll.showVibrato) {
             var vy = cy + roll.rowH * 0.5 + 10;
-            roll._paintGridPatch(c, nx + nw - 23, vy - 9, 27, 18, T);
+            roll._paintGridPatch(c, nx + nw - 23, vy - 9, 27, 19, T);
             if (n.vibrato && NSG.TUNING) {
               var v = NSG.TUNING.vibrato(n.vibrato);
               if (v && v.enabled) {
@@ -9534,7 +9595,7 @@
                 roll._paintGridPatch(c, nx + nw * 0.85 - 7, dy - 7, 14, 14, T);
                 if (roll._vibratoRateControl) {
                   var rc = roll._vibratoRateControl(n);
-                  roll._paintGridPatch(c, rc.x - 8, rc.y - 9, rc.width + 62, 18, T);
+                  roll._paintGridPatch(c, rc.x - 8, rc.y - 10, rc.width + 66, 20, T);
                 }
               }
             }
@@ -9542,6 +9603,7 @@
 
           affected.push({
             n: n, st: st, nInfo: nInfo, hasPitch: hasPitch, cps: cps,
+            pl: pl, lb: lb,
             active: active, eaten: eaten, dist: dist,
             geo: { x: nx + 0.5, y: ny, w: nw - 1, h: nh }
           });
@@ -9833,6 +9895,65 @@
               }
             }
           }
+
+          // (E) 音符正上方的音素标签（dial / af / n 等）与语种徽章：拆散、拉斜并逐个吸入黑洞！
+          if (af.pl && af.pl.text && (!af.active || prog < 0.85)) {
+            var pl = af.pl;
+            var pFade = af.active ? clamp(1 - prog * 1.15, 0, 1) : 1;
+            if (pFade > 0.04) {
+              c.save();
+              c.font = '10px Consolas, "Microsoft YaHei", monospace';
+              c.textAlign = 'center';
+              c.textBaseline = 'middle';
+              var pGroups = roll._cachedPronGroups;
+              var pGrp = pGroups && pGroups[n.id];
+              var pInk = (pGrp && pGrp.index >= 0 && NSG.PHONE_COLORS && NSG.PHONE_COLORS[pGrp.index % 2])
+                ? NSG.PHONE_COLORS[pGrp.index % 2].ink
+                : (T.phoneDefault || (A.isDark ? '#cbd5e1' : '#334155'));
+              var tokens = String(pl.text).split(/(\s+)/);
+              var curX = pl.x;
+              for (var ti = 0; ti < tokens.length; ti++) {
+                var tk = tokens[ti];
+                var tkW = c.measureText(tk).width;
+                if (tk.trim()) {
+                  var wTk = bhWarpPoint(curX + tkW * 0.5, pl.y + 6.5, px, bhY, effPullR * 1.05, bhR, amp, -1);
+                  if (!wTk.swallowed) {
+                    c.save();
+                    c.globalAlpha = baseA * pFade * clamp(1 - wTk.tug * 0.45, 0.25, 1);
+                    c.translate(wTk.x, wTk.y);
+                    c.rotate(wTk.rot * 1.4);
+                    c.scale(wTk.scale * (1 + wTk.tug * 0.45), wTk.scale * (1 - wTk.tug * 0.22));
+                    c.fillStyle = wTk.tug > 0.45 ? '#e879f9' : pInk;
+                    c.fillText(tk, 0, 0);
+                    c.restore();
+                  }
+                }
+                curX += tkW;
+              }
+              c.restore();
+            }
+          }
+          if (af.lb && (!af.active || prog < 0.7)) {
+            var lb = af.lb;
+            var wLb = bhWarpPoint(lb.x + lb.width * 0.5, lb.y + lb.height * 0.5, px, bhY, effPullR, bhR, amp, 1);
+            if (!wLb.swallowed) {
+              c.save();
+              c.globalAlpha = baseA * (af.active ? clamp(1 - prog * 1.4, 0, 1) : 1);
+              c.translate(wLb.x, wLb.y);
+              c.rotate(wLb.rot * 1.6);
+              c.scale(wLb.scale, wLb.scale);
+              c.fillStyle = (T && T.altLang && T.altLang.badgeBg) || '#334155';
+              c.strokeStyle = (T && T.altLang && T.altLang.badgeStroke) || '#94a3b8';
+              c.lineWidth = 1;
+              roundRect(c, -lb.width * 0.5, -lb.height * 0.5, lb.width, lb.height, 2);
+              c.fill(); c.stroke();
+              c.fillStyle = (T && T.altLang && T.altLang.badgeText) || '#ffffff';
+              c.font = 'bold 8.5px Consolas, Tahoma, sans-serif';
+              c.textAlign = 'center'; c.textBaseline = 'middle';
+              c.fillText(lb.tag || '', 0, 0.5);
+              c.restore();
+            }
+          }
           c.restore();
         }
 
@@ -9904,6 +10025,16 @@
               drawSuckedVibratoBtn(c, ox, oy, obj.enabled, T, obj.spin || obj.ang, 0.85 * ds, 0.85 * ds);
             } else if (obj.kind === 'cp') {
               drawSuckedControlPoint(c, ox, oy, T, roll, 1.05 * ds);
+            } else if (obj.kind === 'phone') {
+              c.save();
+              c.translate(ox, oy);
+              c.rotate(obj.spin || obj.ang);
+              c.scale(ds * 1.05, ds * 0.9);
+              c.font = 'bold 10px Consolas, "Microsoft YaHei", monospace';
+              c.textAlign = 'center'; c.textBaseline = 'middle';
+              c.fillStyle = '#fef08a';
+              c.fillText(obj.text || '', 0, 0);
+              c.restore();
             } else if (obj.kind === 'vibHandle') {
               c.save();
               c.translate(ox, oy);
