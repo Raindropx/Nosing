@@ -2101,7 +2101,7 @@
     if (langBtn) {
       var meta = NSG && NSG.I18N && typeof NSG.I18N.getLanguageMeta === 'function' ? NSG.I18N.getLanguageMeta() : null;
       langBtn.textContent = (meta && meta.buttonLabel) || t('lang.button', null, 'language');
-      langBtn.title = t('lang.buttonTitle', null, 'Switch UI Language (English / 中文 / 日本語)');
+      langBtn.title = t('lang.buttonTitle', null, 'Switch UI Language (English / 中文 / 日本語 / 조선어)');
       if (langBtn.setAttribute) langBtn.setAttribute('aria-label', t('lang.buttonAria', null, '切换界面语言 / Switch Language'));
     }
     var mq = $('#marquee');
@@ -8185,7 +8185,7 @@
           chipPulse12: 'NES 12.5% 方波', chipPulse25: 'NES 25% 方波', chipPulse50: 'NES 50% 方波', chipPulse75: 'NES 75% 方波',
           chipPulse87: '87.5% 方波', chipNoise: '8bit 噪声打击', chipKick: '8bit 底鼓', chipTom: '8bit 通鼓'
         };
-        var sepList = i18nCall('getLanguage') === 'en' ? ', ' : '、';
+        var sepList = (i18nCall('getLanguage') === 'en' || i18nCall('getLanguage') === 'ko') ? ', ' : '、';
         var secTxt = (acc.sections || []).map(function (s) {
           return t('arr.sec.' + s, null, { intro: '前', verse: '主', pre: '预', bridge: '桥', chorus: '副', outro: '尾' }[s] || s);
         }).join(' ');

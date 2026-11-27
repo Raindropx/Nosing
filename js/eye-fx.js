@@ -11,6 +11,7 @@
   function langCode() {
     var l = (NSG.I18N && typeof NSG.I18N.getLanguage === 'function' ? NSG.I18N.getLanguage() : 'zh') || 'zh';
     if (l.indexOf('ja') === 0) return 'ja';
+    if (l.indexOf('ko') === 0) return 'ko';
     if (l.indexOf('en') === 0) return 'en';
     return 'zh';
   }
@@ -1365,7 +1366,7 @@
         border: hasMiss ? '#f87171' : '#ffe566',
         accent: '#5ce1e6',
         accent2: hasMiss ? '#fca5a5' : '#ffe566',
-        title: lang === 'ja' ? 'リザルト' : (lang === 'en' ? 'STAGE CLEAR' : '演奏结算'),
+        title: lang === 'ja' ? 'リザルト' : (lang === 'ko' ? '연주결산' : (lang === 'en' ? 'STAGE CLEAR' : '演奏结算')),
         badge: res.full ? 'ALL PERFECT' : (!hasMiss ? 'FULL COMBO' : (res.acc >= 70 ? 'STAGE CLEAR' : 'TRACK FAILED')),
         rank: jRank,
         rankCol: res.full ? '#fff2a6' : (hasMiss ? (res.acc >= 85 ? '#38bdf8' : '#f87171') : '#5ce1e6'),
@@ -1379,24 +1380,24 @@
         ]
       };
     } else if (st === 'drumParade') {
-      var dRank = res.full ? (lang === 'en' ? 'MAX' : '极') : (!hasMiss ? (lang === 'en' ? 'S' : '良') : (res.acc >= 90 ? (lang === 'en' ? 'A' : '优') : (res.acc >= 70 ? (lang === 'en' ? 'B' : '可') : (lang === 'en' ? 'F' : '不可'))));
+      var dRank = res.full ? (lang === 'en' ? 'MAX' : (lang === 'ko' ? '최상' : '极')) : (!hasMiss ? (lang === 'en' ? 'S' : (lang === 'ko' ? '우량' : '良')) : (res.acc >= 90 ? (lang === 'en' ? 'A' : (lang === 'ko' ? '우수' : '优')) : (res.acc >= 70 ? (lang === 'en' ? 'B' : (lang === 'ko' ? '보통' : '可')) : (lang === 'en' ? 'F' : (lang === 'ko' ? '미달' : '不可')))));
       cfg = {
         bgTop: 'rgba(66, 16, 18, 0.94)',
         bgBot: 'rgba(38, 12, 16, 0.94)',
         border: hasMiss ? '#f87171' : '#ffe042',
         accent: '#ff4b3e',
         accent2: '#ffe042',
-        title: lang === 'ja' ? '演奏結果発表！' : (lang === 'en' ? 'FESTIVAL CLEAR!' : '祭典演奏结算！'),
-        badge: res.full ? (lang === 'en' ? 'FULL COMBO!' : '全连达成！') : (!hasMiss ? (lang === 'en' ? 'STAGE CLEAR!' : '通关达成！') : (res.acc >= 70 ? (lang === 'en' ? 'CLEARED' : '勉强通关') : (lang === 'en' ? 'FAILED!' : '祭典翻车！'))),
+        title: lang === 'ja' ? '演奏結果発表！' : (lang === 'ko' ? '축전연주 결산!' : (lang === 'en' ? 'FESTIVAL CLEAR!' : '祭典演奏结算！')),
+        badge: res.full ? (lang === 'ko' ? '전련타 달성!' : (lang === 'en' ? 'FULL COMBO!' : '全连达成！')) : (!hasMiss ? (lang === 'ko' ? '통과 달성!' : (lang === 'en' ? 'STAGE CLEAR!' : '通关达成！')) : (res.acc >= 70 ? (lang === 'ko' ? '간신히 통과' : (lang === 'en' ? 'CLEARED' : '勉强通关')) : (lang === 'ko' ? '축전 실패!' : (lang === 'en' ? 'FAILED!' : '祭典翻车！')))),
         rank: dRank,
         rankCol: hasMiss && res.acc < 70 ? '#f87171' : '#ffe042',
         rankStroke: '#b91c1c',
-        scoreText: formatCommaInt(dispScore) + (lang === 'en' ? ' pts' : ' 分'),
+        scoreText: formatCommaInt(dispScore) + (lang === 'ko' ? ' 점' : (lang === 'en' ? ' pts' : ' 分')),
         rows: [
-          [lang === 'en' ? 'GREAT' : '良', String(res.hits), '#ffe042'],
-          [lang === 'en' ? 'OK / MISS' : '可 / 不可', '0 / ' + missStr, hasMiss ? '#f87171' : '#fb923c'],
-          [lang === 'ja' ? '連打' : (lang === 'en' ? 'ROLLS' : '连打'), String(res.cpHits), '#38bdf8'],
-          [lang === 'en' ? 'MAX COMBO' : '最大连击', String(res.maxCombo), '#ffffff']
+          [lang === 'ko' ? '우량' : (lang === 'en' ? 'GREAT' : '良'), String(res.hits), '#ffe042'],
+          [lang === 'ko' ? '보통 / 미달' : (lang === 'en' ? 'OK / MISS' : '可 / 不可'), '0 / ' + missStr, hasMiss ? '#f87171' : '#fb923c'],
+          [lang === 'ja' ? '連打' : (lang === 'ko' ? '련타' : (lang === 'en' ? 'ROLLS' : '连打')), String(res.cpHits), '#38bdf8'],
+          [lang === 'ko' ? '최대 련격' : (lang === 'en' ? 'MAX COMBO' : '最大连击'), String(res.maxCombo), '#ffffff']
         ]
       };
     } else if (st === 'twinOrbits') {
@@ -1407,7 +1408,7 @@
         border: hasMiss ? '#f87171' : '#ff5247',
         accent: '#ff3b30',
         accent2: '#00d4ff',
-        title: lang === 'ja' ? '双星リザルト' : (lang === 'en' ? 'ORBIT RESULTS' : '双星旋舞结算'),
+        title: lang === 'ja' ? '双星リザルト' : (lang === 'ko' ? '쌍성 선회 결산' : (lang === 'en' ? 'ORBIT RESULTS' : '双星旋舞结算')),
         badge: res.full ? 'PURE PERFECT!' : (!hasMiss ? 'TRACK CLEAR!' : (res.acc >= 70 ? 'ORBIT CLEAR' : 'DERAILED!')),
         rank: tRank,
         rankCol: hasMiss ? (res.acc >= 80 ? '#72f2ff' : '#f87171') : '#fff0a6',
@@ -1428,7 +1429,7 @@
         border: hasMiss ? '#f87171' : '#00f5ff',
         accent: '#ff38b8',
         accent2: '#00f5ff',
-        title: lang === 'ja' ? 'RESULT · TRACK CLEAR' : (lang === 'en' ? 'RESULT · TRACK CLEAR' : '街机结算 · RESULT'),
+        title: lang === 'ja' ? 'RESULT · TRACK CLEAR' : (lang === 'ko' ? '오락기 결산 · RESULT' : (lang === 'en' ? 'RESULT · TRACK CLEAR' : '街机结算 · RESULT')),
         badge: !hasMiss ? 'NEW RECORD!!' : (res.acc >= 70 ? 'TRACK CLEAR' : 'STAGE FAILED'),
         rank: rRank,
         rankCol: hasMiss && res.acc < 70 ? '#f87171' : '#00f5ff',
@@ -1449,7 +1450,7 @@
         border: hasMiss ? '#f87171' : '#ff5ca8',
         accent: '#38d9ff',
         accent2: '#ffe042',
-        title: lang === 'ja' ? 'リザルト · RANKING' : (lang === 'en' ? 'RESULTS · RANKING' : '演奏结算 · RANKING'),
+        title: lang === 'ja' ? 'リザルト · RANKING' : (lang === 'ko' ? '연주결산 · 순위' : (lang === 'en' ? 'RESULTS · RANKING' : '演奏结算 · RANKING')),
         badge: res.full ? 'FULL COMBO!' : (!hasMiss ? 'PASSED!' : (res.acc >= 50 ? 'CLEAR' : 'FAIL...')),
         rank: cRank,
         rankCol: hasMiss ? (res.acc >= 85 ? '#4ce886' : (res.acc >= 70 ? '#c084fc' : '#f87171')) : '#ffe566',
@@ -1575,100 +1576,120 @@
     var footTxt = hasMiss
       ? (lang === 'ja'
         ? ('💥 ' + res.misses + ' 個の音符が G2P/辞書不一致（MISS）· 巻戻しで復帰')
-        : (lang === 'en'
-          ? ('💥 ' + res.misses + ' note(s) failed G2P/dict lookup (MISS) · Rewind to return')
-          : ('💥 有 ' + res.misses + ' 个音符 G2P/词典匹配失败（已判 MISS）· 倒带继续调教')))
+        : (lang === 'ko'
+          ? ('💥 ' + res.misses + '개 음표가 발음규칙/사전 불일치(실패) · 되감기로 복귀')
+          : (lang === 'en'
+            ? ('💥 ' + res.misses + ' note(s) failed G2P/dict lookup (MISS) · Rewind to return')
+            : ('💥 有 ' + res.misses + ' 个音符 G2P/词典匹配失败（已判 MISS）· 倒带继续调教'))))
       : (lang === 'ja'
         ? '✨ MODS: 全自動歌唱 · ルーラークリック / 巻戻しで復帰'
-        : (lang === 'en'
-          ? '✨ MODS: AUTO-SING · Click ruler or rewind to return'
-          : '✨ 实际判定：全自动摸鱼代打 · 点击标尺或倒带继续调教'));
+        : (lang === 'ko'
+          ? '✨ 실제 판정: 전자동 대리가창 · 눈금자 누르기 또는 되감기로 복귀'
+          : (lang === 'en'
+            ? '✨ MODS: AUTO-SING · Click ruler or rewind to return'
+            : '✨ 实际判定：全自动摸鱼代打 · 点击标尺或倒带继续调教')));
     drawTextHalo(c, footTxt, cx, y0 + cardH - 13, 10.5, hasMiss ? '#fca5a5' : 'rgba(226, 232, 240, 0.88)', 'rgba(0,0,0,0.75)', 2, 'center', 'Tahoma, "Microsoft YaHei", sans-serif');
     c.restore();
   }
 
-  /* 文案池（中 / 英 / 日） */
+  /* 文案池（中 / 英 / 日 / 朝） */
   var ESCAPE_LINES = {
     zh: ['别碰我!!', '救命!!', '走开啦!', '不要唱我!', '跑啊!!', '快逃!!', '我音不准别唱!'],
     en: ['DONT TOUCH!', 'HELP!!', 'NOPE!!', 'RUN!!', 'WAIT NO!', 'TOO HIGH!!'],
-    ja: ['触るな!!', '逃げる!!', '助けて!!', '待って!!', '高すぎ!!', 'やめて!!']
+    ja: ['触るな!!', '逃げる!!', '助けて!!', '待って!!', '高すぎ!!', 'やめて!!'],
+    ko: ['건드리지 마!!', '살려줘!!', '저리 가!', '날 부르지 마!', '달아나라!!', '너무 높아!!']
   };
   var DANMAKU_POOL = {
     zh: ['好听！！', '神调教', '这PIT太丝滑了', '高能预警', '8888888', '？？？', '耳朵怀孕了', '草', '前方高音', '声带起飞', '太强了', '莫名其妙但好爽'],
     en: ['SO SMOOTH!!', 'GOD TIER TUNING', '8888888', 'WHAT IS THIS?!', 'HIGH NOTE!!', 'CLEAN PIT!', 'LOL', 'VIBRATO GO BRRR', 'PEAK'],
-    ja: ['神調教！！', 'PIT滑らかすぎ', '8888888', '？？？', '高音注意', '草', '良すぎ', '謎演出w', 'うおおお']
+    ja: ['神調教！！', 'PIT滑らかすぎ', '8888888', '？？？', '高音注意', '草', '良すぎ', '謎演出w', 'うおおお'],
+    ko: ['듣기 좋다!!', '신들린 조률!', 'PIT가 물 흐르듯!', '고음 주의!', '8888888', '???', '성대 비상!', '정말 대단하다!', '알쏭달쏭한데 시원하네']
   };
   var GLITCH_WORDS = ['0xDEAD', 'ERR_PIT', 'NaN Hz', '锟斤拷', 'NULL', '0x48K', 'SEGFAULT', '???', '燙燙燙', 'BUFFER'];
   var CRIT_LABELS = {
     zh: ['暴击!', '调教暴击!', '会心一击!', '超高音!', 'PERFECT!'],
     en: ['CRIT!', 'PITCH CRIT!', 'SUPER EFFECTIVE!', 'PERFECT!'],
-    ja: ['会心!', '調教必殺!', '超絶技巧!', 'PERFECT!']
+    ja: ['会心!', '調教必殺!', '超絶技巧!', 'PERFECT!'],
+    ko: ['치명타!', '조률 강타!', '회심의 일격!', '초고음!', '완벽!']
   };
   var POINT_LINES = {
     zh: ['唱!', '这里!', '这个!', '跟上!', '看这!', '对对对!', '下一个!'],
     en: ['SING!', 'HERE!', 'THIS ONE!', 'KEEP UP!', 'LOOK!', 'NEXT!'],
-    ja: ['ここ!', 'これ!', '歌って!', '注目!', 'はい!', '次!']
+    ja: ['ここ!', 'これ!', '歌って!', '注目!', 'はい!', '次!'],
+    ko: ['불러!', '여기!', '이것!', '따라와!', '여길 봐!', '옳지!', '다음!']
   };
   var FROG_LINES = {
     zh: ['呱!', '咕呱!', '呱呱!', '真香!', '跳!'],
     en: ['RIBBIT!', 'CROAK!', 'BOING!', 'YUM!', 'HOP!'],
-    ja: ['ケロ!', 'ゲコ!', 'ケロケロ!', 'ぴょん!', 'うまっ!']
+    ja: ['ケロ!', 'ゲコ!', 'ケロケロ!', 'ぴょん!', 'うまっ!'],
+    ko: ['개굴!', '꾸굴!', '개굴개굴!', '맛있다!', '폴짝!']
   };
   var CLUE_LINES = {
     zh: ['线索!', '破案了!', '真相只有一个!', '音准波动!', '可疑!', '发现目标!'],
     en: ['CLUE!', 'AHA!', 'SUSPICIOUS!', 'ELEMENTARY!', 'FOUND IT!', 'PITCH?!'],
-    ja: ['証拠発見!', '真実は一つ!', '怪しい!', 'なるほど!', '手がかり!']
+    ja: ['証拠発見!', '真実は一つ!', '怪しい!', 'なるほど!', '手がかり!'],
+    ko: ['단서 발견!', '사건 해결!', '진실은 하나!', '음정 흔들림!', '수상하다!', '목표 포착!']
   };
   var CLAW_LINES = {
     zh: ['松爪了!', '差一点!', '黑心机器!', '再来一币!', '滑掉了!'],
     en: ['SLIPPED!', 'SO CLOSE!', 'RIGGED!!', 'INSERT COIN!', 'NOOO!'],
-    ja: ['あっ…', '惜しい!', 'アーム弱すぎ!', 'もう一回!', '落ちた!']
+    ja: ['あっ…', '惜しい!', 'アーム弱すぎ!', 'もう一回!', '落ちた!'],
+    ko: ['집게가 풀렸어!', '아깝다!', '엉터리 기계!', '한번 더!', '미끄러졌어!']
   };
 
   var EGG_SIZZLE_LINES = {
     zh: ['滋啦~', '滋滋作响!', '加点黄油!', '香气扑鼻!', '火候刚好!'],
     en: ['SIZZLE~', 'CRACK!', 'BUTTER UP!', 'CRISPY!', 'HOT PAN!'],
-    ja: ['ジュワ〜', 'パカッ!', 'バター投入!', 'いい香り!', 'アツアツ!']
+    ja: ['ジュワ〜', 'パカッ!', 'バター投入!', 'いい香り!', 'アツアツ!'],
+    ko: ['지글지글~', '지직!', '기름 한방울!', '고소한 냄새!', '불길이 딱 좋아!']
   };
   var EGG_FLIP_LINES = {
     zh: ['翻面!!', '起飞!', '空中转体!', '神翻面!', '接住了!', '糖心完美!'],
     en: ['FLIP!!', 'NICE TOSS!', '360° EGG!', 'CAUGHT IT!', 'SUNNY SIDE!'],
-    ja: ['クルッ!!', 'ナイス返し!', '大回転!', 'キャッチ!', '半熟完璧!']
+    ja: ['クルッ!!', 'ナイス返し!', '大回転!', 'キャッチ!', '半熟完璧!'],
+    ko: ['뒤집기!!', '날아올랐다!', '공중회전!', '명품 뒤집기!', '받았다!', '반숙 완벽!']
   };
   var EGG_BURN_LINES = {
     zh: ['煎糊了!!', '快关火!!', '焦香风味!', '黑炭蛋!!'],
     en: ['BURNT!!', 'TOO LONG!!', 'EXTRA CRISPY!', 'CHARCOAL!!'],
-    ja: ['焦げた!!', '火を止めて!!', '真っ黒!!', 'カリカリすぎ!']
+    ja: ['焦げた!!', '火を止めて!!', '真っ黒!!', 'カリカリすぎ!'],
+    ko: ['타버렸다!!', '어서 불 꺼!!', '누룽지 맛!', '새까만 숯달걀!!']
   };
   var EGG_SPLAT_LINES = {
     zh: ['翻车了!!', '蛋黄破了!', '掉锅外了!!', '惨烈粘锅!'],
     en: ['SPLAT!!', 'BROKEN YOLK!', 'DROPPED IT!!', 'PAN FAIL!'],
-    ja: ['落ちた!!', '黄身割れ!', '大惨事!!', 'べちゃっ!']
+    ja: ['落ちた!!', '黄身割れ!', '大惨事!!', 'べちゃっ!'],
+    ko: ['망했다!!', '노른자가 터졌어!', '번철 밖으로!!', '눌러붙었다!']
   };
   var CUSTOMS_PASS_TAGS = {
     zh: ['准予放行', '音准合格', '丝滑通关', '免检VIP', '唱功优良'],
     en: ['APPROVED', 'PITCH OK', 'CLEARED', 'VIP PASS', 'SMOOTH!'],
-    ja: ['入国許可', '音程良好', '通過OK', 'VIP通行', '合格!!']
+    ja: ['入国許可', '音程良好', '通過OK', 'VIP通行', '合格!!'],
+    ko: ['통과 승인', '음정 합격', '매끄러운 통과', '무검사 특급', '가창 우량']
   };
   var CUSTOMS_DENY_TAGS = {
     zh: ['遣返!!', '查无此词!', '违禁歌词!', '暂扣核查!'],
     en: ['DENIED!!', 'UNKNOWN!', 'DETAINED!', 'NO ENTRY!'],
-    ja: ['入国拒否!', '辞書不一致!', '没収!!', '強制送還!']
+    ja: ['入国拒否!', '辞書不一致!', '没収!!', '強制送還!'],
+    ko: ['입국 불허!', '사전 미등록!', '금지 가사!', '림시 압류!']
   };
   var CUSTOMS_TRANSIT_TAGS = {
     zh: ['经停签', '长音加签', '复检通过', '转机盖章'],
     en: ['TRANSIT', 'VISA EXT', 'RE-CHECK', 'STAMPED'],
-    ja: ['経由印', '延長許可', '再審査OK', '乗継印']
+    ja: ['経由印', '延長許可', '再審査OK', '乗継印'],
+    ko: ['경유 승인', '장음 연장', '재검사 통과', '도장 완료']
   };
   var BLACKHOLE_PULL_LINES = {
     zh: ['引力捕获!', '逃逸失败!', '潮汐拉扯!', '视界吸入!', '时空弯曲!', '质量+1M☉'],
     en: ['SPAGHETTIFIED!', 'NO ESCAPE!', 'GRAVITY WELL!', 'PULLED IN!', 'EVENT HORIZON!'],
-    ja: ['重力捕獲!', '脱出不能!', '潮汐破壊!', '時空歪曲!', '事象の地平線!']
+    ja: ['重力捕獲!', '脱出不能!', '潮汐破壊!', '時空歪曲!', '事象の地平線!'],
+    ko: ['중력 포획!', '탈출 실패!', '조석 인장!', '사상지평선 흡입!', '시공 만곡!', '질량+1M☉']
   };
   var BLACKHOLE_DEVOUR_LINES = {
     zh: ['吞噬完成!', '霍金辐射!', '奇点膨胀!', '归于虚无!', '引力波!'],
     en: ['DEVOURED!', 'SINGULARITY!', 'HAWKING FLASH!', 'CONSUMED!', 'GRAVITY WAVE!'],
-    ja: ['吸引完了!', 'ホーキング放射!', '特異点膨張!', '虚無へ!', '重力波!']
+    ja: ['吸引完了!', 'ホーキング放射!', '特異点膨張!', '虚無へ!', '重力波!'],
+    ko: ['흡입 완료!', '호킹 복사!', '특이점 팽창!', '허무로 귀환!', '중력파!']
   };
 
   var NOTE_NAMES_12 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -5260,7 +5281,7 @@
         if (st.koSpawned) return;
         st.koSpawned = true;
         if (st.missed) {
-          var escTxt = langCode() === 'ja' ? '逃亡!' : (langCode() === 'en' ? 'ESCAPED!' : '逃走了!');
+          var escTxt = langCode() === 'ja' ? '逃亡!' : (langCode() === 'ko' ? '도주!' : (langCode() === 'en' ? 'ESCAPED!' : '逃走了!'));
           fx.spawn({
             kind: 'glyph',
             text: escTxt,
@@ -5322,7 +5343,7 @@
           if (it.rel - (it.st.lastHitRel || 0) >= 0.28) {
             it.st.lastHitRel = it.rel;
             if (it.st.missed) {
-              var missTxt = langCode() === 'ja' ? 'ミス!' : (langCode() === 'en' ? 'MISS!' : (Math.random() < 0.5 ? 'MISS!' : '闪避!'));
+              var missTxt = langCode() === 'ja' ? 'ミス!' : (langCode() === 'ko' ? '회피!' : (langCode() === 'en' ? 'MISS!' : (Math.random() < 0.5 ? 'MISS!' : '闪避!')));
               fx.spawn({
                 kind: 'glyph',
                 text: missTxt,
@@ -6321,7 +6342,7 @@
                 life: 0.56
               });
             }
-            var hi = langCode() === 'ja' ? 'ぴょん!' : (langCode() === 'en' ? 'BOING!' : '跳!');
+            var hi = langCode() === 'ja' ? 'ぴょん!' : (langCode() === 'ko' ? '폴짝!' : (langCode() === 'en' ? 'BOING!' : '跳!'));
             fx.spawn({
               kind: 'glyph',
               text: hi,
@@ -6353,7 +6374,7 @@
                 life: 0.52
               });
             }
-            var bye = langCode() === 'ja' ? 'ケロ〜!' : (langCode() === 'en' ? 'RIBBIT~!' : '呱〜!');
+            var bye = langCode() === 'ja' ? 'ケロ〜!' : (langCode() === 'ko' ? '개굴~!' : (langCode() === 'en' ? 'RIBBIT~!' : '呱〜!'));
             fx.spawn({
               kind: 'glyph',
               text: bye,
@@ -7227,7 +7248,7 @@
       },
       onExitNote: function (fx, n, st, geo) {
         if (st.clawCaught) {
-          var gotPool = { zh: '抓到了!', en: 'GOT IT!', ja: 'ゲット!' };
+          var gotPool = { zh: '抓到了!', en: 'GOT IT!', ja: 'ゲット!', ko: '잡았다!' };
           fx.spawn({
             kind: 'glyph',
             text: gotPool[langCode()] || gotPool.zh,
@@ -8052,7 +8073,7 @@
           st.missed = true;
           recordRhythmMiss(fx);
           ms.fever = Math.max(0, (ms.fever || 0) - 0.14);
-          var badTxt = langCode() === 'en' ? 'MISS!' : '不可!';
+          var badTxt = langCode() === 'ko' ? '미달!' : (langCode() === 'en' ? 'MISS!' : '不可!');
           fx.spawn({
             kind: 'glyph',
             text: badTxt,
@@ -8085,7 +8106,7 @@
         });
         if (ms.flyers.length > 24) ms.flyers.shift();
 
-        var judgeTxt = langCode() === 'en' ? 'GREAT!' : '良!';
+        var judgeTxt = langCode() === 'ko' ? '우량!' : (langCode() === 'en' ? 'GREAT!' : '良!');
         fx.spawn({
           kind: 'glyph',
           text: judgeTxt,
@@ -8196,7 +8217,7 @@
                   });
                 }
                 if (ms.rollCount % 2 === 1) {
-                  var shout = langCode() === 'en' ? (altRed ? 'DON!' : 'KA!') : (langCode() === 'ja' ? (altRed ? 'ドン!' : 'カッ!') : (altRed ? '咚!' : '咔!'));
+                  var shout = langCode() === 'en' ? (altRed ? 'DON!' : 'KA!') : (langCode() === 'ja' ? (altRed ? 'ドン!' : 'カッ!') : (langCode() === 'ko' ? (altRed ? '덩!' : '딱!') : (altRed ? '咚!' : '咔!')));
                   fx.spawn({
                     kind: 'glyph',
                     text: shout,
@@ -8366,7 +8387,7 @@
           var rby = Math.max(roll.rulerH + 34, (ms.rollAnchorY || ms.followY || 120) - 38);
           var rollLabel = langCode() === 'ja'
             ? (ms.rollCount + ' 連打!!')
-            : (langCode() === 'en' ? (ms.rollCount + ' ROLL!!') : (ms.rollCount + ' 连打!!'));
+            : (langCode() === 'ko' ? (ms.rollCount + ' 련타!!') : (langCode() === 'en' ? (ms.rollCount + ' ROLL!!') : (ms.rollCount + ' 连打!!')));
           c.save();
           c.globalAlpha = rollAlpha;
           c.translate(rbx, rby);
@@ -8420,7 +8441,7 @@
         c.strokeStyle = '#ffe042';
         c.lineWidth = 1.8;
         c.beginPath(); c.arc(badgeX, badgeY, 11, 0, Math.PI * 2); c.fill(); c.stroke();
-        drawTextHalo(c, langCode() === 'en' ? 'MAX' : '魂', badgeX, badgeY + 0.5, langCode() === 'en' ? 8.5 : 11, '#ffe042', 'rgba(0,0,0,0.65)', 2);
+        drawTextHalo(c, langCode() === 'ko' ? '혼' : (langCode() === 'en' ? 'MAX' : '魂'), badgeX, badgeY + 0.5, langCode() === 'en' ? 8.5 : 11, '#ffe042', 'rgba(0,0,0,0.65)', 2);
         c.restore();
 
         // 3. 左下角连击数
@@ -8429,7 +8450,7 @@
           c.save();
           c.translate(roll.kbW + 18, roll.gridBottom() - 24);
           c.scale(pop, pop);
-          drawTextHalo(c, ms.combo + (langCode() === 'en' ? ' COMBO!' : ' 连击!'), 0, 0, 20, '#ffe042', '#b91c1c', 3.8, 'left', 'Impact, "Microsoft YaHei", sans-serif');
+          drawTextHalo(c, ms.combo + (langCode() === 'ko' ? ' 련격!' : (langCode() === 'en' ? ' COMBO!' : ' 连击!')), 0, 0, 20, '#ffe042', '#b91c1c', 3.8, 'left', 'Impact, "Microsoft YaHei", sans-serif');
           c.restore();
         }
         drawRhythmResults(fx, c, roll, T, A);
@@ -8895,7 +8916,7 @@
           var rel = n.dur > 0 ? clamp((cp.beat - n.start) / n.dur, 0.08, 0.92) : 0.5;
           st.stamps.push({
             rel: rel,
-            text: langCode() === 'en' ? 'X-RAY' : '安检',
+            text: langCode() === 'ko' ? '검문' : (langCode() === 'en' ? 'X-RAY' : '安检'),
             kind: 'transit',
             rot: (Math.random() - 0.5) * 0.45,
             age: 0

@@ -58,11 +58,14 @@
 
 html, body {
   margin: 0; padding: 0; height: 100%;
-  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", Tahoma, sans-serif;
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Malgun Gothic", "Apple SD Gothic Neo", Tahoma, sans-serif;
   font-size: 12px; color: var(--ink);
   overflow: hidden;
   background: #48bceb;
   -webkit-font-smoothing: antialiased;
+}
+:root:lang(ko), :root:lang(ko) body {
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", Tahoma, sans-serif;
 }
 button, input, select, textarea { font-family: inherit; }
 ::selection { background: rgba(46, 190, 255, .36); }
