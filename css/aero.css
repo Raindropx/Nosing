@@ -564,6 +564,7 @@ body.is-playing #bgGloss::before, body.page-hidden #bgGloss::before, body.modal-
 .row2 select { flex: 1; min-width: 0; }
 .row2 .abtn { flex: none; white-space: nowrap; }
 .row2 .abtn.wide { flex: 1 1 auto; width: auto; }
+.row2.block-io .abtn.wide { flex: 1 1 0; min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; }
 .row2 .lb { flex: none; font-size: 10px; color: #316480; text-shadow: 0 1px 0 rgba(255,255,255,.75); }
 .row2 select.tiny { flex: 1 1 0; min-width: 0; padding: 2px 2px; font-size: 10.5px; }
 

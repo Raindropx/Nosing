@@ -3128,6 +3128,8 @@
       case 'about': openAbout(); break;
       case 'saveBlock': saveBlock(); break;
       case 'delBlock': delBlock(); break;
+      case 'downloadBlock': downloadBlock(); break;
+      case 'importBlock': pickBlockFile(); break;
       case 'toNotes': lyricToNotes(); break;
       case 'batchLyric': openBatchLyric(); break;
       case 'shiftBarLeft': shiftBarUI(-1); break;
@@ -3335,6 +3337,123 @@
     NSG.deleteTimbre(name);
     refreshBlockList();
     setStatus(t('ui.delBlockDone', { name: name }, '已删除音色块：' + name));
+  }
+  function sanitizeBlockFileName(raw) {
+    var name = String(raw || '').replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, '_').trim().replace(/[. ]+$/, '');
+    return Array.from(name || 'timbre').slice(0, 40).join('');
+  }
+  function downloadBlock() {
+    var curName = state.timbre.preset ? tPresetName(state.timbre) : state.timbre.name;
+    var block = NSG.cloneTimbre(state.timbre);
+    var label = String(curName || '').trim() || t('left.defaultBlockName', null, '音色块');
+    block.name = label;
+    delete block.preset;
+    var fileName = sanitizeBlockFileName(label) + '.nsgt';
+    return saveExport(function () {
+      return new Blob([NSG.blockToText(block)], { type: 'application/json' });
+    }, fileName, t('exp.timbreBlockDesc', { name: label }, '音色块（' + label + '）'));
+  }
+  function pickBlockFile() {
+    var inp = $('#blockFileInput');
+    if (inp) inp.click();
+  }
+  function uniqueBlockName(rawName, existingSet) {
+    var nm = String(rawName || '').trim() || t('left.defaultBlockName', null, '音色块');
+    if (NSG.presetByName(nm)) nm += t('ui.saveBlockCopySuffix', null, ' 副本');
+    if (!existingSet[nm]) { existingSet[nm] = true; return nm; }
+    var base = nm;
+    for (var n = 2; ; n++) {
+      var cand = base + ' (' + n + ')';
+      if (!existingSet[cand] && !NSG.presetByName(cand)) { existingSet[cand] = true; return cand; }
+    }
+  }
+  function readFileAsBytes(file) {
+    return new Promise(function (resolve, reject) {
+      var rd = new FileReader();
+      rd.onload = function () { resolve(new Uint8Array(rd.result)); };
+      rd.onerror = function () { reject(new Error(t('imp.readError', null, '读取文件失败'))); };
+      rd.onabort = function () { reject(new Error(t('imp.canceled', null, '已取消导入'))); };
+      try { rd.readAsArrayBuffer(file); } catch (e) { reject(e); }
+    });
+  }
+  function looksLikeJsonBytes(bytes) {
+    var n = bytes.length;
+    if (!n) return false;
+    var i = 0;
+    if (n >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) i = 3;
+    else if (n >= 2 && ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))) return true;
+    while (i < n && i < 64 && (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0a || bytes[i] === 0x0d)) i++;
+    return i < n && (bytes[i] === 0x7b || bytes[i] === 0x5b);
+  }
+  function decodeBytesAsText(bytes) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (utfErr) {
+      return (NSG.IO && typeof NSG.IO.decodeText === 'function')
+        ? NSG.IO.decodeText(bytes).text
+        : new TextDecoder('utf-8').decode(bytes);
+    }
+  }
+  async function importBlockFiles(fileList, inputEl) {
+    var files = fileList ? Array.prototype.slice.call(fileList) : [];
+    if (inputEl) inputEl.value = '';
+    if (!files.length) return;
+    var maxBytes = NSG.MAX_TIMBRE_IMPORT_BYTES || (20 * 1024 * 1024);
+    var existing = Object.create(null);
+    NSG.listTimbres().forEach(function (item) { if (item && item.name) existing[item.name] = true; });
+    var imported = [];
+    var errors = [];
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (f.size > maxBytes) {
+        errors.push((files.length > 1 ? f.name + ': ' : '') + t('ui.importBlockTooLarge', null, '文件超过 20MB 上限'));
+        continue;
+      }
+      var stem = String(f.name || '').replace(/\.(nsgt|json|txt|nsg)$/i, '').trim();
+      try {
+        var bytes = await readFileAsBytes(f);
+        var blocks = null;
+        if (looksLikeJsonBytes(bytes)) {
+          try { blocks = NSG.textToBlocks(decodeBytesAsText(bytes), stem); }
+          catch (notTimbre) { blocks = null; }
+        }
+        if (!blocks) blocks = [NSG.timbreFromBytes(bytes, f.name)];
+        for (var j = 0; j < blocks.length; j++) {
+          var b = blocks[j];
+          b.name = uniqueBlockName(b.name, existing);
+          NSG.saveTimbre(b);
+          imported.push(b);
+        }
+      } catch (e) {
+        errors.push((files.length > 1 ? f.name + ': ' : '') + tMsg(e && e.message ? e.message : String(e)));
+      }
+    }
+    if (imported.length) {
+      var applied = imported[imported.length - 1];
+      state.timbre = NSG.cloneTimbre(applied);
+      state.presetDirty = false;
+      state.harmHi = null;
+      state.dirty = true;
+      var tr = activeVocalTrack();
+      if (tr) { tr.timbre = state.timbre; tr.presetDirty = false; }
+      refreshBlockList();
+      applyTimbreToUI();
+      renderAndAnalyze(200);
+      var msg = imported.length === 1
+        ? t('ui.importBlockDone', { name: applied.name }, '已导入并应用音色块：' + applied.name)
+        : t('ui.importBlockMultiDone', { n: imported.length, name: applied.name }, '已导入 ' + imported.length + ' 个音色块，当前已应用：' + applied.name);
+      if (errors.length) {
+        var errText = errors.join('\n');
+        msg += t('ui.importBlockPartial', { n: errors.length }, '（另有 ' + errors.length + ' 个文件导入失败）');
+        alert(t('ui.importBlockFail', { msg: errText }, '导入音色块失败：' + errText));
+      }
+      setStatus(msg);
+    } else if (errors.length) {
+      var allErr = errors.join('\n');
+      var failMsg = t('ui.importBlockFail', { msg: allErr }, '导入音色块失败：' + allErr);
+      setStatus(failMsg);
+      alert(failMsg);
+    }
   }
 
   /* ---------------- 乐谱 ---------------- */
@@ -5436,6 +5555,8 @@
     if (mainInp) mainInp.addEventListener('change', function () { return readImportFile(this.files[0], 'replace', this); });
     var layerInp = $('#layerFileInput');
     if (layerInp) layerInp.addEventListener('change', function () { return readImportFile(this.files[0], 'append', this); });
+    var blockInp = $('#blockFileInput');
+    if (blockInp) blockInp.addEventListener('change', function () { return importBlockFiles(this.files, this); });
   }
 
   /* ---------------- 模态 ---------------- */
@@ -6253,6 +6374,8 @@
           { label: t('ctx.quickCompose', null, '快速谱曲…'), onClick: openCompose },
           '-',
           { label: t('ctx.saveAsBlock', null, '保存当前为音色块…'), onClick: saveBlock },
+          { label: t('ctx.downloadBlock', null, '下载当前音色块…'), onClick: downloadBlock },
+          { label: t('ctx.importBlock', null, '导入音色块…'), onClick: pickBlockFile },
           { label: t('ctx.jitterTimbre', null, '随机微调当前音色参数'), onClick: function () {
             state.timbre.gen = Math.max(0, Math.min(127, Math.round((NSG.genValue(state.timbre) + (Math.random() - 0.5) * 14))));
             state.timbre.bwScale = +(Math.max(0.5, Math.min(2.0, (state.timbre.bwScale || 1) + (Math.random() - 0.5) * 0.16))).toFixed(2);

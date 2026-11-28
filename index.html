@@ -265,6 +265,10 @@
             <button class="abtn wide primary" data-act="saveBlock" data-i18n="left.saveBlock">保存音色块</button>
             <button class="abtn" data-act="delBlock" style="flex:none" data-i18n="left.delBlock">删除</button>
           </div>
+          <div class="row2 block-io">
+            <button class="abtn wide" data-act="downloadBlock" title="将当前音色导出为 .nsgt 音色块文件" data-i18n="left.downloadBlock" data-i18n-title="left.downloadBlockTitle">下载音色块</button>
+            <button class="abtn wide" data-act="importBlock" title="从 .nsgt / .json / .nsg 文件导入音色块并应用" data-i18n="left.importBlock" data-i18n-title="left.importBlockTitle">导入音色块</button>
+          </div>
           <div class="cap2" data-i18n="left.phonemizer">音素器</div>
           <div class="row2">
             <select id="langSel" title="选择人声发音规则；+ 接续前词，+~ / +* 延长元音。手动选择优先于导入的语言标记。" data-i18n-title="left.phonemizerTitle">
@@ -529,6 +533,7 @@
 <input type="file" id="fileInput" style="display:none" accept=".mid,.midi,.vsq,.vsqx,.vpr,.svp,.ust,.ustx,.tlp,.tlpx,.nn,.y77,.aisp,.acep,.vcp,.vsp,.dsc,.ufdata,.ufd,.nsg,.json,.ccs,.ccst,.tssln,.dv,.sk,.mtp,.vspx,.vog">
 <input type="file" id="layerFileInput" style="display:none" accept=".mid,.midi,.vsq,.vsqx,.vpr,.svp,.ust,.ustx,.tlp,.tlpx,.nn,.y77,.aisp,.acep,.vcp,.vsp,.dsc,.ufdata,.ufd,.nsg,.json,.ccs,.ccst,.tssln,.dv,.sk,.mtp,.vspx,.vog">
 <input type="file" id="audioInput" style="display:none" accept="audio/*">
+<input type="file" id="blockFileInput" style="display:none" multiple>
 
 <script src="js/phonemes.js"></script>
 <script src="js/timbre.js"></script>

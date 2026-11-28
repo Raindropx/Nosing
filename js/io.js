@@ -229,7 +229,8 @@
       var ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
       var formats = {
         '.wav': ['WAV 音频', 'audio/wav'], '.mid': ['MIDI 乐谱', 'audio/midi'],
-        '.nsg': ['NSG 工程', 'application/json'], '.ufdata': ['UtaFormatix 数据', 'application/json'],
+        '.nsg': ['NSG 工程', 'application/json'], '.nsgt': ['NSG 音色块', 'application/json'],
+        '.ufdata': ['UtaFormatix 数据', 'application/json'],
         '.zip': ['ZIP 压缩包', 'application/zip']
       };
       var options = { suggestedName: name };

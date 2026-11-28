@@ -355,7 +355,7 @@
       range: [62, 81]
     },
     {
-      id: 'a1', name: '外星人1', height: 158, gen: 48,
+      id: 'a1', name: '外星人0', height: 158, gen: 48,
       desc: '奇异空灵外星声线：非人声道共振、中空泛音、微颤电子沙感',
       consonantSoftness: 0.12,
       nasalLowpassHz: 3100,
@@ -626,7 +626,7 @@
   };
   NSG.validateBlock = function (t) {
     if (t && t.effortProfile !== undefined && !NSG.validEffortProfile(t.effortProfile)) return '轻重音色参数需要 8 个 0–1 的有限数值';
-    if (!t || typeof t !== 'object') return '参数块格式错误';
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return '参数块格式错误';
     if (!(t.height >= 110 && t.height <= 210)) return '身高越界（110–210）';
     if (t.gen !== undefined && (typeof t.gen !== 'number' || !isFinite(t.gen) || t.gen < 0 || t.gen > 127)) return 'GEN 越界（0–127）';
     if (t.consonantSoftness !== undefined && (typeof t.consonantSoftness !== 'number' || !isFinite(t.consonantSoftness) || t.consonantSoftness < 0 || t.consonantSoftness > 1))
@@ -634,8 +634,10 @@
     if (t.nasalLowpassHz !== undefined && (typeof t.nasalLowpassHz !== 'number' || !isFinite(t.nasalLowpassHz) ||
       (t.nasalLowpassHz !== 0 && (t.nasalLowpassHz < 100 || t.nasalLowpassHz > 7500))))
       return '鼻腔支路低通频率越界（0 或 100–7500Hz）';
-    if (!Array.isArray(t.harm) || t.harm.length !== 16) return '倍频振幅表长度必须为 16';
-    if (!Array.isArray(t.higher) || t.higher.length !== 3) return '高阶共振峰必须为 3 个位置';
+    if (!Array.isArray(t.harm) || t.harm.length !== 16 ||
+      !t.harm.every(function (v) { return typeof v === 'number' && isFinite(v); })) return '倍频振幅表长度必须为 16';
+    if (!Array.isArray(t.higher) || t.higher.length !== 3 ||
+      !t.higher.every(function (v) { return typeof v === 'number' && isFinite(v) && v > 0; })) return '高阶共振峰必须为 3 个位置';
     if (t.sourceEq !== undefined && (!Array.isArray(t.sourceEq) || t.sourceEq.length !== 32 ||
       !t.sourceEq.every(function (v) { return typeof v === 'number' && isFinite(v) && Math.abs(v) <= 12; })))
       return '声源频谱修正必须为 32 个有限值（±12dB）';
@@ -669,17 +671,266 @@
     return null;
   };
 
+  function normalizeImportedBlock(raw, fallbackName) {
+    var err = NSG.validateBlock(raw);
+    if (err) throw new Error(err);
+    var base = NSG.defaultTimbre();
+    var t = NSG.migrateTimbre(NSG.cloneTimbre(raw));
+    delete t.format;
+    delete t.preset;
+    var numDefaults = ['gen', 'fScale', 'warp', 'jitter', 'glottal', 'bwScale', 'hiShift', 'lip', 'tiltDb', 'breath', 'nasal', 'articMorph'];
+    for (var i = 0; i < numDefaults.length; i++) {
+      var k = numDefaults[i];
+      if (typeof t[k] !== 'number' || !isFinite(t[k])) t[k] = base[k];
+    }
+    if (!t.vib || typeof t.vib !== 'object') {
+      t.vib = base.vib;
+    } else {
+      t.vib = {
+        rate: typeof t.vib.rate === 'number' && isFinite(t.vib.rate) ? t.vib.rate : base.vib.rate,
+        depth: typeof t.vib.depth === 'number' && isFinite(t.vib.depth) ? t.vib.depth : base.vib.depth,
+        delay: typeof t.vib.delay === 'number' && isFinite(t.vib.delay) ? t.vib.delay : base.vib.delay
+      };
+    }
+    var nm = typeof t.name === 'string' ? t.name.trim() : '';
+    t.name = nm || (typeof fallbackName === 'string' ? fallbackName.trim() : '') || base.name;
+    return t;
+  }
+
   NSG.blockToText = function (t) {
     var c = NSG.cloneTimbre(t);
+    delete c.preset;
+    c.format = 'NSG-TIMBRE';
     c.saved = new Date().toISOString().slice(0, 19).replace('T', ' ');
     return JSON.stringify(c, null, 1);
   };
 
-  NSG.textToBlock = function (txt) {
-    var t = JSON.parse(txt);
-    var err = NSG.validateBlock(t);
-    if (err) throw new Error(err);
-    return NSG.migrateTimbre(t);
+  NSG.textToBlock = function (txt, fallbackName) {
+    var parsed;
+    try { parsed = JSON.parse(String(txt || '').replace(/^\uFEFF/, '')); }
+    catch (e) { throw new Error('参数块格式错误'); }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.format === 'NSG-TIMBRE' && parsed.timbre && typeof parsed.timbre === 'object') {
+      parsed = parsed.timbre;
+    }
+    return normalizeImportedBlock(parsed, fallbackName);
+  };
+
+  NSG.textToBlocks = function (txt, fallbackName) {
+    var parsed;
+    try { parsed = JSON.parse(String(txt || '').replace(/^\uFEFF/, '')); }
+    catch (e) { throw new Error('参数块格式错误'); }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed[NSG.STORE_KEY] === 'string') {
+      try { parsed = JSON.parse(parsed[NSG.STORE_KEY]); }
+      catch (e) { throw new Error('参数块格式错误'); }
+    }
+    if (Array.isArray(parsed)) {
+      if (!parsed.length) throw new Error('文件中没有可导入的音色块');
+      return parsed.map(function (item, idx) {
+        return normalizeImportedBlock(item, fallbackName ? (parsed.length > 1 ? fallbackName + ' ' + (idx + 1) : fallbackName) : '');
+      });
+    }
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.timbres)) {
+        if (!parsed.timbres.length) throw new Error('文件中没有可导入的音色块');
+        return parsed.timbres.map(function (item, idx) {
+          return normalizeImportedBlock(item, fallbackName ? (parsed.timbres.length > 1 ? fallbackName + ' ' + (idx + 1) : fallbackName) : '');
+        });
+      }
+      if (parsed.format === 'NSG-SCORE') {
+        var candidates = [];
+        if (parsed.timbre && typeof parsed.timbre === 'object') candidates.push(parsed.timbre);
+        var tracks = parsed.score && Array.isArray(parsed.score.tracks) ? parsed.score.tracks : [];
+        for (var i = 0; i < tracks.length; i++) {
+          if (tracks[i] && tracks[i].timbre && typeof tracks[i].timbre === 'object') candidates.push(tracks[i].timbre);
+        }
+        if (!candidates.length) throw new Error('文件中没有可导入的音色块');
+        var seen = Object.create(null);
+        var out = [];
+        for (var j = 0; j < candidates.length; j++) {
+          var b = normalizeImportedBlock(candidates[j], fallbackName);
+          var sig = JSON.stringify(b);
+          if (!seen[sig]) { seen[sig] = true; out.push(b); }
+        }
+        return out;
+      }
+      if (parsed.timbre && typeof parsed.timbre === 'object' && !Array.isArray(parsed.timbre) && parsed.height === undefined) {
+        return [normalizeImportedBlock(parsed.timbre, fallbackName)];
+      }
+    }
+    return [normalizeImportedBlock(parsed, fallbackName)];
+  };
+
+  NSG.MAX_TIMBRE_IMPORT_BYTES = 20 * 1024 * 1024;
+
+  function hashBytes128(bytes) {
+    var h0 = 0x9e3779b9 | 0;
+    var h1 = 0x85ebca6b | 0;
+    var h2 = 0xc2b2ae35 | 0;
+    var h3 = 0x27d4eb2f | 0;
+    var len = bytes.length;
+    var i = 0;
+    var len4 = len & ~3;
+    for (; i < len4; i += 4) {
+      var w = (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) | 0;
+      h0 = Math.imul((h0 ^ w), 0x85ebca6b);
+      h0 = (h0 << 13) | (h0 >>> 19);
+      h1 = Math.imul((h1 + w + h0) | 0, 0xc2b2ae35);
+      h1 = (h1 << 15) | (h1 >>> 17);
+      h2 = Math.imul((h2 ^ (w + h1)) | 0, 0x27d4eb2f);
+      h2 = (h2 << 11) | (h2 >>> 21);
+      h3 = (h3 + Math.imul(h2 ^ w, 0x165667b1)) | 0;
+    }
+    if (i < len) {
+      var tail = 0;
+      for (var shift = 0; i < len; i++, shift += 8) tail |= bytes[i] << shift;
+      h0 = Math.imul(h0 ^ tail, 0x85ebca6b);
+      h1 = Math.imul((h1 + tail) | 0, 0xc2b2ae35);
+      h2 = Math.imul(h2 ^ (tail + h0), 0x27d4eb2f);
+      h3 = Math.imul((h3 + tail + h1) | 0, 0x165667b1);
+    }
+    h0 = (h0 ^ len) | 0;
+    h1 = (h1 + len) | 0;
+    h2 = (h2 ^ Math.imul(len, 0x9e3779b1)) | 0;
+    h3 = (h3 + (len >>> 0)) | 0;
+    for (var r = 0; r < 4; r++) {
+      h0 = Math.imul(h0 ^ (h0 >>> 16), 0x85ebca6b);
+      h1 = Math.imul((h1 ^ h0) ^ ((h1 ^ h0) >>> 13), 0xc2b2ae35);
+      h2 = Math.imul((h2 ^ h1) ^ ((h2 ^ h1) >>> 16), 0x27d4eb2f);
+      h3 = Math.imul((h3 ^ h2) ^ ((h3 ^ h2) >>> 15), 0x165667b1);
+      h0 = (h0 ^ h3) | 0;
+    }
+    return [h0 >>> 0, h1 >>> 0, h2 >>> 0, h3 >>> 0];
+  }
+
+  function makeSeedRng(s) {
+    var a = s[0] >>> 0, b = s[1] >>> 0, c = s[2] >>> 0, d = s[3] >>> 0;
+    function next() {
+      a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
+      var t = (a + b) | 0;
+      a = b ^ (b >>> 9);
+      b = (c + (c << 3)) | 0;
+      c = (c << 21) | (c >>> 11);
+      d = (d + 1) | 0;
+      t = (t + d) | 0;
+      c = (c + t) | 0;
+      return (t >>> 0) / 4294967296;
+    }
+    for (var i = 0; i < 12; i++) next();
+    return next;
+  }
+
+  /* 用任意文件内容作为确定性种子生成音色块：同一文件内容永远抽出同一音色，
+     所有参数均在引擎合法范围内，同时保留抽到极端/奇异音色的可能性。 */
+  NSG.timbreFromBytes = function (input, fileName) {
+    var bytes = input instanceof Uint8Array ? input : new Uint8Array(input || 0);
+    var seed = hashBytes128(bytes);
+    var rnd = makeSeedRng(seed);
+    function range(lo, hi) { return lo + (hi - lo) * rnd(); }
+    function roundTo(v, step) { return Math.round(v / step) * step; }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    // 0: 鲜明角色声线, 1: 夸张风格化声线, 2: 离谱/非人/异星实验声线
+    var tierRoll = rnd();
+    var tier = tierRoll < 0.35 ? 0 : (tierRoll < 0.70 ? 1 : 2);
+    var wild = tier === 0 ? 0.45 : (tier === 1 ? 0.80 : 1.0);
+
+    var t = NSG.defaultTimbre();
+    var cleanName = String(fileName || '').replace(/^.*[\\/]/, '').trim();
+    var hex = ('00000000' + seed[0].toString(16)).slice(-8);
+    t.name = cleanName ? Array.from(cleanName).slice(0, 40).join('') : ('音色块 ' + hex.slice(0, 6));
+    t.src = '导入音色块';
+
+    t.height = Math.round(range(140, 200));
+    t.gen = Math.round(tier === 0 ? range(28, 100) : range(0, 127));
+    t.fScale = +clamp(roundTo(range(1 - 0.28 * wild, 1 + 0.38 * wild), 0.01), 0.72, 1.38).toFixed(2);
+    t.warp = +clamp(roundTo(range(-0.30 * wild, 0.30 * wild), 0.01), -0.30, 0.30).toFixed(2);
+    t.bwScale = +clamp(roundTo(tier === 0 ? range(0.76, 1.38) : range(0.42, 2.35), 0.02), 0.4, 2.4).toFixed(2);
+    t.hiShift = +clamp(roundTo(range(1 - 0.35 * wild, 1 + 0.30 * wild), 0.005), 0.65, 1.30).toFixed(3);
+
+    var f4 = Math.round(range(tier === 2 ? 1700 : 2600, tier === 2 ? 4800 : 4100) / 10) * 10;
+    var gap45 = Math.round(range(350, tier === 2 ? 1600 : 1100) / 10) * 10;
+    var gap56 = Math.round(range(400, tier === 2 ? 1600 : 1150) / 10) * 10;
+    var f5 = Math.min(7200, Math.max(f4 + 250, f4 + gap45));
+    var f6 = Math.min(7600, Math.max(f5 + 250, f5 + gap56));
+    t.higher = [f4, f5, f6];
+
+    t.lip = +clamp(roundTo(rnd() < 0.35 ? 0 : range(0, 0.30 * wild), 0.01), 0, 0.30).toFixed(2);
+    t.tiltDb = Math.round(range(-12 * wild, 12 * wild));
+    t.breath = +clamp(roundTo(Math.pow(rnd(), tier === 2 ? 1.15 : 1.75) * 0.30, 0.01), 0, 0.30).toFixed(2);
+    t.nasal = +clamp(roundTo(Math.pow(rnd(), tier === 2 ? 1.1 : 1.65) * 0.30, 0.01), 0, 0.30).toFixed(2);
+    t.jitter = +clamp(roundTo(Math.pow(rnd(), tier === 2 ? 1.3 : 2.3) * 0.02, 0.001), 0, 0.02).toFixed(3);
+    t.glottal = +clamp(roundTo(Math.pow(rnd(), tier === 0 ? 1.5 : 1.0) * (tier === 0 ? 0.65 : 1.0), 0.01), 0, 1).toFixed(2);
+    t.modeBHigh = +clamp(roundTo(range(0.10, tier === 2 ? 1.0 : 0.72), 0.01), 0, 1).toFixed(2);
+    t.articMorph = +clamp(roundTo(range(0.15, 0.95), 0.01), 0, 1).toFixed(2);
+    t.highVowelOpening = +clamp(roundTo(range(0, tier === 2 ? 1.0 : 0.75), 0.01), 0, 1).toFixed(2);
+    t.consonantSoftness = +clamp(roundTo(range(0.04, tier === 2 ? 0.85 : 0.48), 0.01), 0, 1).toFixed(2);
+    t.nasalLowpassHz = Math.round(range(tier === 2 ? 550 : 1200, tier === 2 ? 5200 : 3000) / 10) * 10;
+
+    // 16 阶倍频结构：斜率 / 奇次中空 / 偶次尖亮 / 梳状波纹 / 金属奇异谱
+    var harmMode = Math.floor(rnd() * (tier === 0 ? 3 : 5));
+    var slope = range(tier === 2 ? -18 : -15, tier === 2 ? -5.5 : -8.5);
+    var rippleAmp = tier === 0 ? range(0, 3.2) : range(2.5, tier === 2 ? 12.5 : 7.5);
+    var rippleFreq = range(0.7, 3.2);
+    var ripplePhase = range(0, Math.PI * 2);
+    var oddPenalty = range(6, 16);
+    var harm = [0];
+    for (var k = 2; k <= 16; k++) {
+      var db = slope * Math.log2(k);
+      if (harmMode === 1 && (k % 2 === 0)) db -= oddPenalty;
+      else if (harmMode === 2 && (k % 2 === 1)) db -= oddPenalty * 0.75;
+      else if (harmMode === 3) db += rippleAmp * Math.sin(k * rippleFreq + ripplePhase);
+      else if (harmMode === 4) db += range(-rippleAmp, rippleAmp * 0.75);
+      else db += range(-1.8, 1.8) * wild;
+      harm.push(Math.round(clamp(db, -38, 4) * 10) / 10);
+    }
+    t.harm = harm;
+    t.harmTailDb = Math.round(clamp(slope - range(-2, 5), -26, -6) * 10) / 10;
+    t.pitchTilt = Math.round(range(-2.5 * wild, 2.5 * wild) * 100) / 100;
+    t.refF0 = Math.round(range(120, 440));
+
+    // 独立共振峰比例 / 带宽比例 / 元音空间
+    var fSpread = tier === 0 ? 0.12 : (tier === 1 ? 0.22 : 0.30);
+    t.fRatio = [
+      +clamp(roundTo(range(1 - fSpread, 1 + fSpread), 0.01), 0.75, 1.35).toFixed(2),
+      +clamp(roundTo(range(1 - fSpread, 1 + fSpread), 0.01), 0.75, 1.35).toFixed(2),
+      +clamp(roundTo(range(1 - fSpread, 1 + fSpread), 0.01), 0.75, 1.35).toFixed(2)
+    ];
+    var bwLo = tier === 0 ? 0.82 : (tier === 1 ? 0.65 : 0.52);
+    var bwHi = tier === 0 ? 1.25 : (tier === 1 ? 1.55 : 1.92);
+    t.bwRatio = [
+      +clamp(roundTo(range(bwLo, bwHi), 0.01), 0.5, 2.0).toFixed(2),
+      +clamp(roundTo(range(bwLo, bwHi), 0.01), 0.5, 2.0).toFixed(2),
+      +clamp(roundTo(range(bwLo, bwHi), 0.01), 0.5, 2.0).toFixed(2)
+    ];
+    t.vowelSpace = [
+      +clamp(roundTo(range(tier === 0 ? 0.85 : 0.62, tier === 0 ? 1.15 : 1.25), 0.01), 0.60, 1.25).toFixed(2),
+      +clamp(roundTo(range(tier === 0 ? 0.85 : 0.62, tier === 0 ? 1.15 : 1.25), 0.01), 0.60, 1.25).toFixed(2)
+    ];
+
+    // 32 点声源频谱塑形（2–5 个平滑共振峰/陷波，赋予每个文件独特的声腔/质地）
+    var bands = [];
+    var nBands = 2 + Math.floor(rnd() * (tier === 0 ? 2 : 4));
+    for (var bi = 0; bi < nBands; bi++) {
+      bands.push({
+        center: 140 * Math.pow(42, rnd()),
+        width: range(tier === 2 ? 0.28 : 0.42, 0.85),
+        gain: range(-1, 1) * (tier === 0 ? 3.5 : (tier === 1 ? 6.5 : 9.5))
+      });
+    }
+    t.sourceEq = makeSourceEq(function (hz) {
+      var sum = 0;
+      for (var j = 0; j < bands.length; j++) {
+        sum += bands[j].gain * gaussOct(hz, bands[j].center, bands[j].width);
+      }
+      return clamp(sum, -10.5, 10.5);
+    });
+
+    t.vib = {
+      rate: +clamp(roundTo(range(tier === 2 ? 2.5 : 4.2, tier === 2 ? 10.5 : 6.8), 0.1), 1.5, 12).toFixed(1),
+      depth: +clamp(roundTo(range(0.03, tier === 2 ? 0.48 : 0.24), 0.01), 0, 0.5).toFixed(2),
+      delay: +clamp(roundTo(range(0.05, 0.52), 0.01), 0, 1).toFixed(2)
+    };
+    return t;
   };
 
   NSG.STORE_KEY = 'nsg.timbres.v2';
